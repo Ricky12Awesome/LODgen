@@ -40,7 +40,7 @@ public abstract class DhGenerationQueueMixin {
                 && generator instanceof GenerationAdmission admission
                 && Config.Common.WorldGenerator.chunkGeneratorMode.get() == EDhApiDistantGeneratorMode.FEATURES
                 && Config.Common.WorldGenerator.generatorPlan.get().chunkGenEnabled
-                && admission.lodgen$isBusy()) {
+                && (admission.lodgen$isBusy() || dev.lodgen.minecraft.GenerationTasks.overridesAutomatic(level.getServerLevelWrapper().getWrappedMcObject()))) {
             callback.setReturnValue(true);
         }
     }
@@ -59,13 +59,14 @@ public abstract class DhGenerationQueueMixin {
         }
         // An explicit override also bounds dedicated-server DH requests. Without
         // one, only the integrated server follows the local graphics setting.
+        var resolvedCenter = dev.lodgen.minecraft.GenerationCenters.resolve((net.minecraft.server.level.ServerLevel) level.getServerLevelWrapper().getWrappedMcObject(), targetPos.x, targetPos.z);
         int radius = settings.generationRadius(Config.Client.Advanced.Graphics.Quality.lodChunkRenderDistanceRadius.get(),
                 PersistenceRegistry.isIntegratedServer(level.getServerLevelWrapper().getWrappedMcObject()));
         Function<Map.Entry<Long, DataSourceRetrievalTask>, Object> filtered = entry -> {
             var task = entry.getValue();
             if (radius > 0 && !GenerationBounds.retain(tasks, entry.getKey(), task, task.future,
                     GenerationBounds.overlaps(DhSectionPos.getMinCornerBlockX(task.pos),
-                    DhSectionPos.getMinCornerBlockZ(task.pos), DhSectionPos.getBlockWidth(task.pos), targetPos.x, targetPos.z, radius))) {
+                    DhSectionPos.getMinCornerBlockZ(task.pos), DhSectionPos.getBlockWidth(task.pos), resolvedCenter.getX(), resolvedCenter.getZ(), radius))) {
                 return null;
             }
             return transform.apply(entry);

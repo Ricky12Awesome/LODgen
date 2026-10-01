@@ -41,4 +41,16 @@ class SavePolicyTest {
         assertFalse(policy.suppress(31, 31));
         assertTrue(policy.suppress(32, 31));
     }
+    @Test void savedLodTargetsDoNotAdoptTheirSupportingChunks() {
+        var policy = new SavePolicy();
+        for (int x = -3; x <= 3; x++) for (int z = -3; z <= 3; z++) policy.claim(x, z, false);
+        policy.saveGenerated(0, 0);
+        assertFalse(policy.suppress(0, 0));
+        assertTrue(policy.generated(0, 0), "Feature lookups must keep transient ownership outside the saved target");
+        assertTrue(policy.suppress(1, 0));
+        policy.normalRequest(0, 0, 2);
+        assertFalse(policy.generated(0, 0));
+        assertFalse(policy.suppress(1, 0), "Normal player/Chunky requests still adopt supporting terrain");
+        assertTrue(policy.suppress(3, 0));
+    }
 }

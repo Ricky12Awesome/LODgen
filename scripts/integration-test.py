@@ -18,6 +18,7 @@ parser.add_argument("--loader", choices=("fabric", "neoforge"), required=True)
 parser.add_argument("--java", default="java", help="Java 21 for MC 1.21.1; Java 25 for MC 26.x")
 parser.add_argument("--skip-build", action="store_true")
 parser.add_argument("--startup-only", action="store_true", help="Load the packaged startup fixture and stop before opening a world")
+parser.add_argument("--task-check", action="store_true", help="Commands, mixed saved/LOD radius, and orderly auto-resume using only a 5c radius")
 parser.add_argument("--distance-check", action="store_true", help="Check custom 64 versus DH 128 using only two 4x4 LOD sections")
 parser.add_argument("--quick", action="store_true", help="Skip benchmark warmup and cap server checks at 120/60 seconds")
 parser.add_argument("--opencl", action="store_true", help="Install the optional C2ME OpenCL addon and ScalableLux; requires Java 25")
@@ -39,6 +40,8 @@ parser.add_argument("--trace-ownership", action="store_true", help="Log the call
 parser.add_argument("--vanilla", action="store_true", help="Test without C2ME")
 parser.add_argument("--baseline", action="store_true", help="Run the same check with DH's original FEATURES generator")
 args = parser.parse_args()
+if args.task_check and (args.startup_only or args.distance_check or args.benchmark or args.baseline):
+    parser.error("--task-check cannot be combined with startup-only, distance-check, benchmark or baseline")
 if args.distance_check and (args.startup_only or args.benchmark or args.baseline):
     parser.error("--distance-check cannot be combined with startup-only, benchmark or baseline")
 if args.startup_only and (args.opencl or args.chunky or args.benchmark or args.worldgen_instance or args.baseline or args.vanilla):
@@ -57,7 +60,7 @@ if args.native_workers < 0 or args.chunky_working_count < 0:
     parser.error("Worker count overrides must be nonnegative")
 target = matrix[args.mc]
 base = ROOT / "build" / args.mc / args.loader / ("startup" if args.startup_only else "selftest")
-run = base / ("packaged-server" + ("-baseline" if args.baseline else "") + ("-vanilla" if args.vanilla else ""))
+run = base / ("packaged-server" + ("-tasks" if args.task_check else "") + ("-baseline" if args.baseline else "") + ("-vanilla" if args.vanilla else ""))
 run.mkdir(parents=True, exist_ok=True)
 # Never reuse worlds: previous normal chunks would hide disk-write regressions.
 world = run / "world"
@@ -140,7 +143,7 @@ else:
              installer)
     argument_file = run / "libraries" / "net" / "neoforged" / "neoforge" / nf / "unix_args.txt"
     cached_libraries = ROOT / "build" / args.mc / args.loader / "selftest/packaged-server/libraries"
-    if args.startup_only and not argument_file.exists() and (cached_libraries / "net" / "neoforged" / "neoforge" / nf / "unix_args.txt").exists():
+    if (args.startup_only or args.task_check) and not argument_file.exists() and (cached_libraries / "net" / "neoforged" / "neoforge" / nf / "unix_args.txt").exists():
         shutil.copytree(cached_libraries, run / "libraries", dirs_exist_ok=True)
     if not argument_file.exists():
         subprocess.run([args.java, "-jar", str(installer), "--installServer"], cwd=run, check=True)
@@ -154,6 +157,7 @@ else:
 
 benchmark_options = [f"-Dlodgen.test.layout={args.layout}", f"-Dlodgen.test.workers={args.workers}",
                      f"-Dlodgen.test.distance={str(args.distance_check).lower()}",
+                     f"-Dlodgen.test.tasks={str(args.task_check).lower()}",
                      f"-Dlodgen.test.skipWarmup={str(args.quick).lower()}",
                      f"-Dlodgen.test.nativeWorkers={args.native_workers}",
                      f"-Dlodgen.test.dhExecutor={str(args.dh_executor).lower()}",
@@ -194,6 +198,39 @@ with (run / "integration-reload.log").open("w") as output:
 if not reload_report.exists() or not reload_report.read_text().startswith("PASS:"):
     print((run / "integration-reload.log").read_text()[-12000:])
     raise SystemExit(reload_report.read_text() if reload_report.exists() else "Reload server stopped without a report")
+if args.task_check:
+    import struct
+    def present(folder, x, z):
+        region = world / folder / f"r.{x // 32}.{z // 32}.mca"
+        if not region.exists():
+            return False
+        with region.open("rb") as file:
+            file.seek(4 * ((x & 31) + (z & 31) * 32))
+            return struct.unpack(">I", file.read(4))[0] != 0
+    saved = 0
+    for x in range(4096 - 24, 4096 + 24):
+        for z in range(-4096 - 24, -4096 + 24):
+            expected = 4095 <= x < 4097 and -4097 <= z < -4095
+            native = present("region", x, z)
+            if native != expected:
+                raise SystemExit(f"Saved-radius mismatch at {x},{z}: native={native}, expected={expected}")
+            if native:
+                saved += 1
+            if not expected and (present("poi", x, z) or present("entities", x, z)):
+                raise SystemExit(f"Outside saved radius has POI/entity data: {x},{z}")
+    for folder in ("region", "poi", "entities"):
+        for x in range(8192 - 24, 8192 + 24):
+            for z in range(-8192 - 24, -8192 + 24):
+                if present(folder, x, z):
+                    raise SystemExit(f"Automatic custom-center LOD area was saved: {folder} {x},{z}")
+    result = {"minecraft": args.mc, "loader": args.loader, "automaticCustomCenter": "PASS", "automaticTargets": 4, "radiusChunks": 5, "savedRadiusChunks": 1,
+              "targetChunks": 100, "nativeChunksSaved": saved, "outsideNativePoiEntityChunks": 0,
+              "startPauseContinueStopStatus": "PASS", "automaticResume": "PASS"}
+    (run / "task-result.json").write_text(json.dumps(result, indent=2) + "\n")
+    print(report.read_text().strip())
+    print(reload_report.read_text().strip())
+    print(f"PASS: saved exactly {saved} native chunks; LOD-only targets/supporting terrain have no native, POI or entity entries.")
+    raise SystemExit(0)
 # Audit again after shutdown: buffered writes or unload saves must not escape the
 # in-server check. Include every dimension's region, POI, and entity directories.
 for region in world.rglob("r.*.*.mca"):

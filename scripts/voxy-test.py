@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Packaged Voxy clients without DH. --world checks <=80 target chunks per target.
+"""Packaged Voxy clients without DH. --world checks <=88 target chunks per target.
 
 Requires an X display. Uses disposable directories; never changes Prism instances.
 """
@@ -84,6 +84,24 @@ def test(mc, loader, world, java_override, reload):
             parts = region.name.split('.')
             if 126 <= int(parts[1]) <= 131 and -131 <= int(parts[2]) <= -126:
                 raise RuntimeError(f'Voxy-only native area saved: {region}')
+        # Only the 2x2 inner saved square at custom center 1024,-1024 may persist.
+        import struct
+        world_root = directory / 'saves' / 'lodgen-voxy-check'
+        if mc != '1.21.1':
+            world_root = world_root / 'dimensions' / 'minecraft' / 'overworld'
+        def present(folder, x, z):
+            region = world_root / folder / f'r.{x // 32}.{z // 32}.mca'
+            if not region.exists(): return False
+            with region.open('rb') as stream:
+                stream.seek(4 * ((x & 31) + (z & 31) * 32))
+                return struct.unpack('>I', stream.read(4))[0] != 0
+        for x in range(1000, 1048):
+            for z in range(-1048, -1000):
+                expected = 1023 <= x < 1025 and -1025 <= z < -1023
+                if present('region', x, z) != expected:
+                    raise RuntimeError(f'Voxy automatic saved-radius mismatch at {x},{z}')
+                if not expected and (present('poi', x, z) or present('entities', x, z)):
+                    raise RuntimeError(f'Voxy supporting chunks were saved at {x},{z}')
         coverage = list((directory / 'saves').rglob('*.tiles'))
         if not coverage:
             raise RuntimeError('Voxy shutdown did not checkpoint completed generation')
@@ -91,7 +109,9 @@ def test(mc, loader, world, java_override, reload):
         raise RuntimeError('Startup check opened a world')
     record = {'minecraft': mc, 'loader': loader, 'mods': TARGETS[mc, loader], 'distantHorizonsInstalled': False,
               'worldTested': world, 'result': result, 'runtimeClassBytesMatch': True,
-              'noFarNativeRegionFiles': world, 'reloadResult': reload_result, 'seconds': round(time.monotonic() - started, 2)}
+              'noFarNativeRegionFiles': world, 'customCenter': world, 'nativeChunksSaved': 4 if world else 0,
+              'crossDimensionCommands': world, 'targetChunkLimit': 88 if world else 0,
+              'reloadResult': reload_result, 'seconds': round(time.monotonic() - started, 2)}
     (base / 'result.json').write_text(json.dumps(record, indent=2) + '\n')
     print(result, flush=True)
     if reload_result:

@@ -37,12 +37,29 @@ public final class VoxyBridge {
     public record Section(int x, int y, int z, LevelChunkSection data, DataLayer block, DataLayer sky, int[] inheritedSky) {}
 
     public Context context(ClientLevel level) throws ReflectiveOperationException {
+        return context(method(identifier, "of", 1).invoke(null, level));
+    }
+
+    /** Construct the same dimension/biome-seed identifier without a client-world visit. */
+    public Context context(ServerLevel level) throws ReflectiveOperationException {
+        Object id = null;
+        for (var constructor : identifier.getConstructors()) {
+            if (constructor.getParameterCount() == 3) {
+                id = constructor.newInstance(level.dimension(), net.minecraft.world.level.biome.BiomeManager.obfuscateSeed(level.getSeed()),
+                        level.dimensionTypeRegistration().unwrapKey().orElseThrow());
+                break;
+            }
+        }
+        if (id == null) throw new IllegalStateException("Missing Voxy world identifier constructor");
+        return context(id);
+    }
+
+    private Context context(Object id) throws ReflectiveOperationException {
         Object cfg = config.getField("CONFIG").get(null);
         if (!config.getField("enabled").getBoolean(cfg) || !config.getField("ingestEnabled").getBoolean(cfg)) return null;
         Object instance = method(common, "getInstance", 0).invoke(null);
         if (instance == null) return null;
-        Object id = method(identifier, "of", 1).invoke(null, level);
-        if (id == null || !(Boolean) method(instance.getClass(), "isIngestEnabled", 1).invoke(instance, id)) return null;
+                if (id == null || !(Boolean) method(instance.getClass(), "isIngestEnabled", 1).invoke(instance, id)) return null;
         Object engine = method(identifier, "getOrCreateEngine", 0).invoke(id);
         if (engine == null) return null;
         method(engine.getClass(), "markActive", 0).invoke(engine);

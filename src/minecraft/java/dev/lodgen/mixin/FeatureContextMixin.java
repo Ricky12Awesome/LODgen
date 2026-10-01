@@ -20,7 +20,7 @@ public abstract class FeatureContextMixin {
     private void lodgen$featureLookups(WorldGenLevel region, ChunkAccess chunk, StructureManager structures,
                                       Operation<Void> original) {
         var policy = PersistenceRegistry.get(region.getLevel());
-        try (var scope = new GenerationScope(policy, PersistenceRegistry.suppress(policy, chunk.getPos()))) {
+        try (var scope = new GenerationScope(policy, policy != null && policy.generated(PersistenceRegistry.x(chunk.getPos()), PersistenceRegistry.z(chunk.getPos())))) {
             original.call(region, chunk, structures);
         }
     }

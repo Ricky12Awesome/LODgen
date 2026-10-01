@@ -1,6 +1,7 @@
 package dev.lodgen.minecraft;
 
 import dev.lodgen.generation.SavePolicy;
+import dev.lodgen.LodgenConfig;
 import dev.lodgen.mixin.ChunkCacheAccess;
 import dev.lodgen.mixin.ChunkMapAccess;
 import net.minecraft.server.level.ChunkLevel;
@@ -41,22 +42,28 @@ public final class NormalChunkBackend {
     }
 
     public CompletableFuture<Batch> request(int minX, int minZ, int width) {
+        return request(minX, minZ, width, width, GenerationCenters.automatic(level, LodgenConfig.INSTANCE.generationDistance()));
+    }
+
+    public CompletableFuture<Batch> request(int minX, int minZ, int width, int height, dev.lodgen.generation.GenerationArea area) {
+        if (width < 1 || height < 1) throw new IllegalArgumentException("Empty native batch");
         return CompletableFuture.supplyAsync(() -> {
             var cache = level.getChunkSource();
             var map = cache.chunkMap;
             // Claim the entire dependency area before any generation or IO starts.
             for (int x = minX - DEPENDENCY_RADIUS; x < minX + width + DEPENDENCY_RADIUS; x++) {
-                for (int z = minZ - DEPENDENCY_RADIUS; z < minZ + width + DEPENDENCY_RADIUS; z++) {
+                for (int z = minZ - DEPENDENCY_RADIUS; z < minZ + height + DEPENDENCY_RADIUS; z++) {
                     long key = (x & 0xffffffffL) | (long) z << 32;
                     policy.claim(x, z, ((ChunkMapAccess) map).lodgen$holder(key) != null);
                 }
             }
-            ArrayList<ChunkPos> positions = new ArrayList<>(width * width);
+            ArrayList<ChunkPos> positions = new ArrayList<>(width * height);
             Batch batch = new Batch(positions);
-            ArrayList<CompletableFuture<ChunkAccess>> futures = new ArrayList<>(width * width);
+            ArrayList<CompletableFuture<ChunkAccess>> futures = new ArrayList<>(width * height);
             try {
                 for (int x = minX; x < minX + width; x++) {
-                    for (int z = minZ; z < minZ + width; z++) {
+                    for (int z = minZ; z < minZ + height; z++) {
+                        if (area != null && area.saves(x, z)) policy.saveGenerated(x, z);
                         var pos = new ChunkPos(x, z);
                         positions.add(pos);
                         long key = PersistenceRegistry.pack(pos);

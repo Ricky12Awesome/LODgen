@@ -15,7 +15,7 @@ public final class SavePolicy {
         Region region = regions.computeIfAbsent(regionKey(x, z), ignored -> new Region());
         int index = index(x, z);
         if (alreadyLoaded && !region.ephemeral.get(index)) region.permanent.set(index);
-        if (!region.permanent.get(index)) region.ephemeral.set(index);
+        if (!region.permanent.get(index)) { region.ephemeral.set(index); region.lodOwned.set(index); }
     }
 
     public synchronized boolean suppress(int x, int z) {
@@ -23,11 +23,25 @@ public final class SavePolicy {
         return region != null && region.ephemeral.get(index(x, z));
     }
 
+    /** Saving a LOD target must not turn its supporting terrain into normal generation. */
+    public synchronized void saveGenerated(int x, int z) {
+        Region region = regions.computeIfAbsent(regionKey(x, z), ignored -> new Region());
+        int index = index(x, z);
+        region.ephemeral.clear(index);
+        region.permanent.set(index);
+    }
+
+    public synchronized boolean generated(int x, int z) {
+        Region region = regions.get(regionKey(x, z));
+        return region != null && region.lodOwned.get(index(x, z));
+    }
+
     public synchronized void promote(int x, int z) {
         // Also record requests preceding a claim, before their holders exist.
         Region region = regions.computeIfAbsent(regionKey(x, z), ignored -> new Region());
         int index = index(x, z);
         region.ephemeral.clear(index);
+        region.lodOwned.clear(index);
         region.permanent.set(index);
     }
 
@@ -41,6 +55,7 @@ public final class SavePolicy {
                 for (int row = firstZ; row <= lastZ; row++) {
                     int from = row * 32 + firstX, to = row * 32 + lastX + 1;
                     region.ephemeral.clear(from, to);
+                    region.lodOwned.clear(from, to);
                     region.permanent.set(from, to);
                 }
             }
@@ -58,6 +73,7 @@ public final class SavePolicy {
     private static long regionKey(int x, int z) { return (x >> 5 & 0xffffffffL) | (long) (z >> 5) << 32; }
     private static int index(int x, int z) { return (x & 31) | (z & 31) << 5; }
     private static final class Region {
+        private final BitSet lodOwned = new BitSet(1024);
         private final BitSet ephemeral = new BitSet(1024);
         private final BitSet permanent = new BitSet(1024);
         private final BitSet requested = new BitSet(1024);

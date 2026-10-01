@@ -34,7 +34,7 @@ public final class BenchmarkCheck {
                 && Boolean.getBoolean("lodgen.test.dhQueue") && originalSettings.enabled();
         if (checkLiveConfig) {
             try {
-                LodgenConfig.apply(new LodgenConfig(true, 1, 0, originalSettings.spatialBatching(), originalSettings.generationDistance(), originalSettings.showChunksPerSecond(), originalSettings.chunksPerSecondUpdateIntervalMs()));
+                LodgenConfig.apply(new LodgenConfig(true, 1, 0, originalSettings.spatialBatching(), originalSettings.generationDistance(), originalSettings.showChunksPerSecond(), originalSettings.chunksPerSecondUpdateIntervalMs(), originalSettings.generationCenter(), originalSettings.centerX(), originalSettings.centerZ(), originalSettings.savedChunkRadius()));
                 LodgenConfig.LOGGER.info("QUICK CHECK: applied live limits of one active batch and zero waiting slots");
             } catch (Exception failure) { return CompletableFuture.failedFuture(failure); }
         }

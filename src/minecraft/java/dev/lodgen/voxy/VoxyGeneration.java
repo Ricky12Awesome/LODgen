@@ -28,29 +28,40 @@ public final class VoxyGeneration {
 
     public static void tick(Minecraft client) {
         if (failed) return;
-        if (!LodgenConfig.INSTANCE.enabled() || client.level == null || client.player == null || client.getSingleplayerServer() == null) {
+        if (client.level == null || client.player == null || client.getSingleplayerServer() == null) {
             pause(); return;
         }
         try {
-            if (bridge == null) bridge = new VoxyBridge();
+            if (bridge == null) {
+                bridge = new VoxyBridge();
+                dev.lodgen.minecraft.RendererSinks.voxy(new dev.lodgen.minecraft.RendererSinks.VoxySink() {
+                    @Override public boolean ready(ServerLevel level) {
+                        try { return session(level) != null; }
+                        catch (ReflectiveOperationException error) { throw new IllegalStateException(error); }
+                    }
+                    @Override public int radius(ServerLevel level) {
+                        try { var target = session(level); return target == null ? 0 : target.context.radius(); }
+                        catch (ReflectiveOperationException error) { return 0; }
+                    }
+                    @Override public CompletableFuture<Void> convert(ServerLevel level, java.util.List<net.minecraft.world.level.chunk.ChunkAccess> chunks) {
+                        try {
+                            var target = session(level);
+                            return target == null ? CompletableFuture.failedFuture(new CancellationException("Voxy is not ready")) : target.convert(chunks);
+                        } catch (ReflectiveOperationException error) { return CompletableFuture.failedFuture(error); }
+                    }
+                });
+            }
             var context = bridge.context(client.level);
             if (context == null) { pause(); return; }
             var level = client.getSingleplayerServer().getLevel(client.level.dimension());
             if (level == null) return;
-            if (current == null || current.context.engine() != context.engine() || current.level != level) {
-                pause();
-                synchronized (SESSIONS) {
-                    current = SESSIONS.get(context.engine());
-                    if (current == null || current.closed) {
-                        Set<Long> previous = current == null ? Set.of() : Set.copyOf(current.completed);
-                        current = new Session(level, context, previous);
-                        SESSIONS.put(context.engine(), current);
-                    }
-                }
-            }
+            if (!LodgenConfig.INSTANCE.enabled() || dev.lodgen.minecraft.GenerationTasks.overridesAutomatic(level)) { pause(); return; }
+            current = session(level);
+            if (current == null) return;
             int radius = LodgenConfig.INSTANCE.generationDistance() > 0 ? LodgenConfig.INSTANCE.generationDistance() : context.radius();
-            var pos = client.player.chunkPosition();
-            current.tick(dev.lodgen.minecraft.PersistenceRegistry.x(pos), dev.lodgen.minecraft.PersistenceRegistry.z(pos), radius);
+            var center = dev.lodgen.minecraft.GenerationCenters.resolve(level, client.player.blockPosition().getX(), client.player.blockPosition().getZ());
+            current.tick(Math.floorDiv(center.getX(), 16), Math.floorDiv(center.getZ(), 16), radius);
+
         } catch (Throwable error) {
             failed = true; pause();
             LodgenConfig.LOGGER.error("Voxy generation stopped because its integration could not initialize", error);
@@ -58,7 +69,23 @@ public final class VoxyGeneration {
     }
 
     private static void pause() {
-        if (current != null) { current.close(); current = null; }
+        current = null;
+    }
+
+    private static Session session(ServerLevel level) throws ReflectiveOperationException {
+        var currentBridge = bridge;
+        if (currentBridge == null) return null;
+        var context = currentBridge.context(level);
+        if (context == null) return null;
+        synchronized (SESSIONS) {
+            var session = SESSIONS.get(context.engine());
+            if (session == null || session.closed) {
+                Set<Long> previous = session == null ? Set.of() : Set.copyOf(session.completed);
+                session = new Session(level, context, previous);
+                SESSIONS.put(context.engine(), session);
+            }
+            return session;
+        }
     }
 
     /** Called before Voxy stops its saving service. Only already-running
@@ -66,9 +93,11 @@ public final class VoxyGeneration {
      */
     public static void beforeShutdown() {
         pause();
+        dev.lodgen.minecraft.RendererSinks.voxy(null);
         Session[] sessions;
         synchronized (SESSIONS) { sessions = SESSIONS.values().toArray(Session[]::new); }
         for (var session : sessions) session.close();
+        bridge = null; failed = false;
     }
 
     public static void engineClosed(Object engine) {
@@ -128,18 +157,8 @@ public final class VoxyGeneration {
 
         void dispatch(Tile tile) {
             if (!active.add(tile.key())) return;
-            pipeline.generate(tile.x(), tile.z(), GenerationFrontier.WIDTH, workers, batch ->
-                    CompletableFuture.supplyAsync(() -> {
-                        if (closed) throw new CancellationException("Voxy session closed");
-                        return VoxyBridge.snapshot(level, batch.chunks);
-                    }, level.getServer()).thenAcceptAsync(sections -> {
-                        conversionLock.readLock().lock();
-                        try {
-                            if (closed) throw new CancellationException("Voxy session closed");
-                            try { bridge.ingest(context.engine(), sections); completed.add(tile.key()); }
-                            catch (ReflectiveOperationException error) { throw new java.util.concurrent.CompletionException(error); }
-                        } finally { conversionLock.readLock().unlock(); }
-                    }, workers)).whenComplete((ignored, error) -> {
+            var area = new dev.lodgen.generation.GenerationArea(centerX * 16, centerZ * 16, radius, LodgenConfig.INSTANCE.savedChunkRadius());
+            pipeline.generate(tile.x(), tile.z(), GenerationFrontier.WIDTH, GenerationFrontier.WIDTH, area, workers, batch -> convert(batch.chunks)).whenComplete((ignored, error) -> {
                         active.remove(tile.key());
                         if (error != null && !closed) {
                             // Retry failures with backoff, never regenerate completed tiles.
@@ -147,6 +166,27 @@ public final class VoxyGeneration {
                             LodgenConfig.LOGGER.warn("Voxy generation failed at {},{}; retrying later", tile.x(), tile.z(), error);
                         }
                     });
+        }
+
+        CompletableFuture<Void> convert(java.util.List<net.minecraft.world.level.chunk.ChunkAccess> chunks) {
+            return CompletableFuture.supplyAsync(() -> {
+                if (closed) throw new CancellationException("Voxy session closed");
+                return VoxyBridge.snapshot(level, chunks);
+            }, level.getServer()).thenAcceptAsync(sections -> {
+                conversionLock.readLock().lock();
+                try {
+                    if (closed) throw new CancellationException("Voxy session closed");
+                    try { bridge.ingest(context.engine(), sections); }
+                    catch (ReflectiveOperationException error) { throw new java.util.concurrent.CompletionException(error); }
+                    var masks = new java.util.HashMap<Long, Integer>();
+                    for (var chunk : chunks) {
+                        int x = dev.lodgen.minecraft.PersistenceRegistry.x(chunk.getPos()), z = dev.lodgen.minecraft.PersistenceRegistry.z(chunk.getPos());
+                        var tile = new Tile(Math.floorDiv(x, 4) * 4, Math.floorDiv(z, 4) * 4);
+                        masks.merge(tile.key(), 1 << ((x & 3) + (z & 3) * 4), (a, b) -> a | b);
+                    }
+                    masks.forEach((key, mask) -> { if (mask == 0xffff) completed.add(key); });
+                } finally { conversionLock.readLock().unlock(); }
+            }, workers);
         }
 
         @Override public void close() {

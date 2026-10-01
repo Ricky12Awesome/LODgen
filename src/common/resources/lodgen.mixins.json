@@ -18,7 +18,9 @@
     "WorkerMixin",
     "RegionStorageMixin",
     "C2meStorageMixin",
-    "LevelCloseMixin"
+    "LevelCloseMixin",
+    "CommandsMixin",
+    "ServerTasksMixin"
   ],
   "client": [
     "OptionsScreenMixin",

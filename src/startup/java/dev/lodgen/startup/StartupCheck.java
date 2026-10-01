@@ -12,6 +12,8 @@ public final class StartupCheck {
     public static void checkTargets() throws Exception {
         Class<?>[] minecraftTargets = {
                 net.minecraft.server.level.ServerLevel.class,
+                net.minecraft.commands.Commands.class,
+                net.minecraft.server.MinecraftServer.class,
                 net.minecraft.server.level.ServerChunkCache.class,
                 net.minecraft.server.level.ChunkMap.class,
                 // #if MC_1211

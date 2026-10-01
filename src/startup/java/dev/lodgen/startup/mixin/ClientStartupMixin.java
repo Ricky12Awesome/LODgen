@@ -91,7 +91,19 @@ public abstract class ClientStartupMixin {
                 return;
             }
             Screen config = ClientScreens.current(minecraft);
-            if (!(config instanceof LodgenConfigScreen) || config.children().size() != 10) throw new AssertionError("Config widgets missing");
+            if (!(config instanceof LodgenConfigScreen) || config.children().size() != (lodgen$stage == 4 ? 9 : 10)) throw new AssertionError("Config widgets missing");
+            if (lodgen$stage == 2) {
+                Button page = config.children().stream().filter(child -> child instanceof Button).map(child -> (Button) child)
+                        .filter(button -> button.getMessage().getString().equals("Pipeline and display…")).findFirst().orElseThrow();
+                // #if MC_1211
+                page.onPress();
+                // #else
+                page.onPress(new KeyEvent(257, 0, 0));
+                // #endif
+                if (config.children().size() != 9) throw new AssertionError("Advanced config page missing");
+                lodgen$stage = 4;
+                return;
+            }
             config.onClose();
             if (ClientScreens.current(minecraft) != lodgen$configParent) throw new AssertionError("Config did not return to its parent");
             StartupCheck.report("PASS: client title, Options button and LODgen config initialized and rendered; "

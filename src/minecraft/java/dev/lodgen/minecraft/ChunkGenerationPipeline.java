@@ -11,11 +11,13 @@ import java.util.function.Function;
 /** Shared admission and ticket lifetime for both renderer integrations. */
 public final class ChunkGenerationPipeline implements AutoCloseable {
     private final NormalChunkBackend backend;
+    private final net.minecraft.server.level.ServerLevel level;
     private final dev.lodgen.generation.ChunkThroughput throughput;
     private final BatchGate gate;
     private final Consumer<LodgenConfig> listener;
 
     public ChunkGenerationPipeline(Object level) {
+        this.level = (net.minecraft.server.level.ServerLevel) level;
         backend = PersistenceRegistry.backend(level);
         throughput = PersistenceRegistry.throughput(level);
         gate = new BatchGate(LodgenConfig.INSTANCE.pipelineBatches(), LodgenConfig.INSTANCE.queuedBatches());
@@ -25,7 +27,12 @@ public final class ChunkGenerationPipeline implements AutoCloseable {
 
     public CompletableFuture<Void> generate(int x, int z, int width, Executor executor,
                                             Function<NormalChunkBackend.Batch, CompletableFuture<Void>> convert) {
-        return gate.submit(executor, () -> backend.request(x, z, width).thenCompose(batch -> {
+        return generate(x, z, width, width, GenerationCenters.automatic(level, LodgenConfig.INSTANCE.generationDistance()), executor, convert);
+    }
+
+    public CompletableFuture<Void> generate(int x, int z, int width, int height, dev.lodgen.generation.GenerationArea area, Executor executor,
+                                            Function<NormalChunkBackend.Batch, CompletableFuture<Void>> convert) {
+        return gate.submit(executor, () -> backend.request(x, z, width, height, area).thenCompose(batch -> {
             CompletableFuture<Void> conversion;
             try { conversion = convert.apply(batch); }
             catch (Throwable error) { conversion = CompletableFuture.failedFuture(error); }

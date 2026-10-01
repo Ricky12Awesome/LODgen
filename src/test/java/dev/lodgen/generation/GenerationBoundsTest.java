@@ -9,13 +9,13 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class GenerationBoundsTest {
     @Test void custom64OverridesDh128AndZeroRestoresItsDistance() {
-        var custom = new LodgenConfig(true, 32, 64, true, 64, false, 1000);
+        var custom = new LodgenConfig(true, 32, 64, true, 64, false, 1000, dev.lodgen.generation.GenerationCenter.CURRENT, 0, 0, 0);
         int radius = custom.generationRadius(128, true);
         assertTrue(GenerationBounds.overlaps(60 * 16, 0, 64, 0, 0, radius));
         assertFalse(GenerationBounds.overlaps(80 * 16, 0, 64, 0, 0, radius));
         assertTrue(GenerationBounds.overlaps(80 * 16, 0, 64, 0, 0, LodgenConfig.DEFAULTS.generationRadius(128, true)));
-        assertEquals(512, new LodgenConfig(true, 32, 64, true, 512, false, 1000).generationRadius(1024, true));
-        assertEquals(256, new LodgenConfig(true, 32, 64, true, 256, false, 1000).generationRadius(128, true));
+        assertEquals(512, new LodgenConfig(true, 32, 64, true, 512, false, 1000, dev.lodgen.generation.GenerationCenter.CURRENT, 0, 0, 0).generationRadius(1024, true));
+        assertEquals(256, new LodgenConfig(true, 32, 64, true, 256, false, 1000, dev.lodgen.generation.GenerationCenter.CURRENT, 0, 0, 0).generationRadius(128, true));
         assertEquals(0, LodgenConfig.DEFAULTS.generationRadius(128, false));
         assertEquals(64, custom.generationRadius(128, false));
     }

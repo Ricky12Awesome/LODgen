@@ -1,6 +1,6 @@
 # LODgen
 
-Fabric and NeoForge addon that generates chunk-based LODs for Distant Horizons `FEATURES` and Voxy through Minecraft's normal asynchronous chunk system, without saving chunk, POI, or entity data for terrain loaded solely for LODs. C2ME and its optional OpenCL addon accelerate that pipeline automatically.
+Fabric and NeoForge addon that generates chunk-based LODs for Distant Horizons `FEATURES` and Voxy through Minecraft's normal asynchronous chunk system. LOD-only terrain does not save native chunk, POI, or entity data; an optional inner radius saves ordinary chunks for pregen. C2ME and its optional OpenCL addon accelerate that pipeline automatically.
 
 The project is in development. **The version stays at `0.0.0` until it is ready to release.** Development builds can make breaking changes without migrations or compatibility guarantees for earlier addon builds. Matching installable development jars for every target are collected in `dist/`.
 
@@ -8,7 +8,7 @@ The project is in development. **The version stays at `0.0.0` until it is ready 
 
 Install the matching LODgen jar and either Distant Horizons or a supported Voxy installation. DH is optional. With DH, choose **FEATURES** in its chunk generator settings and enable a generator plan that includes chunks. C2ME, [the C2ME OpenCL addon](https://modrinth.com/mod/qtPMklut), ScalableLux, and Chunky are optional and are never bundled.
 
-Open **Options → LODgen…** in game. On Fabric with Mod Menu installed, **Mods → LODgen → Configure** opens the same screen. On NeoForge, **Mods → LODgen → Config** opens it too. Adjust enabled generation, active batches, waiting batches, generation distance, and grouping of nearby requests, then click **Apply**. **Cancel** discards edits; **Defaults** restores the draft defaults. Changes apply immediately to local generation, including the integrated server. Running native work drains safely when the limit decreases or the addon is disabled.
+Open **Options → LODgen…** in game. On Fabric with Mod Menu installed, **Mods → LODgen → Configure** opens the same screen. On NeoForge, **Mods → LODgen → Config** opens it too. The first page controls generation distance, center and saved radius; **Pipeline and display…** opens concurrency and action-bar settings. Both pages share unsaved edits. **Apply** saves them, **Cancel** discards them, and **Defaults** resets both pages. Changes apply immediately to automatic local generation, including the integrated server. Running native work drains safely when the limit decreases or the addon is disabled.
 
 Settings are stored in `config/lodgen.toml`:
 
@@ -18,15 +18,55 @@ pipelineBatches = 32
 queuedBatches = 64
 spatialBatching = true
 generationDistance = 0
+generationCenter = "current"
+centerX = 0
+centerZ = 0
+savedChunkRadius = 0
 showChunksPerSecond = false
 chunksPerSecondUpdateIntervalMs = 1000
 ```
 
 `pipelineBatches` accepts 1–64 active batches per dimension; 32 default-size DH requests provide 512 target chunks plus their native dependencies. `queuedBatches` accepts 0–1024 waiting requests, which do not occupy waiting workers. Larger windows use more memory. `spatialBatching` groups nearby requests within DH's distance/detail priority bands. DH's thread count and C2ME's worker count also affect parallelism.
 
-`generationDistance` is a radius in chunks. **0 follows the active renderer's distance**; a positive value overrides the chunk-based FEATURES generation radius. For example, `generationDistance = 512` with DH set to 1024 limits new chunk-based LOD generation to 512 while retaining DH's 1024 render distance. Changing it in game drops waiting requests beyond the new limit; active batches finish. Whole sections overlapping the boundary are retained, and native supporting chunks may extend beyond it. DH still controls which LODs are requested. Dedicated servers use the explicit override too; 0 preserves their existing request ranges. This only affects LODgen's FEATURES queue; normal player and Chunky generation keep their ranges.
+`generationDistance` is a radius in chunks. **0 follows the active renderer's distance**; a positive value overrides the chunk-based FEATURES generation radius. For example, `generationDistance = 512` with DH set to 1024 limits new chunk-based LOD generation to 512 while retaining DH's 1024 render distance. Changing it in game drops waiting requests beyond the new limit; active batches finish. Whole sections overlapping the boundary are retained, and native supporting chunks may extend beyond it. With the default current-position center, DH still controls which LODs are requested. Dedicated-server current-position mode uses the explicit override too; 0 preserves client request ranges. Normal player and Chunky generation keep their ranges.
 
-Enable **Show chunks per second** (`showChunksPerSecond = true`) to display LODgen throughput above the hotbar using Minecraft’s native action bar, just like DH. It counts successfully completed target LOD chunks over the last five seconds, excluding supporting chunks and normal player/Chunky work. It works with Voxy and with DH when DH’s generation progress location is not **Overlay**. DH’s overlay takes priority regardless of this toggle; Chat, Log and Disabled allow LODgen’s display. **Overlay update interval (ms)** (`chunksPerSecondUpdateIntervalMs`) controls refresh frequency from 1 to 60000 milliseconds, default 1000 (one second). It applies live and leaves the five-second averaging window unchanged. At zero chunks per second the message clears. It also clears when disabled, provided another message has not replaced it. Vanilla controls positioning and fading; long refresh intervals let the text fade between updates. The display respects the hidden HUD and only appears in worlds generated by the local integrated server.
+`generationCenter` accepts `"current"`, `"origin"` or `"custom"`. Current follows the player; origin uses **world spawn**, rather than coordinate 0,0; custom uses `centerX` and `centerZ`, in **blocks**. Fixed-center DH FEATURES generation runs independently of the player's viewport, and Voxy uses the selected center for its own frontier.
+
+`savedChunkRadius` is a radius in **chunks**, default **0**. Targets inside it save as ordinary terrain; targets outside it remain LOD-only. If the saved radius exceeds the LOD radius, generation extends to the saved radius and only converts LODs inside the LOD radius. The saved area is also generated when its LODs already exist. Previously saved chunks stay saved after lowering this setting. Ordinary player and Chunky requests can still adopt terrain outside the saved radius.
+
+## Command tasks
+
+Commands require operator permission level 2 and work on the integrated or dedicated server:
+
+```text
+/lodgen start <dim> <x> <z> <radius> [saved-radius]
+/lodgen start <dim> <origin|current> <radius> [saved-radius]
+/lodgen stop
+/lodgen pause
+/lodgen continue
+/lodgen status
+```
+
+Dimensions include `overworld`, `the_nether`, `the_end` and custom namespaced dimensions. X/Z are horizontal **block coordinates**. `origin` resolves the selected dimension's world spawn; `current` uses the player and requires that player to be in the selected dimension. A command center remains fixed after starting, even if the player moves. Voxy can generate another dimension without visiting it.
+
+Radii are block counts by default, or chunk counts with a `c` suffix. Block radii round up to whole chunks: `4096` = `256c`, `8190` = `512c`, and `2040` = `128c`. The radius must be positive; omitted `saved-radius` defaults to **0**, independently of the automatic config. Shapes are always square. A radius of 64c covers a 128×128 chunk square; native supporting terrain can extend outside it.
+
+For a smaller example:
+
+```text
+/lodgen start overworld current 64c 16c
+/lodgen status
+/lodgen pause
+/lodgen continue
+```
+
+Status reports dimension, center X/Z, LOD and saved radii, completed/total chunks, percentage, active batches, throughput and any error. Pause stops new dispatch while active work finishes. Continue resumes a paused task; stop ends it and permits another start. One command task runs per server. An active or paused command takes priority over automatic generation in its dimension. Explicit commands run even when automatic generation's **Enabled** setting is off.
+
+Task state and completion checkpoints are stored in `<world>/lodgen/task.toml`. A running task automatically continues on world load/server start; paused tasks stay paused and stopped/completed tasks stay finished. Orderly shutdown checkpoints outstanding work; after an abrupt crash, some uncheckpointed batches may run again. Fixed-center automatic generation and automatic saved areas have separate dimension checkpoints in the same folder.
+
+LOD-only command work requires DH or a supported local Voxy installation. Voxy generation remains restricted to single-player/LAN hosts. Without either renderer, a saved radius at least as large as the LOD radius allows ordinary chunk pregen. All paths preserve normal player/Chunky ownership and saving.
+
+Enable **Show chunks per second** (`showChunksPerSecond = true`) to display LODgen throughput above the hotbar using Minecraft’s native action bar, just like DH. It counts successfully completed LODgen target chunks over the last five seconds, including its saved pregen targets and excluding supporting chunks and normal player/Chunky work. It works with Voxy and with DH when DH’s generation progress location is not **Overlay**. DH’s overlay takes priority regardless of this toggle; Chat, Log and Disabled allow LODgen’s display. **Overlay update interval (ms)** (`chunksPerSecondUpdateIntervalMs`) controls refresh frequency from 1 to 60000 milliseconds, default 1000 (one second). It applies live and leaves the five-second averaging window unchanged. At zero chunks per second the message clears. It also clears when disabled, provided another message has not replaced it. Vanilla controls positioning and fading; long refresh intervals let the text fade between updates. The display respects the hidden HUD and only appears in worlds generated by the local integrated server.
 
 LODgen reads only `config/lodgen.toml` and creates it with defaults if missing. Manual file edits are read at startup. In multiplayer, this screen changes the local installation's settings; a dedicated server uses its own TOML file.
 
@@ -46,7 +86,7 @@ Install Voxy's required Sodium/Fabric API dependencies, and Roxy's dependencies 
 
 Completed tiles are tracked per Voxy world/dimension and checkpointed under Voxy's storage path in `lodgen/<world-id>.tiles` after the engine closes. Reopening a world restores that coverage; deleting the entire Voxy cache resets it. A crash before a checkpoint can cause some tiles to regenerate. Voxy still saves its own LOD database. LODgen never changes Voxy's render distance or forces distant chunks into a remote server: multiplayer clients can only ingest terrain sent by that server.
 
-To run the small disposable Voxy-only client checks (no DH, at most 80 target chunks per target):
+To run the small disposable Voxy-only client checks (no DH, at most 88 target chunks per target):
 
 ```sh
 xvfb-run -a python3 scripts/voxy-test.py --world --reload
@@ -102,7 +142,13 @@ xvfb-run -a python3 scripts/startup-test.py
 
 The Linux startup runner uses JDK 21 for 1.21.1 and JDK 25 for 26.x. It accepts `--mc`, `--loader`, `--java`, and `--skip-build` to check a single target or reuse its startup fixture. Xvfb and Mesa allow CI to render menus without a physical display. Official client assets and loader installations are cached under `build/`; first runs download them. Reports/logs stay under `build/<minecraft>/<loader>/startup/`. Production class files must match the packaged fixture byte-for-byte, and test probes must be absent from the regular jar. These startup checks are available locally; the GitHub workflow keeps its existing build and packaged-server integration steps.
 
-The focused suite covers TOML parsing, live admission limits, the 512-to-128 boundary, negative/world-border coordinates, shared ownership, cancellation, and feature scopes. The distance regression uses DH 128/custom 64 with just two 4×4 sections (32 target chunks), including a live reset to 0:
+The focused suite covers TOML parsing, live admission limits, the 512-to-128 boundary, negative/world-border coordinates, shared ownership, cancellation, feature scopes, radius rounding and restart progress. The command check uses only a 5c task (100 targets), a 1c saved radius (four native saves), and four extra fixed-center DH targets:
+
+```sh
+python3 scripts/integration-test.py --mc 1.21.1 --loader neoforge --quick --task-check
+```
+
+The distance regression uses DH 128/custom 64 with just two 4×4 sections (32 target chunks), including a live reset to 0:
 
 ```sh
 python3 scripts/integration-test.py --mc 1.21.1 --loader neoforge --quick --distance-check

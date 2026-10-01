@@ -10,6 +10,7 @@ public final class ChunkThroughput {
     private final long[] epochs = new long[BUCKETS];
     private final long[] counts = new long[BUCKETS];
     private final LongSupplier clock;
+    private long totalCompleted;
 
     public ChunkThroughput() { this(System::nanoTime); }
     public ChunkThroughput(LongSupplier clock) {
@@ -19,6 +20,7 @@ public final class ChunkThroughput {
 
     public synchronized void completed(int chunks) {
         if (chunks <= 0) return;
+        totalCompleted += chunks;
         long epoch = Math.floorDiv(clock.getAsLong(), BUCKET_NANOS);
         int index = Math.floorMod(epoch, BUCKETS);
         if (epochs[index] != epoch) {
@@ -27,6 +29,8 @@ public final class ChunkThroughput {
         }
         counts[index] += chunks;
     }
+
+    public synchronized long totalCompleted() { return totalCompleted; }
 
     public synchronized double chunksPerSecond() {
         long now = Math.floorDiv(clock.getAsLong(), BUCKET_NANOS);
