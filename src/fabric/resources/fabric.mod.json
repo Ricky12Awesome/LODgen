@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "id": "dhc2me",
+  "id": "lodgen",
   "version": "${version}",
-  "name": "DH C2ME Features",
+  "name": "LODgen",
   "description": "Uses normal asynchronous chunk generation for Distant Horizons FEATURES without saving DH-only chunks.",
   "license": "MIT",
   "environment": "*",
-  "entrypoints": {},
+  "entrypoints": { "main": ["dev.lodgen.fabric.LodgenEntrypoint"] },
   "mixins": [
-    "dhc2me.mixins.json"
+    "lodgen.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=${fabricLoader}",

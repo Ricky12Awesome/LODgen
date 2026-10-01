@@ -1,12 +1,49 @@
-# DH C2ME Features
+# LODgen
 
-Fabric and NeoForge addon that sends Distant Horizons `FEATURES` requests through Minecraft's normal asynchronous chunk system, while preventing chunk, POI, and entity saves for terrain loaded solely for DH. C2ME and its OpenCL addon accelerate that system automatically.
+Fabric and NeoForge addon that sends Distant Horizons `FEATURES` requests through Minecraft's normal asynchronous chunk system, without saving chunk, POI, or entity data for terrain loaded solely for DH. C2ME and its optional OpenCL addon accelerate that pipeline automatically.
 
-## Install
+The project is in development. **The version stays at `0.0.0` until it is ready to release.** Development builds can make breaking changes without migrations or compatibility guarantees for earlier addon builds. The current installable development build is `dist/lodgen-1.21.1-neoforge-0.0.0.jar`.
 
-Install Distant Horizons and the matching jar from `dist/`: **0.2.1 for Minecraft 1.21.1 NeoForge**, or the existing 0.2.0 release for the other targets. Install C2ME for faster generation. The [C2ME OpenCL addon](https://modrinth.com/mod/qtPMklut) and ScalableLux are optional; install their matching releases separately. None of these mods are bundled.
+## Use
 
-Choose **FEATURES** in DH's chunk generator settings and enable a generator plan that includes chunks. The addon runs on the integrated single-player server or on a dedicated server with DH installed.
+Install Distant Horizons and the matching LODgen jar. Choose **FEATURES** in DH's chunk generator settings and enable a generator plan that includes chunks. C2ME, [the C2ME OpenCL addon](https://modrinth.com/mod/qtPMklut), ScalableLux, and Chunky are optional and are never bundled.
+
+Open **Options → LODgen…** in game. On NeoForge, **Mods → LODgen → Config** opens the same screen. Adjust enabled generation, active batches, waiting batches, and grouping of nearby requests, then click **Apply**. **Cancel** discards edits; **Defaults** restores the draft defaults. Changes apply immediately to local generation, including the integrated server. Running native work drains safely when the limit decreases or the addon is disabled.
+
+Settings are stored in `config/lodgen.toml`:
+
+```toml
+enabled = true
+pipelineBatches = 32
+queuedBatches = 64
+spatialBatching = true
+```
+
+`pipelineBatches` accepts 1–64 active batches per dimension; 32 default-size DH requests provide 512 target chunks plus their native dependencies. `queuedBatches` accepts 0–1024 waiting requests, which do not occupy waiting workers. Larger windows use more memory. `spatialBatching` groups nearby requests within DH's distance/detail priority bands. DH's thread count and C2ME's worker count also affect parallelism.
+
+LODgen reads only `config/lodgen.toml` and creates it with defaults if missing. Manual file edits are read at startup. In multiplayer, this screen changes the local installation's settings; a dedicated server uses its own TOML file.
+
+## Render-distance changes
+
+The integrated server checks waiting FEATURES requests against the current DH render distance before dispatch. Lowering the radius from 512 to 128 drops stale requests outside the smaller render area, even when they were queued for the old distance. Already running generation finishes and releases its tickets; it does not keep dispatching the old frontier. Edge sections overlapping the visible area are retained. Moving or expanding the distance can request terrain again normally.
+
+Dedicated-server and Chunky generation retain their own ranges. Custom API generators and other DH generator modes retain their existing behavior.
+
+## Generation and persistence
+
+LODgen submits reference-counted loading tickets and native `FULL` chunk requests through the same chunk holders used by normal Minecraft generation and Chunky. C2ME owns scheduling, dependency sharing, and OpenCL batching. FEATURES controls persistence: DH-only chunks stay transient while DH still writes its LOD database.
+
+Native block and sky lighting are copied for DH conversion. Transient chunk events bypass DH's ordinary update queue because the explicit FEATURES request already converts them. Nearby requests share supporting terrain and native holders.
+
+Chunks already loaded normally remain saveable. Player requests, Chunky, forced tickets, and other normal requests permanently adopt their dependency footprint, including cache hits. Dirty flags are preserved so later player edits save normally. Synchronous feature/structure lookups inherit transient ownership; village cat structure lookups cannot accidentally adopt DH-only terrain.
+
+Write guards cover vanilla and C2ME chunk serialization, POI/entity storage, unload, and shutdown. Read guards avoid creating empty region files. Ownership masks remain until the level closes to protect against delayed writes. Native work holds tickets until pooled LOD conversion is finished.
+
+DH's public generator override API has no public delegation to its builtin generator, so mixins select only the builtin block-detail FEATURES path. DH is pinned because LOD conversion uses its internal builder.
+
+## Targets and building
+
+Sources and build setup support both loaders with shared code:
 
 | Minecraft | Minimum Java | Loaders | Required DH |
 | --- | --- | --- | --- |
@@ -15,94 +52,29 @@ Choose **FEATURES** in DH's chunk generator settings and enable a generator plan
 | 26.2 | 25 | Fabric, NeoForge | 3.3.3 |
 | 26.3 | 25 | Fabric, NeoForge | 3.3.4 |
 
-**OpenCL requires Java 25, including on Minecraft 1.21.1.** The linked addon currently publishes 26.3 snapshot builds, but no 26.3 release build. Our 26.3 tests use C2ME and Chunky without OpenCL. Exact tested dependency versions are in `versions.json` and `test-versions.json`. DH is pinned because the bridge uses its internal LOD builder.
+**This update is built and validated only for 1.21.1 NeoForge**, as requested. Other targets remain unverified for this change. OpenCL requires Java 25, including on Minecraft 1.21.1. Exact dependencies are recorded in `versions.json` and `test-versions.json`.
 
-## Changes in 0.2.1
-
-The default generation window increases from eight to 32 batches (128 to 512 target chunks). DH's FEATURES queue now groups nearby requests within distance priority bands. This reduces repeated generation of supporting terrain as DH works around a widening frontier without saved chunks to reload. DH's normal distance/detail priority still decides which band runs first; custom API generators retain their existing order.
-
-Transient native chunks bypass DH's ordinary chunk-update queue, since the FEATURES request already converts them. This avoids a second DH lighting bake, LOD conversion and database update. Player/pregen adoption immediately restores normal updates.
-
-Synchronous structure/feature lookups inherit transient ownership. Village cats were using the server's structure lookup during generation, accidentally promoting DH-only chunks to normal save ownership. The new scope restores worker context even when a feature throws; normal generation on other workers and explicit forced tickets remain saveable.
-
-Only **1.21.1 NeoForge** was built and tested for this update. Tests use William Wythers' Overhauled Overworld, Continents, DH's real request queue/executor, the pack's Medium graphics settings and actual LOD database updates. See [VALIDATION.md](VALIDATION.md).
-
-## Normal generation pipeline (introduced in 0.2.0)
-
-The independent protochunk graph and C2ME scheduler calls have been removed. They bypassed C2ME's chunk system and OpenCL batching, duplicated supporting terrain, and admitted only one DH batch at a time.
-
-The new implementation issues reference-counted loading tickets and schedules `FULL` chunks through vanilla chunk holders, using the same path as Chunky. It submits every chunk in a batch together. C2ME owns scheduling, dependency sharing, generation, and OpenCL batching. Requesting `FULL` also provides native lighting and compatibility with mods that need complete chunks; the DH setting still controls LOD-only persistence.
-
-```mermaid
-flowchart LR
-    DH[DH FEATURES request] --> Tickets[Normal chunk tickets and holders]
-    Tickets --> Generation[Vanilla / C2ME / OpenCL pipeline]
-    Generation --> Lighting[Native lighting snapshot]
-    Lighting --> Conversion[DH pooled LOD conversion]
-    Conversion --> Database[DH LOD database]
-    Generation --> Ownership[Save ownership guard]
-    Ownership -->|DH only| Discard[Release tickets without chunk saves]
-    Ownership -->|Normal request| Save[Normal Minecraft saves]
-```
-
-Native block and sky lighting are copied for LOD conversion. There is no second DH block-light bake. Conversion runs on DH's supplied executor, and tickets remain held until conversion finishes. Adjacent and overlapping requests share real chunk holders, with one ticket reference per active request.
-
-## Save ownership and normal generation
-
-Before issuing DH tickets, the addon marks the complete dependency footprint, including padding for OpenCL batches. Already loaded normal chunks remain saveable. Chunks loaded solely for DH stay transient, including chunks read from existing region files; their saved data and player edits are used for the LOD without writing the region back.
-
-A player request, Chunky ticket, forced ticket, or other normal chunk request permanently promotes its area to normal save ownership. This includes cache hits and generation dependencies. The dirty flag stays intact while saves are suppressed, so adoption can save the same chunk object and subsequent player edits. The addon releases only its own tickets.
-
-Write guards cover vanilla IO and C2ME's raw serialization path, including POI/entity storage and unload/shutdown saves. Read guards avoid creating empty region files to discover missing data, including whole-region blending scans. Compact ownership masks remain until the level closes so delayed writes stay protected. **DH continues writing its LOD database.**
-
-The hook applies to block-detail `FEATURES` requests in DH's default generator. Other modes, rough generation, disabled chunk-generation plans, and independent API generator overrides retain their existing paths. DH's public override API takes ownership of all modes and provides no public delegation to its builtin generator, so a small DH mixin is necessary.
-
-## Performance and settings
-
-On a Ryzen 9 9950X / RTX 5070 Ti, the 1.21.1 NeoForge WWOO + Continents test generated 16,384 DH chunks on a 256-chunk frontier at **395 chunks/s**, including LOD conversion and database updates. Chunky generated 16,641 chunks at **486 chunks/s** in a separate fresh area of the same seeded world. The eight-batch, distance-only control reached **253 chunks/s**. A longer 65,536-chunk test at a 512-chunk frontier reached **564 DH chunks/s**, versus **568 Chunky chunks/s**. See [VALIDATION.md](VALIDATION.md) for exact settings and limitations.
-
-`config/dhc2me.properties`:
-
-```properties
-enabled=true
-pipelineBatches=32
-queuedBatches=64
-spatialBatching=true
-```
-
-Restart after changing settings. `pipelineBatches` bounds active generation/conversion batches; 32 default-size DH requests provide 512 target chunks in flight, plus native dependencies. Valid values are 1–64. `queuedBatches` bounds waiting requests, which consume no waiting worker. `spatialBatching=false` restores DH's original distance-only selection. The larger window uses more memory; reduce it if your heap is too small for the worldgen workload.
-
-The old `concurrentBatches` setting is obsolete and ignored. Existing configurations without `pipelineBatches` use the new default of 32. An explicit `pipelineBatches=8` remains eight; change it to 32 to use the larger window. `enabled=false` restores DH's original generation.
-
-DH's thread count also limits how many generation requests it submits; a low DH CPU preset can still limit throughput. C2ME's worker configuration controls native generation parallelism. The pack test uses DH's actual 32-thread executor and the copied C2ME settings. Increasing `pipelineBatches` alone cannot override DH's request limit or C2ME's worker count.
-
-## Build and validation
-
-Use JDK 25 for Gradle and install JDK 21 for the 1.21.1 compilation toolchain.
+Use JDK 25 for Gradle with the JDK 21 compilation toolchain installed:
 
 ```sh
 ./gradlew -PmcVersion=1.21.1 -Ploader=neoforge build
 ```
 
-Release jars are in `dist/` and `build/<minecraft>/<loader>/libs/`. Install the release jar, not the `-dev.jar`. The shared source tree and `scripts/build-all.py` retain the multi-version build setup, but the new release's validation covers 1.21.1 NeoForge only. Run target builds sequentially in one checkout because Unimined shares remapping files and Gradle task history.
+Install the regular jar from `build/1.21.1/neoforge/libs/`, not the `-dev.jar` or self-test jar. Run target builds sequentially because Unimined shares remapping files and task history. `scripts/build-all.py` retains the full matrix workflow; the development version remains `0.0.0`.
 
-Packaged-server checks download the exact mods, launch production jars, audit all region/POI/entity files after shutdown, then restart the server to verify persisted edits and read-only loading of saved chunks:
+## Quick checks
+
+The focused suite covers TOML parsing, live admission limits, the 512-to-128 boundary, negative/world-border coordinates, shared ownership, cancellation, and feature scopes. A small packaged-server check covers the actual DH queue, LOD storage, concurrent Chunky, lighting, no-save behavior, and restart persistence:
 
 ```sh
-python3 scripts/integration-test.py --mc 1.21.1 --loader neoforge --opencl --chunky \
-  --benchmark 128 --dh-executor --dh-queue --store-lods --frontier-radius 256 \
+python3 scripts/integration-test.py --mc 1.21.1 --loader neoforge --quick \
+  --opencl --chunky --benchmark 8 --dh-queue --dh-executor --store-lods \
   --native-workers 15 --chunky-working-count 768 \
-  --worldgen-instance '/path/to/Prism/instance/minecraft' --java /path/to/jdk25/bin/java
+  --worldgen-instance '/path/to/Prism/instance/minecraft'
 ```
 
-`--worldgen-instance` copies only the selected worldgen jars and settings to a disposable server. `--dh-queue` exercises DH's actual selection/admission; `--store-lods` includes its database updates. `--frontier-radius` simulates a later generation frontier without spending the test generating the interior first. `--pipeline-batches 8 --no-spatial-batching` runs the old scheduling settings. `--jfr` records the first server run; `--trace-ownership` logs transient adoption callers. OpenCL and Chunky remain test options, never dependencies. `--vanilla` tests without C2ME; `--skip-build` reuses the self-test jar.
+`--quick` skips benchmark warmup, caps each server run, and uses the existing versioned server installation. `--skip-build` reuses the self-test jar. The tiny workload is a correctness check, not a performance benchmark. For an enabled addon with `--dh-queue`, quick checks temporarily apply one active batch and zero waiting slots, then restore the original settings to verify live backpressure. Only the selected WWOO/Continents worldgen jars and configuration are copied. The runner accepts the EULA for a disposable server and recreates only its world under `build/`.
 
-The runner accepts the Minecraft EULA for its disposable test server and recreates only its own world under `build/<minecraft>/<loader>/selftest/packaged-server/`. Integration entrypoints are excluded from release jars. Logs and reports remain beside the test world.
-
-## Scope
-
-The 0.2.1 dedicated-server tests cover 1.21.1 NeoForge with the selected WWOO + Continents worldgen setup, actual concurrent Chunky tasks, lighting snapshots, overlapping DH requests, normal adoption, existing saved terrain, and shutdown/restart persistence. The remaining pack mods and client rendering are outside this fixture. The old eight-target 0.2.0 checks remain historical evidence. Nether/End generation and upgraded-world blending are not covered.
-
-Sources are shared between both loaders and all Minecraft versions. `src/common` contains DH conversion, admission, and save ownership; `src/minecraft` contains normal chunk requests and persistence hooks with a few version conditionals. The NeoForge entrypoint and loader metadata are separate. `src/integration` is included only in self-test builds.
+See [VALIDATION.md](VALIDATION.md) for current checks. Earlier performance measurements belong to the predecessor and are preserved in [docs/VALIDATION-0.2.1.md](docs/VALIDATION-0.2.1.md); they are not a new benchmark of this development build.
 
 Upstream: [Distant Horizons](https://gitlab.com/distant-horizons-team/distant-horizons), [C2ME](https://github.com/RelativityMC/C2ME-fabric), [Chunky](https://github.com/pop4959/Chunky).

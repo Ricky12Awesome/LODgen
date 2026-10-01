@@ -13,9 +13,9 @@ if (!matrix.containsKey(mc) || !(platform in ['fabric', 'neoforge'])) {
 }
 def target = matrix[mc]
 def integration = providers.gradleProperty('selfTest').map { it.toBoolean() }.getOrElse(false)
-group = 'dev.dhc2me'
+group = 'dev.lodgen'
 version = providers.gradleProperty('modVersion').get()
-base.archivesName = "dhc2me-${mc}-${platform}"
+base.archivesName = "lodgen-${mc}-${platform}"
 layout.buildDirectory = file("build/${mc}/${platform}" + (integration ? '/selftest' : ''))
 
 sourceSets.main.java.srcDirs('src/common/java', "src/${platform}/java", layout.buildDirectory.dir('generated/sources/minecraft'))
@@ -51,7 +51,9 @@ dependencies {
     compileOnly "maven.modrinth:distanthorizons:${target.dh}"
     testImplementation dependencies.platform('org.junit:junit-bom:5.11.4')
     testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation "maven.modrinth:distanthorizons:${target.dh}"
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.9'
     if (integration) {
         modRuntimeOnly "maven.modrinth:distanthorizons:${target.dh}"
         modRuntimeOnly "maven.modrinth:c2me-${platform}:${target[platform == 'fabric' ? 'c2meFabric' : 'c2meNeoForge']}"
@@ -106,7 +108,11 @@ tasks.withType(JavaCompile).configureEach {
     outputs.cacheIf { false }
     doFirst { delete(destinationDirectory) }
 }
-tasks.named('test') { useJUnitPlatform() }
+tasks.named('test') {
+    useJUnitPlatform()
+    workingDir(layout.buildDirectory.dir('unit-test-run'))
+    doFirst { workingDir.mkdirs() }
+}
 tasks.named('processResources') {
     def values = [version: version, minecraft: mc, java: target.java, dhVersion: target.dhVersion, fabricLoader: target.fabricLoader]
     inputs.properties(values)
@@ -116,7 +122,7 @@ tasks.named('processResources') {
         doLast {
             def metadata = new File(destinationDir, 'fabric.mod.json')
             def json = new JsonSlurper().parse(metadata)
-            json.entrypoints = [main: ['dev.dhc2me.integration.fabric.IntegrationEntrypoint']]
+            json.entrypoints.main.add('dev.lodgen.integration.fabric.IntegrationEntrypoint')
             metadata.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json))
         }
     }

@@ -1,62 +1,48 @@
-# Validation — 0.2.1, 2026-09-30
+# LODgen development validation — 0.0.0
 
-This update is built and tested **only for Minecraft 1.21.1 NeoForge**, as requested. Both release and self-test builds pass 15 unit tests. The release jar's 30 class files match the packaged runtime test jar byte-for-byte; integration entrypoints and dependencies are excluded.
+This change is built and checked only on **Minecraft 1.21.1 / NeoForge 21.1.252**. The project, mod ID, packages, mixin config, UI name, and artifact names use LODgen/lodgen. The development version remains **0.0.0**.
 
-## Pack setup
+## Focused checks
 
-Disposable dedicated servers use selected worldgen jars and settings copied from the Create Aeronautics Modpack instance:
+Both the development and self-test builds pass **26 unit tests**, with zero failures or skipped tests. Recent builds take about three to five seconds each on this machine.
 
-- NeoForge **21.1.252**, matching the instance; DH **3.3.3**.
-- C2ME and its optional OpenCL addon **0.4.0-alpha.0.122**, ScalableLux **0.3.0-alpha.0.8**, Chunky **1.4.23**.
-- William Wythers' Overhauled Overworld **2.6.7**, Continents **1.1.14**, Cristel Lib **3.1.7**, Lithostitched **1.8.0** with its embedded Apollib.
-- Copied DH settings: horizontal and vertical quality **MEDIUM**, LOD radius **512**, **32** DH threads, runtime ratio **1.0**, `CHUNKS_ONLY` plan with `FEATURES` mode.
-- **15 actual C2ME workers**, asserted at runtime, and `-Dchunky.maxWorkingCount=768`, matching the supplied Spark profile. These overrides reproduce the client values on a dedicated server.
+The new regression checks exercise:
 
-Hardware: Ryzen 9 9950X / RTX 5070 Ti, NVIDIA driver 615.71.09. Runtime: Java 25.0.4.1, `-Xmx8G`, default G1 collector. Seed: `123456789`. The original instance's world, mods and settings are not modified. No OpenCL, Chunky, or worldgen dependency is bundled with the addon.
+- TOML defaults, real TOML syntax, strict value types/bounds, atomic replacement, and preservation of unrelated tables. Configuration uses only `lodgen.toml`; earlier addon builds have no migration or compatibility layer.
+- A 512-to-128 render-distance change, partial edge sections, square corners, negative coordinates, moving/expanding the view, and world-border coordinates.
+- Removal and cancellation of an obsolete waiting future, allowing a fresh request after expansion, and protection of already-dispatched data and replacement tasks at the same position.
+- Increasing/decreasing live batch limits and notifying DH only after a batch permit is available, including zero waiting slots.
 
-## Measurements
+Existing ownership, adoption, shutdown, cancellation, locality, and feature-scope tests also pass. Unit-test configuration files are isolated under `build/`.
 
-| Test | DH chunks | DH elapsed | DH chunks/s | Chunky chunks | Chunky elapsed | Chunky chunks/s |
-| --- | --- | --- | --- | --- | --- | --- |
-| Eight-batch, distance-only control; frontier radius 256 | 16,384 | 64.745 s | **253.1** | 16,641 | 33.928 s | 490.5 |
-| New defaults; frontier radius 256 | 16,384 | 41.481 s | **395.0** | 16,641 | 34.238 s | 486.0 |
-| New defaults; sustained frontier radius 512 | 65,536 | 116.273 s | **563.6** | 66,049 | 116.203 s | **568.4** |
+The dispatch guard uses DH's current target position and render radius on each queue selection. It applies to the builtin FEATURES path on the integrated server. It cancels only waiting futures after removing their exact queue entry; active native work drains with its existing ticket/pooled-data ownership. Dedicated-server requests and ordinary Chunky/player chunk generation retain their own ranges.
 
-The controlled scheduling comparison improves DH throughput by **56%**. Both cases use the same new save fix and duplicate-update guard; only the batch window and spatial ordering differ. Preliminary runs on NeoForge 21.1.228 were used for diagnosis and are excluded from this table.
+## Small packaged-server check
 
-Each process first generates a separate 256-chunk warmup area. The measured workload uses DH's **actual WorldGenerationQueue** and its actual executor, including request selection, its 33-request admission limit, normal native FULL generation, lighting snapshots, LOD conversion, asynchronous LOD database updates, and ticket cleanup. Queue requests start around a distant frontier to reproduce later-session locality without pregenerating its interior. The benchmark size determines target count; a frontier workload is a thin square ring, not a filled square.
+The quick fixture uses selected WWOO/Continents jars and Medium DH settings copied from the supplied Create Aeronautics instance: DH 3.3.3, C2ME/OpenCL 0.4.0-alpha.0.122, ScalableLux 0.3.0-alpha.0.8, Chunky 1.4.23, WWOO 2.6.7, Continents 1.1.14, Cristel Lib 3.1.7, and Lithostitched 1.8.0. Java 25, 15 C2ME workers, and Chunky's 768-request limit match the earlier setup.
 
-Chunky runs afterward in a separate fresh area of the same seeded world. Its square selection includes an extra boundary row/column. Timing waits for its final asynchronous requests to drain, beyond its initial completion event. Terrain complexity and the extra DH conversion/database work differ; equal rates in the sustained fixture do not guarantee equal rates in every modpack.
+The fixture generates just four tiles (64 chunks) through **DH's actual WorldGenerationQueue**, actual executor, and LOD database. Warmup is skipped. The fixture applies live limits of one active batch and zero waiting slots, dispatches several requests through the real queue without rejections, then restores the original TOML settings. The surrounding smoke checks exercise overlapping requests, actual concurrent Chunky generation, native lighting snapshots, and normal adoption/player edits. After forced saves, shutdown, and restart, the checks require no DH-only chunk/POI/entity region files and intact saved gold/diamond edits. A cold FEATURES read must leave an existing region file byte-for-byte unchanged.
 
-The sustained DH run lasts nearly two minutes and samples heap use at **1,684–4,023 MiB** every five seconds. Intervals vary with terrain complexity. [Machine-readable results and samples](dist/validation-0.2.1/results.json) retain the counts and measurements.
+This workload is a correctness check, **not a throughput benchmark**. No long frontier run or other Minecraft/loader target is tested for this update. The original instance's files are not modified.
 
-## Correctness
+The installable development jar's class files match the packaged runtime fixture byte-for-byte. Integration entrypoints, Chunky, C2ME, OpenCL, and worldgen dependencies are excluded. Results and SHA-256 are retained in [dist/validation-lodgen-0.0.0/](dist/validation-lodgen-0.0.0/artifact-audit.json).
 
-All three measured runs pass the chunk/POI/entity file audit **after forced saves, shutdown and restart**. Actual Chunky runs concurrently with overlapping DH requests. Normal and cached-adopted chunks preserve gold/diamond block edits through restart. A subsequent cold FEATURES read leaves an existing region file byte-for-byte unchanged.
+## UI and limits
 
-The smoke checks also verify shared ticket references, one callback per pooled DH source, 12,288 populated LOD columns, and native block/sky light snapshots. A separate 1.21.1 NeoForge check exercises the addon without C2ME/OpenCL or Chunky. Unit tests cover ownership, admission/shutdown/cancellation, spatial priority at negative/world-border coordinates, and scope restoration after errors and across concurrent normal generation.
+The shared config screen compiles into the development jar. A client-only mixin opens it from **Options → LODgen…** on both loaders; a client-only NeoForge extension opens it from **Mods → LODgen → Config**. Dedicated-server startup confirms the client hooks do not load there. The screen saves `config/lodgen.toml`, publishes an immutable live snapshot, and updates active admission limits. Cancel/defaults remain draft edits until Apply.
 
-The larger fixture exposed a save leak that small vanilla tests missed: village cats perform server structure lookups while a feature runs. Those lookups were incorrectly adopting transient terrain. A `try`/`finally` ownership scope now keeps them transient; explicit forced/player/portal tickets retain normal save ownership. The corrected frontier checks exercise the affected seeded terrain and pass.
+The full client UI and an integrated-world settings change are not exercised in this headless check; the dispatch bounds/cancellation regression is covered by the focused tests. Fabric and 26.x builds, LAN/multiplayer client UI, Nether/End generation, upgraded-world blending, and remaining pack mods are outside this validation. Earlier startup messages from DH's optional client hooks and Chunky accessor also occur in this dedicated-server fixture; the checks still complete successfully.
 
-In the C2ME/OpenCL runs, optional-client-class and early Chunky lifecycle messages occur during dedicated-server startup; the fixture still completes and no generation future, lighting assertion, or final storage audit fails. A separate attempt with DH + Chunky and no C2ME aborts during initial spawn setup in DH's Chunky accessor (`Chunky is not loaded`), before the integration checks. That combination is not validated; concurrent Chunky generation is validated with C2ME/OpenCL.
+Earlier performance measurements belong to the predecessor: [docs/VALIDATION-0.2.1.md](docs/VALIDATION-0.2.1.md).
 
-## Profile findings and limits
-
-The [supplied Spark profile](https://spark.lucko.me/yDK9HTp2Ku) contains wall-time samples with DH's generation pool about 98.7% parked and C2ME workers about 49.6% parked. It also shows ordinary DH chunk-update conversion/lighting alongside explicit FEATURES conversion. The small 128-target window and scattered frontier selection leave native workers waiting; grouping nearby requests and widening the window reduce that problem.
-
-The profile records about **24.5 GiB of swap in use**, a 40 GB JVM maximum and a 33.6 GB used heap. Memory pressure may contribute to the full client's longer-session slowdown. This fixture uses an 8 GiB dedicated server and does not reproduce the entire client's memory workload.
-
-Medium settings are copied, but client rendering and the remaining pack mods are outside this fixture. Nether/End generation and upgraded-world blending remain untested. The older eight-target vanilla checks are historical evidence for 0.2.0 in [docs/VALIDATION-0.2.0.md](docs/VALIDATION-0.2.0.md); they do not validate this patch on other targets.
-
-## Reproduce
+## Reproduce quickly
 
 ```sh
-python3 scripts/integration-test.py --mc 1.21.1 --loader neoforge --opencl --chunky \
-  --benchmark 256 --dh-executor --dh-queue --store-lods --frontier-radius 512 \
+./gradlew -PmcVersion=1.21.1 -Ploader=neoforge build
+python3 scripts/integration-test.py --mc 1.21.1 --loader neoforge --quick \
+  --opencl --chunky --benchmark 8 --dh-queue --dh-executor --store-lods \
   --native-workers 15 --chunky-working-count 768 \
-  --worldgen-instance '/path/to/Prism/instance/minecraft' --java /path/to/jdk25/bin/java
+  --worldgen-instance '/path/to/Prism/instance/minecraft'
 ```
 
-Use `--benchmark 128 --frontier-radius 256` for the shorter comparison. Add `--pipeline-batches 8 --no-spatial-batching` for the control. Add `--jfr` for Java Flight Recorder evidence. The script accepts the EULA only for its disposable server and recreates only its own test world. It verifies saved files again after shutdown and performs a separate restart check.
-
-Logs and the sustained JFR recording remain in `build/1.21.1/neoforge/selftest/packaged-server/`. Without-C2ME checks use `packaged-server-vanilla/`. The release bundle includes configuration defaults, results, five-second samples, checks, and the SHA-256 manifest.
+Use Java 25 for OpenCL. `--skip-build` reuses an existing self-test jar. `--quick` skips warmup, reuses the cached versioned NeoForge installation, and caps the main/restart checks at 120/60 seconds. Logs and persistence reports remain in `build/1.21.1/neoforge/selftest/packaged-server/`.

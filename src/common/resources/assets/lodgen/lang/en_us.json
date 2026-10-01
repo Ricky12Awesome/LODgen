@@ -1,0 +1,16 @@
+{
+  "lodgen.config.title": "LODgen",
+  "lodgen.config.enabled.toggle": "Enabled: %s",
+  "lodgen.config.enabled.tooltip": "Use the normal chunk pipeline for DH FEATURES. C2ME accelerates it when installed. DH-only chunks are never saved.",
+  "lodgen.config.pipelineBatches": "Active batches",
+  "lodgen.config.pipelineBatches.tooltip": "1–64 batches per dimension. Higher values keep more chunks in flight and use more memory. Default: 32.",
+  "lodgen.config.queuedBatches": "Waiting batches",
+  "lodgen.config.queuedBatches.tooltip": "0–1024 waiting batches. These requests do not occupy workers. Default: 64.",
+  "lodgen.config.spatialBatching.toggle": "Group nearby requests: %s",
+  "lodgen.config.spatialBatching.tooltip": "Generate nearby terrain together within DH’s distance priority bands to share supporting chunks.",
+  "lodgen.config.defaults": "Defaults",
+  "lodgen.config.apply": "Apply",
+  "lodgen.config.invalid": "Active batches: 1–64. Waiting batches: 0–1024.",
+  "lodgen.config.saveFailed": "Could not save lodgen.toml. See the log.",
+  "lodgen.config.live": "Applies immediately to local generation."
+}

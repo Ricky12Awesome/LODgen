@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and test every release target, then collect the installable jars in dist/."""
+"""Build and test every configured target, then collect the installable jars in dist/."""
 import hashlib
 import json
 from pathlib import Path

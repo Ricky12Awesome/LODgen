@@ -17,6 +17,7 @@ parser.add_argument("--mc", choices=matrix, required=True)
 parser.add_argument("--loader", choices=("fabric", "neoforge"), required=True)
 parser.add_argument("--java", default="java", help="Java 21 for MC 1.21.1; Java 25 for MC 26.x")
 parser.add_argument("--skip-build", action="store_true")
+parser.add_argument("--quick", action="store_true", help="Skip benchmark warmup and cap server checks at 120/60 seconds")
 parser.add_argument("--opencl", action="store_true", help="Install the optional C2ME OpenCL addon and ScalableLux; requires Java 25")
 parser.add_argument("--chunky", action="store_true", help="Install Chunky and exercise a real concurrent pregen task")
 parser.add_argument("--benchmark", type=int, default=0, help="Generate an N by N chunk benchmark area (N divisible by 4)")
@@ -85,7 +86,7 @@ artifacts = [p for p in (base / "libs").glob("*.jar") if p.name.endswith(f"-{mod
 if len(artifacts) != 1:
     raise SystemExit("Build the self-test variant first")
 (run / "mods").mkdir(exist_ok=True)
-shutil.copyfile(artifacts[0], run / "mods" / "dhc2me-test.jar")
+shutil.copyfile(artifacts[0], run / "mods" / "lodgen-test.jar")
 modrinth(target["dh"], "distanthorizons")
 if not args.vanilla:
     modrinth(target["c2meFabric" if args.loader == "fabric" else "c2meNeoForge"], "c2me")
@@ -115,7 +116,7 @@ if args.native_workers:
     c2me_config = run / "config" / "c2me.toml"
     current = c2me_config.read_text() if c2me_config.exists() else "globalExecutorParallelism = \"default\"\n"
     c2me_config.write_text(re.sub(r"(?m)^globalExecutorParallelism\s*=.*$", f"globalExecutorParallelism = {args.native_workers}", current))
-(run / "config" / "dhc2me.properties").write_text(f"enabled={'false' if args.baseline else 'true'}\npipelineBatches={args.pipeline_batches}\nqueuedBatches=64\nspatialBatching={str(not args.no_spatial_batching).lower()}\n")
+(run / "config" / "lodgen.toml").write_text(f"enabled={'false' if args.baseline else 'true'}\npipelineBatches={args.pipeline_batches}\nqueuedBatches=64\nspatialBatching={str(not args.no_spatial_batching).lower()}\n")
 (run / "server.properties").write_text("online-mode=false\nserver-port=0\nlevel-seed=123456789\n"
                                        "view-distance=2\nsimulation-distance=2\nmax-tick-time=180000\n")
 if args.loader == "fabric":
@@ -124,30 +125,32 @@ if args.loader == "fabric":
              run / "mods" / "fabric-api.jar")
     download(f"https://meta.fabricmc.net/v2/versions/loader/{args.mc}/{target['fabricLoader']}/1.1.1/server/jar",
              run / "fabric-server-launch.jar")
-    command = [args.java, "-Xmx8G", "-Ddhc2me.test.chunky=" + str(args.chunky).lower(), "-Ddhc2me.test.benchmark=" + str(args.benchmark), "-jar", "fabric-server-launch.jar", "nogui"]
+    command = [args.java, "-Xmx8G", "-Dlodgen.test.chunky=" + str(args.chunky).lower(), "-Dlodgen.test.benchmark=" + str(args.benchmark), "-jar", "fabric-server-launch.jar", "nogui"]
 else:
     nf = target["neoForge"]
     installer = run / f"neoforge-{nf}-installer.jar"
     download(f"https://maven.neoforged.net/releases/net/neoforged/neoforge/{nf}/neoforge-{nf}-installer.jar",
              installer)
-    subprocess.run([args.java, "-jar", str(installer), "--installServer"], cwd=run, check=True)
     argument_file = run / "libraries" / "net" / "neoforged" / "neoforge" / nf / "unix_args.txt"
+    if not argument_file.exists():
+        subprocess.run([args.java, "-jar", str(installer), "--installServer"], cwd=run, check=True)
     if argument_file.exists():
-        command = [args.java, "-Xmx8G", "-Ddhc2me.test.chunky=" + str(args.chunky).lower(), "-Ddhc2me.test.benchmark=" + str(args.benchmark), "@" + str(argument_file), "nogui"]
+        command = [args.java, "-Xmx8G", "-Dlodgen.test.chunky=" + str(args.chunky).lower(), "-Dlodgen.test.benchmark=" + str(args.benchmark), "@" + str(argument_file), "nogui"]
     else:
         launchers = list(run.glob("neoforge-*-server.jar"))
         if len(launchers) != 1:
             raise SystemExit("NeoForge installer did not produce a recognized server launcher")
-        command = [args.java, "-Xmx8G", "-Ddhc2me.test.chunky=" + str(args.chunky).lower(), "-Ddhc2me.test.benchmark=" + str(args.benchmark), "-jar", str(launchers[0]), "nogui"]
+        command = [args.java, "-Xmx8G", "-Dlodgen.test.chunky=" + str(args.chunky).lower(), "-Dlodgen.test.benchmark=" + str(args.benchmark), "-jar", str(launchers[0]), "nogui"]
 
-benchmark_options = [f"-Ddhc2me.test.layout={args.layout}", f"-Ddhc2me.test.workers={args.workers}",
-                     f"-Ddhc2me.test.nativeWorkers={args.native_workers}",
-                     f"-Ddhc2me.test.dhExecutor={str(args.dh_executor).lower()}",
-                     f"-Ddhc2me.test.dhQueue={str(args.dh_queue).lower()}",
-                     f"-Ddhc2me.test.frontierRadius={args.frontier_radius}",
-                     f"-Ddhc2me.test.storeLods={str(args.store_lods).lower()}"]
+benchmark_options = [f"-Dlodgen.test.layout={args.layout}", f"-Dlodgen.test.workers={args.workers}",
+                     f"-Dlodgen.test.skipWarmup={str(args.quick).lower()}",
+                     f"-Dlodgen.test.nativeWorkers={args.native_workers}",
+                     f"-Dlodgen.test.dhExecutor={str(args.dh_executor).lower()}",
+                     f"-Dlodgen.test.dhQueue={str(args.dh_queue).lower()}",
+                     f"-Dlodgen.test.frontierRadius={args.frontier_radius}",
+                     f"-Dlodgen.test.storeLods={str(args.store_lods).lower()}"]
 if args.trace_ownership:
-    benchmark_options.append("-Ddhc2me.test.traceOwnership=true")
+    benchmark_options.append("-Dlodgen.test.traceOwnership=true")
 if args.chunky_working_count:
     benchmark_options.append(f"-Dchunky.maxWorkingCount={args.chunky_working_count}")
 if args.jfr:
@@ -156,15 +159,15 @@ command[1:1] = benchmark_options
 log = run / "integration-server.log"
 print(f"Testing packaged {args.mc} {args.loader}; log: {log}", flush=True)
 with log.open("w") as output:
-    subprocess.run(command, cwd=run, stdout=output, stderr=subprocess.STDOUT, timeout=900, check=True)
+    subprocess.run(command, cwd=run, stdout=output, stderr=subprocess.STDOUT, timeout=120 if args.quick else 900, check=True)
 if not report.exists() or not report.read_text().startswith("PASS:"):
     print(log.read_text()[-16000:])
     raise SystemExit(report.read_text() if report.exists() else "Server stopped without an integration result")
 reload_report = run / "integration-reload-result.txt"
 reload_report.unlink(missing_ok=True)
-reload_command = command[:1] + ["-Ddhc2me.test.reload=true"] + [arg for arg in command[1:] if not arg.startswith("-XX:StartFlightRecording=")]
+reload_command = command[:1] + ["-Dlodgen.test.reload=true"] + [arg for arg in command[1:] if not arg.startswith("-XX:StartFlightRecording=")]
 with (run / "integration-reload.log").open("w") as output:
-    subprocess.run(reload_command, cwd=run, stdout=output, stderr=subprocess.STDOUT, timeout=300, check=True)
+    subprocess.run(reload_command, cwd=run, stdout=output, stderr=subprocess.STDOUT, timeout=60 if args.quick else 300, check=True)
 if not reload_report.exists() or not reload_report.read_text().startswith("PASS:"):
     print((run / "integration-reload.log").read_text()[-12000:])
     raise SystemExit(reload_report.read_text() if reload_report.exists() else "Reload server stopped without a report")

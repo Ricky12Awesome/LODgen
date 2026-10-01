@@ -3,36 +3,36 @@ loaderVersion="*"
 license="MIT"
 
 [[mods]]
-modId="dhc2me"
+modId="lodgen"
 version="${version}"
-displayName="DH C2ME Features"
+displayName="LODgen"
 description="Uses normal asynchronous chunk generation for Distant Horizons FEATURES without saving DH-only chunks."
 
 [[mixins]]
-config="dhc2me.mixins.json"
+config="lodgen.mixins.json"
 
-[[dependencies.dhc2me]]
+[[dependencies.lodgen]]
 modId="minecraft"
 type="required"
 versionRange="[${minecraft}]"
 ordering="NONE"
 side="BOTH"
 
-[[dependencies.dhc2me]]
+[[dependencies.lodgen]]
 modId="neoforge"
 type="required"
 versionRange="[21,)"
 ordering="NONE"
 side="BOTH"
 
-[[dependencies.dhc2me]]
+[[dependencies.lodgen]]
 modId="distanthorizons"
 type="required"
 versionRange="[${dhVersion}]"
 ordering="AFTER"
 side="BOTH"
 
-[[dependencies.dhc2me]]
+[[dependencies.lodgen]]
 modId="c2me"
 type="optional"
 versionRange="[0.4.0-alpha.0,)"
