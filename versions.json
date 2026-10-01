@@ -7,7 +7,8 @@
     "dh": "9w34y8ai",
     "dhVersion": "3.3.3",
     "c2meFabric": "RMHYO1LJ",
-    "c2meNeoForge": "yxOYFgnK"
+    "c2meNeoForge": "yxOYFgnK",
+    "modMenu": "6lgOkclV"
   },
   "26.1.2": {
     "java": 25,
@@ -17,7 +18,8 @@
     "dh": "QHxoccsN",
     "dhVersion": "3.3.3",
     "c2meFabric": "o1m4A4Rk",
-    "c2meNeoForge": "C4T7lj0z"
+    "c2meNeoForge": "C4T7lj0z",
+    "modMenu": "ZJ6YTrMY"
   },
   "26.2": {
     "java": 25,
@@ -27,7 +29,8 @@
     "dh": "aAow4a9f",
     "dhVersion": "3.3.3",
     "c2meFabric": "w7zCdcKO",
-    "c2meNeoForge": "Gj7cXd5I"
+    "c2meNeoForge": "Gj7cXd5I",
+    "modMenu": "iRo7AZXf"
   },
   "26.3": {
     "java": 25,
@@ -37,6 +40,7 @@
     "dh": "TGgEbP9A",
     "dhVersion": "3.3.4",
     "c2meFabric": "sSoXjAqP",
-    "c2meNeoForge": "xXHRHMRL"
+    "c2meNeoForge": "xXHRHMRL",
+    "modMenu": "kyy7dbrZ"
   }
 }

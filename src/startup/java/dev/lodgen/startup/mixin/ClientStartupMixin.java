@@ -24,6 +24,7 @@ public abstract class ClientStartupMixin {
     @Unique private int lodgen$stage;
     @Unique private int lodgen$ticks;
     @Unique private OptionsScreen lodgen$options;
+    @Unique private Screen lodgen$configParent;
 
     @Inject(method = "tick", at = @At("TAIL"))
     private void lodgen$startup(CallbackInfo callback) {
@@ -69,14 +70,27 @@ public abstract class ClientStartupMixin {
                 button.onPress(new KeyEvent(257, 0, 0));
                 // #endif
                 if (!(ClientScreens.current(minecraft) instanceof LodgenConfigScreen)) throw new AssertionError("Config button did not open screen");
+                lodgen$configParent = lodgen$options;
+                if (Boolean.getBoolean("lodgen.test.modmenu")) {
+                    Screen menu = (Screen) Class.forName("com.terraformersmc.modmenu.api.ModMenuApi")
+                            .getMethod("createModsScreen", Screen.class).invoke(null, lodgen$options);
+                    ClientScreens.open(minecraft, menu);
+                    Screen config = (Screen) Class.forName("com.terraformersmc.modmenu.ModMenu")
+                            .getMethod("getConfigScreen", String.class, Screen.class).invoke(null, "lodgen", menu);
+                    if (!(config instanceof LodgenConfigScreen)) throw new AssertionError("Mod Menu did not register LODgen's config factory");
+                    ClientScreens.open(minecraft, config);
+                    lodgen$configParent = menu;
+                }
                 lodgen$stage = 2;
                 return;
             }
             Screen config = ClientScreens.current(minecraft);
             if (!(config instanceof LodgenConfigScreen) || config.children().size() != 8) throw new AssertionError("Config widgets missing");
             config.onClose();
-            if (ClientScreens.current(minecraft) != lodgen$options) throw new AssertionError("Config did not return to Options");
-            StartupCheck.report("PASS: client title, Options button and LODgen config initialized and rendered; generation mixin targets loaded; no world opened.");
+            if (ClientScreens.current(minecraft) != lodgen$configParent) throw new AssertionError("Config did not return to its parent");
+            StartupCheck.report("PASS: client title, Options button and LODgen config initialized and rendered; "
+                    + (Boolean.getBoolean("lodgen.test.modmenu") ? "Mod Menu factory opened config and returned to Mods; " : "")
+                    + "generation mixin targets loaded; no world opened.");
             lodgen$stage = 3;
             if (Boolean.getBoolean("lodgen.test.voxyWorld")) VoxyWorldCheck.start(minecraft);
             else minecraft.stop();

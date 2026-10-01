@@ -9,6 +9,9 @@
   "entrypoints": {
     "main": [
       "dev.lodgen.fabric.LodgenEntrypoint"
+    ],
+    "modmenu": [
+      "dev.lodgen.fabric.LodgenModMenu"
     ]
   },
   "mixins": [
@@ -22,6 +25,7 @@
   "suggests": {
     "c2me": "*",
     "distanthorizons": "=${dhVersion}",
-    "voxy": "*"
+    "voxy": "*",
+    "modmenu": "*"
   }
 }

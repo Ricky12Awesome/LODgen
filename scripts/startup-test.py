@@ -221,7 +221,7 @@ def prepare_client(mc, loader, target, java, base):
     return directory, [java, '-Xmx2G', *jvm, profile['mainClass'], *game, '--width', '960', '--height', '540']
 
 
-def test(mc, loader, java, skip_build):
+def test(mc, loader, java, skip_build, modmenu=False):
     target = MATRIX[mc]
     base = ROOT / 'build' / mc / loader / 'startup'
     base.mkdir(parents=True, exist_ok=True)
@@ -252,6 +252,9 @@ def test(mc, loader, java, skip_build):
     mod(target['dh'], 'distanthorizons', mods)
     mod(target['c2meFabric' if loader == 'fabric' else 'c2meNeoForge'], 'c2me', mods)
     if loader == 'fabric':
+        if modmenu:
+            mod(target['modMenu'], 'modmenu', mods)
+            command.insert(1, '-Dlodgen.test.modmenu=true')
         api = target['fabricApi']
         cached = download(f'https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/{api}/fabric-api-{api}.jar', CACHE / 'mods' / ('fabric-api-' + api + '.jar'))
         shutil.copyfile(cached, mods / 'fabric-api.jar')
@@ -280,6 +283,7 @@ if __name__ == '__main__':
     parser.add_argument('--loader', choices=['fabric', 'neoforge'])
     parser.add_argument('--java', help='Override the runtime Java executable for a single Minecraft version')
     parser.add_argument('--skip-build', action='store_true', help='Reuse an already-built startup fixture')
+    parser.add_argument('--modmenu', action='store_true', help='Include Mod Menu and verify its config entry on Fabric')
     args = parser.parse_args()
     if args.java and not args.mc:
         parser.error('--java requires --mc')
@@ -292,4 +296,4 @@ if __name__ == '__main__':
             local = Path(f'/usr/lib/jvm/java-{MATRIX[mc]["java"]}-openjdk/bin/java')
             java = str(Path(java_home) / 'bin/java') if java_home else str(local) if local.exists() else 'java'
         for loader in ([args.loader] if args.loader else ['fabric', 'neoforge']):
-            test(mc, loader, java, args.skip_build)
+            test(mc, loader, java, args.skip_build, args.modmenu)

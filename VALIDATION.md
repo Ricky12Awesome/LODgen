@@ -6,13 +6,13 @@ All eight configured targets build and pass packaged **client and dedicated-serv
 
 | Minecraft | Loader | Build / unit tests | Packaged client | Packaged server | Cached software startup time |
 | --- | --- | --- | --- | --- | --- |
-| 1.21.1 | Fabric | PASS / 30 | PASS | PASS | 22.33 s |
+| 1.21.1 | Fabric | PASS / 30 | PASS | PASS | 27.55 s |
 | 1.21.1 | NeoForge | PASS / 30 | PASS | PASS | 21.3 s |
-| 26.1.2 | Fabric | PASS / 30 | PASS | PASS | 18.52 s |
+| 26.1.2 | Fabric | PASS / 30 | PASS | PASS | 22.9 s |
 | 26.1.2 | NeoForge | PASS / 30 | PASS | PASS | 18.95 s |
-| 26.2 | Fabric | PASS / 30 | PASS | PASS | 17.51 s |
+| 26.2 | Fabric | PASS / 30 | PASS | PASS | 23.26 s |
 | 26.2 | NeoForge | PASS / 30 | PASS | PASS | 17.32 s |
-| 26.3 | Fabric | PASS / 30 | PASS | PASS | 16.88 s |
+| 26.3 | Fabric | PASS / 30 | PASS | PASS | 25.59 s |
 | 26.3 | NeoForge | PASS / 30 | PASS | PASS | 18.08 s |
 
 There are **240 passing unit-test executions**, with zero failures, errors, or skipped tests, plus **16 successful runtime checks**. The table records the final pass with cached assets and Mesa llvmpipe software rendering, including fixture builds; initial uncached asset downloads take longer. Minecraft 1.21.1 uses Java 21; 26.x uses Java 25. Exact DH/C2ME/loader versions are in `versions.json`.
@@ -22,6 +22,14 @@ There are **240 passing unit-test executions**, with zero failures, errors, or s
 The shared config screen no longer calls `EditBox.setFilter`, which is absent on 26.x Fabric. Apply validates numbers and ranges and displays the existing validation error. Screen navigation uses Minecraft's `gui.setScreen` API on 26.2/26.3 and `setScreen` on earlier targets. On 26.x, Minecraft already extracts the screen background before calling `extractRenderState`; the addon no longer repeats that operation. The startup check reproduced the resulting “Can only blur once per frame” crash before the duplicate call was removed.
 
 These Minecraft signature differences use the existing source preprocessor. Generation, configuration, scheduling, and tests continue sharing one implementation across targets.
+
+## Mod Menu support
+
+Fabric builds register an optional `modmenu` entrypoint that opens the existing LODgen config screen and preserves the Mods screen as its parent. Mod Menu is a development dependency, is not bundled, and is not required by the installed addon. All four Fabric targets pass packaged client checks with their pinned Mod Menu versions from `versions.json`: the probe requests LODgen's registered factory through Mod Menu, renders its eight widgets, closes the config and verifies return to Mods. Their dedicated-server checks run without Mod Menu. No worlds are opened for these checks; the generation code is unchanged from the Voxy/DH tests below.
+
+```sh
+xvfb-run -a python3 scripts/startup-test.py --loader fabric --modmenu
+```
 
 ## Voxy support verified
 

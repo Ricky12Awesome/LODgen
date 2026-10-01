@@ -76,6 +76,7 @@ if (platform == 'fabric') {
 }
 
 dependencies {
+    if (platform == 'fabric') modImplementation("maven.modrinth:modmenu:${target.modMenu}") { transitive = false }
     bundled 'com.electronwill.night-config:toml:3.9.0'
     compileOnly "maven.modrinth:distanthorizons:${target.dh}"
     testImplementation dependencies.platform('org.junit:junit-bom:5.11.4')
