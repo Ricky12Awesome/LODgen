@@ -1,0 +1,42 @@
+{
+  "1.21.1": {
+    "java": 21,
+    "fabricLoader": "0.19.5",
+    "fabricApi": "0.116.12+1.21.1",
+    "neoForge": "21.1.252",
+    "dh": "9w34y8ai",
+    "dhVersion": "3.3.3",
+    "c2meFabric": "RMHYO1LJ",
+    "c2meNeoForge": "yxOYFgnK"
+  },
+  "26.1.2": {
+    "java": 25,
+    "fabricLoader": "0.19.5",
+    "fabricApi": "0.155.3+26.1.2",
+    "neoForge": "26.1.2.15-beta",
+    "dh": "QHxoccsN",
+    "dhVersion": "3.3.3",
+    "c2meFabric": "o1m4A4Rk",
+    "c2meNeoForge": "C4T7lj0z"
+  },
+  "26.2": {
+    "java": 25,
+    "fabricLoader": "0.19.5",
+    "fabricApi": "0.154.0+26.2",
+    "neoForge": "26.2.0.1-beta",
+    "dh": "aAow4a9f",
+    "dhVersion": "3.3.3",
+    "c2meFabric": "w7zCdcKO",
+    "c2meNeoForge": "Gj7cXd5I"
+  },
+  "26.3": {
+    "java": 25,
+    "fabricLoader": "0.19.5",
+    "fabricApi": "0.160.5+26.3",
+    "neoForge": "26.3.0.22-beta",
+    "dh": "TGgEbP9A",
+    "dhVersion": "3.3.4",
+    "c2meFabric": "sSoXjAqP",
+    "c2meNeoForge": "xXHRHMRL"
+  }
+}

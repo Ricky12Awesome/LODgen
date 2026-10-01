@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "dhc2me",
+  "version": "${version}",
+  "name": "DH C2ME Features",
+  "description": "Uses normal asynchronous chunk generation for Distant Horizons FEATURES without saving DH-only chunks.",
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {},
+  "mixins": [
+    "dhc2me.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=${fabricLoader}",
+    "minecraft": "=${minecraft}",
+    "java": ">=${java}",
+    "distanthorizons": "=${dhVersion}"
+  },
+  "suggests": {
+    "c2me": "*"
+  }
+}

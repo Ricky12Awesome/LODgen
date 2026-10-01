@@ -1,0 +1,143 @@
+import groovy.json.JsonSlurper
+
+plugins {
+    id 'java'
+    id 'xyz.wagyourtail.unimined' version '1.4.43-kappa'
+}
+
+def matrix = new JsonSlurper().parse(file('versions.json'))
+def mc = providers.gradleProperty('mcVersion').get()
+def platform = providers.gradleProperty('loader').get()
+if (!matrix.containsKey(mc) || !(platform in ['fabric', 'neoforge'])) {
+    throw new GradleException('Use -PmcVersion=1.21.1|26.1.2|26.2|26.3 -Ploader=fabric|neoforge')
+}
+def target = matrix[mc]
+def integration = providers.gradleProperty('selfTest').map { it.toBoolean() }.getOrElse(false)
+group = 'dev.dhc2me'
+version = providers.gradleProperty('modVersion').get()
+base.archivesName = "dhc2me-${mc}-${platform}"
+layout.buildDirectory = file("build/${mc}/${platform}" + (integration ? '/selftest' : ''))
+
+sourceSets.main.java.srcDirs('src/common/java', "src/${platform}/java", layout.buildDirectory.dir('generated/sources/minecraft'))
+sourceSets.main.resources.srcDirs('src/common/resources', "src/${platform}/resources")
+if (integration) sourceSets.main.java.srcDirs('src/integration/java', "src/integration/${platform}/java")
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://api.modrinth.com/maven' }
+    maven { url = 'https://maven.fabricmc.net/' }
+    maven { url = 'https://maven.neoforged.net/releases/' }
+}
+
+configurations {
+    modRuntimeOnly
+    runtimeOnly.extendsFrom(modRuntimeOnly)
+}
+
+unimined.minecraft {
+    version mc
+    if (mc == '1.21.1') {
+        mappings { mojmap(); devNamespace 'mojmap' }
+    }
+    if (platform == 'fabric') {
+        fabric { loader target.fabricLoader }
+    } else {
+        def prefix = mc == '1.21.1' ? '21.1.' : (mc == '26.1.2' ? '26.1.2.' : "${mc}.0.")
+        neoForged { loader target.neoForge.substring(prefix.length()); useToolchains = false }
+    }
+}
+
+dependencies {
+    compileOnly "maven.modrinth:distanthorizons:${target.dh}"
+    testImplementation dependencies.platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    if (integration) {
+        modRuntimeOnly "maven.modrinth:distanthorizons:${target.dh}"
+        modRuntimeOnly "maven.modrinth:c2me-${platform}:${target[platform == 'fabric' ? 'c2meFabric' : 'c2meNeoForge']}"
+        if (platform == 'fabric') modImplementation "net.fabricmc.fabric-api:fabric-api:${target.fabricApi}"
+    }
+}
+
+// Only Minecraft signature changes are conditional. Generation scheduling, DH
+// integration, configuration, and platform-independent tests share one source tree.
+def generated = layout.buildDirectory.dir('generated/sources/minecraft')
+def preprocess = tasks.register('preprocessMinecraft') {
+    inputs.dir('src/minecraft/java')
+    inputs.property('mc', mc)
+    outputs.dir(generated)
+    doLast {
+        delete(generated)
+        fileTree('src/minecraft/java').matching { include '**/*.java' }.each { input ->
+            def active = [true]
+            def output = []
+            input.eachLine { line ->
+                def directive = line.trim()
+                if (directive.startsWith('// #if ')) {
+                    def flag = directive.substring(7)
+                    def enabled = [MC_1211: mc == '1.21.1', MC_263: mc == '26.3', MC_26: mc != '1.21.1'][flag]
+                    if (enabled == null) throw new GradleException("Unknown preprocessor flag ${flag}")
+                    active.add(active.last() && enabled)
+                } else if (directive == '// #else') {
+                    active[-1] = active[-2] && !active[-1]
+                } else if (directive == '// #endif') {
+                    active.removeLast()
+                } else if (active.last()) {
+                    output.add(line)
+                }
+            }
+            if (active.size() != 1) throw new GradleException("Unclosed condition in ${input}")
+            def out = new File(generated.get().asFile, file('src/minecraft/java').toPath().relativize(input.toPath()).toString())
+            out.parentFile.mkdirs()
+            out.text = output.join('\n') + '\n'
+        }
+    }
+}
+sourceSets.test.java.srcDirs('src/test/java')
+tasks.named('compileJava') { dependsOn(preprocess) }
+java { toolchain.languageVersion = JavaLanguageVersion.of(target.java as int) }
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = target.java as int
+    // Variant switches and removed source files otherwise leave stale classes in
+    // Unimined's shared execution history. Compile into a clean class directory.
+    options.incremental = false
+    inputs.property('cleanClassOutput', 1)
+    outputs.cacheIf { false }
+    doFirst { delete(destinationDirectory) }
+}
+tasks.named('test') { useJUnitPlatform() }
+tasks.named('processResources') {
+    def values = [version: version, minecraft: mc, java: target.java, dhVersion: target.dhVersion, fabricLoader: target.fabricLoader]
+    inputs.properties(values)
+    inputs.property('integration', integration)
+    filesMatching(['fabric.mod.json', 'META-INF/neoforge.mods.toml']) { expand(values) }
+    if (integration && platform == 'fabric') {
+        doLast {
+            def metadata = new File(destinationDir, 'fabric.mod.json')
+            def json = new JsonSlurper().parse(metadata)
+            json.entrypoints = [main: ['dev.dhc2me.integration.fabric.IntegrationEntrypoint']]
+            metadata.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json))
+        }
+    }
+}
+tasks.named('jar') { from('LICENSE') }
+
+if (integration) {
+    def runDir = layout.buildDirectory.dir('run')
+    def prepareServer = tasks.register('prepareIntegrationServer') {
+        doLast {
+            def directory = runDir.get().asFile
+            directory.mkdirs()
+            new File(directory, 'eula.txt').text = 'eula=true\n'
+            new File(directory, 'server.properties').text = 'online-mode=false\nserver-port=0\nlevel-seed=123456789\nview-distance=2\nsimulation-distance=2\nmax-tick-time=180000\n'
+        }
+    }
+    tasks.named('runServer') {
+        dependsOn(prepareServer)
+        workingDir(runDir)
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(target.java as int) }
+        args '--nogui'
+        jvmArgs '-Xmx2G'
+    }
+}

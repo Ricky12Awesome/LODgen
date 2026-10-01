@@ -1,0 +1,56 @@
+{
+  "scalablelux": {
+    "1.21.1": {
+      "fabric": "AodeMVa6",
+      "neoforge": "9KuFoPhC"
+    },
+    "26.1.2": {
+      "fabric": "ToW8oIIq",
+      "neoforge": "XaTCC66i"
+    },
+    "26.2": {
+      "fabric": "EKLUURiy",
+      "neoforge": "sj4ujwsT"
+    },
+    "26.3": {
+      "fabric": "g4eqNSKd",
+      "neoforge": "QEqBp5LZ"
+    }
+  },
+  "chunky": {
+    "1.21.1": {
+      "fabric": "RVFHfo1D",
+      "neoforge": "LuFhm4eU"
+    },
+    "26.1.2": {
+      "fabric": "4Eotm6ov",
+      "neoforge": "EyCqftOK"
+    },
+    "26.2": {
+      "fabric": "4Eotm6ov",
+      "neoforge": "EyCqftOK"
+    },
+    "26.3": {
+      "fabric": "4Eotm6ov",
+      "neoforge": "EyCqftOK"
+    }
+  },
+  "c2me-ocl": {
+    "1.21.1": {
+      "fabric": "j7FyNUo9",
+      "neoforge": "shL6D1IO"
+    },
+    "26.1.2": {
+      "fabric": "FIySyMEQ",
+      "neoforge": "wJrPp4yA"
+    },
+    "26.2": {
+      "fabric": "zgGYHltv",
+      "neoforge": "V5SBeTwQ"
+    },
+    "26.3": {
+      "fabric": null,
+      "neoforge": null
+    }
+  }
+}

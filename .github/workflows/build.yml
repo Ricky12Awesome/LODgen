@@ -1,0 +1,40 @@
+name: Build and test
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        minecraft: ['1.21.1', '26.1.2', '26.2', '26.3']
+        loader: [fabric, neoforge]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            21
+            25
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew -PmcVersion=${{ matrix.minecraft }} -Ploader=${{ matrix.loader }} build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dhc2me-${{ matrix.minecraft }}-${{ matrix.loader }}
+          path: |
+            build/${{ matrix.minecraft }}/${{ matrix.loader }}/libs/*.jar
+            !build/${{ matrix.minecraft }}/${{ matrix.loader }}/libs/*-dev.jar
+      - name: Packaged server integration check
+        env:
+          TEST_JAVA: ${{ matrix.minecraft == '1.21.1' && env.JAVA_HOME_21_X64 || env.JAVA_HOME_25_X64 }}
+        run: python3 scripts/integration-test.py --mc '${{ matrix.minecraft }}' --loader '${{ matrix.loader }}' --java "$TEST_JAVA/bin/java"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation-${{ matrix.minecraft }}-${{ matrix.loader }}
+          path: |
+            build/${{ matrix.minecraft }}/${{ matrix.loader }}/test-results/test/
+            build/${{ matrix.minecraft }}/${{ matrix.loader }}/selftest/packaged-server/integration-result.txt
+            build/${{ matrix.minecraft }}/${{ matrix.loader }}/selftest/packaged-server/integration-server.log
+            build/${{ matrix.minecraft }}/${{ matrix.loader }}/selftest/packaged-server/integration-reload-result.txt
+            build/${{ matrix.minecraft }}/${{ matrix.loader }}/selftest/packaged-server/integration-reload.log

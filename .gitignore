@@ -1,0 +1,10 @@
+.gradle/
+.unimined/
+build/
+dist/
+run/
+*.log
+.idea/
+*.iml
+__pycache__/
+*.pyc
