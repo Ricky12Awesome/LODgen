@@ -1,6 +1,7 @@
 package dev.lodgen.mixin;
 
 import dev.lodgen.client.LodgenConfigScreen;
+import dev.lodgen.client.ClientScreens;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.options.OptionsScreen;
@@ -17,7 +18,7 @@ public abstract class OptionsScreenMixin extends Screen {
 
     @Inject(method = "init", at = @At("TAIL"))
     private void lodgen$configButton(CallbackInfo callback) {
-        addRenderableWidget(Button.builder(Component.literal("LODgen…"), button -> minecraft.setScreen(new LodgenConfigScreen(this)))
+        addRenderableWidget(Button.builder(Component.literal("LODgen…"), button -> ClientScreens.open(minecraft, new LodgenConfigScreen(this)))
                 .bounds(width - 104, 4, 100, 20).build());
     }
 }

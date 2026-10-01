@@ -13,14 +13,17 @@ if (!matrix.containsKey(mc) || !(platform in ['fabric', 'neoforge'])) {
 }
 def target = matrix[mc]
 def integration = providers.gradleProperty('selfTest').map { it.toBoolean() }.getOrElse(false)
+def startup = providers.gradleProperty('startupTest').map { it.toBoolean() }.getOrElse(false)
+if (integration && startup) throw new GradleException('Choose selfTest or startupTest, not both')
 group = 'dev.lodgen'
 version = providers.gradleProperty('modVersion').get()
 base.archivesName = "lodgen-${mc}-${platform}"
-layout.buildDirectory = file("build/${mc}/${platform}" + (integration ? '/selftest' : ''))
+layout.buildDirectory = file("build/${mc}/${platform}" + (integration ? '/selftest' : startup ? '/startup' : ''))
 
 sourceSets.main.java.srcDirs('src/common/java', "src/${platform}/java", layout.buildDirectory.dir('generated/sources/minecraft'))
 sourceSets.main.resources.srcDirs('src/common/resources', "src/${platform}/resources")
 if (integration) sourceSets.main.java.srcDirs('src/integration/java', "src/integration/${platform}/java")
+if (startup) sourceSets.main.resources.srcDir('src/startup/resources')
 
 repositories {
     mavenCentral()
@@ -67,31 +70,37 @@ def generated = layout.buildDirectory.dir('generated/sources/minecraft')
 def preprocess = tasks.register('preprocessMinecraft') {
     inputs.dir('src/minecraft/java')
     inputs.property('mc', mc)
+    inputs.property('startup', startup)
+    if (startup) inputs.dir('src/startup/java')
     outputs.dir(generated)
     doLast {
         delete(generated)
-        fileTree('src/minecraft/java').matching { include '**/*.java' }.each { input ->
-            def active = [true]
-            def output = []
-            input.eachLine { line ->
-                def directive = line.trim()
-                if (directive.startsWith('// #if ')) {
-                    def flag = directive.substring(7)
-                    def enabled = [MC_1211: mc == '1.21.1', MC_263: mc == '26.3', MC_26: mc != '1.21.1'][flag]
-                    if (enabled == null) throw new GradleException("Unknown preprocessor flag ${flag}")
-                    active.add(active.last() && enabled)
-                } else if (directive == '// #else') {
-                    active[-1] = active[-2] && !active[-1]
-                } else if (directive == '// #endif') {
-                    active.removeLast()
-                } else if (active.last()) {
-                    output.add(line)
+        def roots = [file('src/minecraft/java')]
+        if (startup) roots.add(file('src/startup/java'))
+        roots.each { sourceRoot ->
+            fileTree(sourceRoot).matching { include '**/*.java' }.each { input ->
+                def active = [true]
+                def output = []
+                input.eachLine { line ->
+                    def directive = line.trim()
+                    if (directive.startsWith('// #if ')) {
+                        def flag = directive.substring(7)
+                        def enabled = [MC_1211: mc == '1.21.1', MC_263: mc == '26.3', MC_26: mc != '1.21.1', MC_262_PLUS: mc in ['26.2', '26.3']][flag]
+                        if (enabled == null) throw new GradleException("Unknown preprocessor flag ${flag}")
+                        active.add(active.last() && enabled)
+                    } else if (directive == '// #else') {
+                        active[-1] = active[-2] && !active[-1]
+                    } else if (directive == '// #endif') {
+                        active.removeLast()
+                    } else if (active.last()) {
+                        output.add(line)
+                    }
                 }
+                if (active.size() != 1) throw new GradleException("Unclosed condition in ${input}")
+                def out = new File(generated.get().asFile, sourceRoot.toPath().relativize(input.toPath()).toString())
+                out.parentFile.mkdirs()
+                out.text = output.join('\n') + '\n'
             }
-            if (active.size() != 1) throw new GradleException("Unclosed condition in ${input}")
-            def out = new File(generated.get().asFile, file('src/minecraft/java').toPath().relativize(input.toPath()).toString())
-            out.parentFile.mkdirs()
-            out.text = output.join('\n') + '\n'
         }
     }
 }
@@ -117,6 +126,7 @@ tasks.named('processResources') {
     def values = [version: version, minecraft: mc, java: target.java, dhVersion: target.dhVersion, fabricLoader: target.fabricLoader]
     inputs.properties(values)
     inputs.property('integration', integration)
+    inputs.property('startup', startup)
     filesMatching(['fabric.mod.json', 'META-INF/neoforge.mods.toml']) { expand(values) }
     if (integration && platform == 'fabric') {
         doLast {
@@ -124,6 +134,18 @@ tasks.named('processResources') {
             def json = new JsonSlurper().parse(metadata)
             json.entrypoints.main.add('dev.lodgen.integration.fabric.IntegrationEntrypoint')
             metadata.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json))
+        }
+    }
+    if (startup) {
+        doLast {
+            if (platform == 'fabric') {
+                def metadata = new File(destinationDir, 'fabric.mod.json')
+                def json = new JsonSlurper().parse(metadata)
+                json.mixins.add('lodgen.startup.mixins.json')
+                metadata.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json))
+            } else {
+                new File(destinationDir, 'META-INF/neoforge.mods.toml').append('\n[[mixins]]\nconfig="lodgen.startup.mixins.json"\n')
+            }
         }
     }
 }

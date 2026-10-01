@@ -63,7 +63,7 @@ public final class LodgenConfigScreen extends Screen {
     private EditBox numberInput(int x, int y, String key, String value) {
         EditBox input = new EditBox(font, x, y, 70, 20, Component.translatable("lodgen.config." + key));
         input.setMaxLength(4);
-        input.setFilter(text -> text.isEmpty() || text.chars().allMatch(c -> c >= '0' && c <= '9'));
+        // Validate on Apply: 26.x Fabric no longer exposes EditBox.setFilter.
         input.setValue(value);
         input.setTooltip(tip(key));
         return addRenderableWidget(input);
@@ -109,7 +109,7 @@ public final class LodgenConfigScreen extends Screen {
     }
     // #else
     @Override public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        extractBackground(graphics, mouseX, mouseY, partialTick);
+        // Screen.extractRenderStateWithTooltipAndSubtitles already extracts the background.
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
         graphics.centeredText(font, title, width / 2, 16, 0xffffffff);
         graphics.text(font, Component.translatable("lodgen.config.pipelineBatches"), left, top + 38, 0xffffffff);
@@ -119,5 +119,5 @@ public final class LodgenConfigScreen extends Screen {
     }
     // #endif
 
-    @Override public void onClose() { minecraft.setScreen(parent); }
+    @Override public void onClose() { ClientScreens.open(minecraft, parent); }
 }

@@ -1,48 +1,54 @@
 # LODgen development validation — 0.0.0
 
-This change is built and checked only on **Minecraft 1.21.1 / NeoForge 21.1.252**. The project, mod ID, packages, mixin config, UI name, and artifact names use LODgen/lodgen. The development version remains **0.0.0**.
+All eight configured targets build and pass packaged **client and dedicated-server startup** with their pinned Distant Horizons and C2ME versions. This pass does not run world loading, terrain generation, OpenCL, Chunky, or throughput tests. The development version remains **0.0.0**.
 
-## Focused checks
+## Matrix results
 
-Both the development and self-test builds pass **26 unit tests**, with zero failures or skipped tests. Recent builds take about three to five seconds each on this machine.
+| Minecraft | Loader | Build / unit tests | Packaged client | Packaged server | Cached software startup time |
+| --- | --- | --- | --- | --- | --- |
+| 1.21.1 | Fabric | PASS / 26 | PASS | PASS | 13.39 s |
+| 1.21.1 | NeoForge | PASS / 26 | PASS | PASS | 15.04 s |
+| 26.1.2 | Fabric | PASS / 26 | PASS | PASS | 13.27 s |
+| 26.1.2 | NeoForge | PASS / 26 | PASS | PASS | 14.14 s |
+| 26.2 | Fabric | PASS / 26 | PASS | PASS | 13.24 s |
+| 26.2 | NeoForge | PASS / 26 | PASS | PASS | 13.56 s |
+| 26.3 | Fabric | PASS / 26 | PASS | PASS | 13.47 s |
+| 26.3 | NeoForge | PASS / 26 | PASS | PASS | 14.24 s |
 
-The new regression checks exercise:
+There are **208 passing unit-test executions**, with zero failures, errors, or skipped tests, plus **16 successful runtime checks**. The table records the final pass with cached fixtures/assets and Mesa llvmpipe software rendering. A preceding pass including fixture builds took 19–25 seconds per target; initial uncached asset downloads take longer. Minecraft 1.21.1 uses Java 21; 26.x uses Java 25. Exact DH/C2ME/loader versions are in `versions.json`.
 
-- TOML defaults, real TOML syntax, strict value types/bounds, atomic replacement, and preservation of unrelated tables. Configuration uses only `lodgen.toml`; earlier addon builds have no migration or compatibility layer.
-- A 512-to-128 render-distance change, partial edge sections, square corners, negative coordinates, moving/expanding the view, and world-border coordinates.
-- Removal and cancellation of an obsolete waiting future, allowing a fresh request after expansion, and protection of already-dispatched data and replacement tasks at the same position.
-- Increasing/decreasing live batch limits and notifying DH only after a batch permit is available, including zero waiting slots.
+## Fixes verified
 
-Existing ownership, adoption, shutdown, cancellation, locality, and feature-scope tests also pass. Unit-test configuration files are isolated under `build/`.
+The shared config screen no longer calls `EditBox.setFilter`, which is absent on 26.x Fabric. Apply validates numbers and ranges and displays the existing validation error. Screen navigation uses Minecraft's `gui.setScreen` API on 26.2/26.3 and `setScreen` on earlier targets. On 26.x, Minecraft already extracts the screen background before calling `extractRenderState`; the addon no longer repeats that operation. The startup check reproduced the resulting “Can only blur once per frame” crash before the duplicate call was removed.
 
-The dispatch guard uses DH's current target position and render radius on each queue selection. It applies to the builtin FEATURES path on the integrated server. It cancels only waiting futures after removing their exact queue entry; active native work drains with its existing ticket/pooled-data ownership. Dedicated-server requests and ordinary Chunky/player chunk generation retain their own ranges.
+These Minecraft signature differences use the existing source preprocessor. Generation, configuration, scheduling, and tests continue sharing one implementation across targets.
 
-## Small packaged-server check
+## Runtime checks
 
-The quick fixture uses selected WWOO/Continents jars and Medium DH settings copied from the supplied Create Aeronautics instance: DH 3.3.3, C2ME/OpenCL 0.4.0-alpha.0.122, ScalableLux 0.3.0-alpha.0.8, Chunky 1.4.23, WWOO 2.6.7, Continents 1.1.14, Cristel Lib 3.1.7, and Lithostitched 1.8.0. Java 25, 15 C2ME workers, and Chunky's 768-request limit match the earlier setup.
+The startup runner uses ordinary packaged loaders and remapped mod jars, not the development client launcher. That avoids DH's embedded Fabric API having intermediary access-widener names in a named development runtime. NeoForge client installations use the official installer; Fabric client installations use its published launcher profile. Minecraft libraries, native libraries, assets, and selected mods are cached under `build/` with artifact checksums verified where published.
 
-The fixture generates just four tiles (64 chunks) through **DH's actual WorldGenerationQueue**, actual executor, and LOD database. Warmup is skipped. The fixture applies live limits of one active batch and zero waiting slots, dispatches several requests through the real queue without rejections, then restores the original TOML settings. The surrounding smoke checks exercise overlapping requests, actual concurrent Chunky generation, native lighting snapshots, and normal adoption/player edits. After forced saves, shutdown, and restart, the checks require no DH-only chunk/POI/entity region files and intact saved gold/diamond edits. A cold FEATURES read must leave an existing region file byte-for-byte unchanged.
+The client probe waits for initial resources to load, opens the title screen and Options, presses the actual **LODgen…** button, initializes all seven config widgets, lets the config render over multiple ticks, and checks that closing it returns to Options. It also loads every generation mixin target through the runtime transformer. The final local pass uses a Linux virtual display and Mesa llvmpipe software rendering without a desktop or GPU.
 
-This workload is a correctness check, **not a throughput benchmark**. No long frontier run or other Minecraft/loader target is tested for this update. The original instance's files are not modified.
+The dedicated-server probe loads LODgen, DH, C2ME, and every generation mixin target. It checks that no `ServerLevel` exists and ends the isolated process before normal server initialization loads world levels. Vanilla bootstrap may create world metadata; no chunk/POI/entity region files may exist. This checks class loading and mixin compatibility, not ticket dispatch, persistence, shutdown, or terrain generation.
 
-The installable development jar's class files match the packaged runtime fixture byte-for-byte. Integration entrypoints, Chunky, C2ME, OpenCL, and worldgen dependencies are excluded. Results and SHA-256 are retained in [dist/validation-lodgen-0.0.0/](dist/validation-lodgen-0.0.0/artifact-audit.json).
+Every production class file in each installable jar matches the corresponding packaged startup fixture byte-for-byte. The fixture adds only test probes and its separate mixin configuration; these are excluded from the installable jars. Current results, class counts, artifact SHA-256 values, and unit-test totals are retained in [dist/validation-lodgen-0.0.0/results.json](dist/validation-lodgen-0.0.0/results.json) and [artifact-audit.json](dist/validation-lodgen-0.0.0/artifact-audit.json). Detailed logs and launcher reports remain in `build/<minecraft>/<loader>/startup/`.
 
-## UI and limits
+Offline authentication, optional-mod accessor, and unavailable narrator warnings occur in these disposable clients; all required reports and normal client exit checks pass. No original Prism instance files are modified.
 
-The shared config screen compiles into the development jar. A client-only mixin opens it from **Options → LODgen…** on both loaders; a client-only NeoForge extension opens it from **Mods → LODgen → Config**. Dedicated-server startup confirms the client hooks do not load there. The screen saves `config/lodgen.toml`, publishes an immutable live snapshot, and updates active admission limits. Cancel/defaults remain draft edits until Apply.
+## CI and reproduction
 
-The full client UI and an integrated-world settings change are not exercised in this headless check; the dispatch bounds/cancellation regression is covered by the focused tests. Fabric and 26.x builds, LAN/multiplayer client UI, Nether/End generation, upgraded-world blending, and remaining pack mods are outside this validation. Earlier startup messages from DH's optional client hooks and Chunky accessor also occur in this dedicated-server fixture; the checks still complete successfully.
-
-Earlier performance measurements belong to the predecessor: [docs/VALIDATION-0.2.1.md](docs/VALIDATION-0.2.1.md).
-
-## Reproduce quickly
+The GitHub workflow retains its existing build/unit-test and packaged-server integration steps. The client/server startup checks in this report were run locally and remain available through the manual command below; no headless client checks or additional workflow steps are added.
 
 ```sh
-./gradlew -PmcVersion=1.21.1 -Ploader=neoforge build
-python3 scripts/integration-test.py --mc 1.21.1 --loader neoforge --quick \
-  --opencl --chunky --benchmark 8 --dh-queue --dh-executor --store-lods \
-  --native-workers 15 --chunky-working-count 768 \
-  --worldgen-instance '/path/to/Prism/instance/minecraft'
+python3 scripts/build-all.py
+xvfb-run -a python3 scripts/startup-test.py
 ```
 
-Use Java 25 for OpenCL. `--skip-build` reuses an existing self-test jar. `--quick` skips warmup, reuses the cached versioned NeoForge installation, and caps the main/restart checks at 120/60 seconds. Logs and persistence reports remain in `build/1.21.1/neoforge/selftest/packaged-server/`.
+For one target, build its regular jar first, then run:
+
+```sh
+./gradlew -PmcVersion=26.3 -Ploader=fabric build
+xvfb-run -a python3 scripts/startup-test.py --mc 26.3 --loader fabric --java /path/to/java25/bin/java
+```
+
+The startup runner accepts `--skip-build` to reuse its already-built test fixture. Build targets sequentially because Unimined shares remapping data and task history. World generation, the DH render-distance change in a live world, config Apply in multiplayer, other pack mods, and OpenCL performance are outside this pass. Earlier generation/persistence checks are described in [docs/VALIDATION-0.0.0-initial.md](docs/VALIDATION-0.0.0-initial.md); predecessor performance results remain in [docs/VALIDATION-0.2.1.md](docs/VALIDATION-0.2.1.md).

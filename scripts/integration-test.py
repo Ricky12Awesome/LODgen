@@ -17,6 +17,7 @@ parser.add_argument("--mc", choices=matrix, required=True)
 parser.add_argument("--loader", choices=("fabric", "neoforge"), required=True)
 parser.add_argument("--java", default="java", help="Java 21 for MC 1.21.1; Java 25 for MC 26.x")
 parser.add_argument("--skip-build", action="store_true")
+parser.add_argument("--startup-only", action="store_true", help="Load the packaged startup fixture and stop before opening a world")
 parser.add_argument("--quick", action="store_true", help="Skip benchmark warmup and cap server checks at 120/60 seconds")
 parser.add_argument("--opencl", action="store_true", help="Install the optional C2ME OpenCL addon and ScalableLux; requires Java 25")
 parser.add_argument("--chunky", action="store_true", help="Install Chunky and exercise a real concurrent pregen task")
@@ -37,6 +38,8 @@ parser.add_argument("--trace-ownership", action="store_true", help="Log the call
 parser.add_argument("--vanilla", action="store_true", help="Test without C2ME")
 parser.add_argument("--baseline", action="store_true", help="Run the same check with DH's original FEATURES generator")
 args = parser.parse_args()
+if args.startup_only and (args.opencl or args.chunky or args.benchmark or args.worldgen_instance or args.baseline or args.vanilla):
+    parser.error("--startup-only checks the default DH/C2ME stack without worldgen or benchmark options")
 if args.vanilla and args.opencl:
     parser.error("--opencl requires C2ME; omit --vanilla")
 if args.benchmark < 0 or args.benchmark % 4:
@@ -50,14 +53,14 @@ if args.frontier_radius and not args.dh_queue:
 if args.native_workers < 0 or args.chunky_working_count < 0:
     parser.error("Worker count overrides must be nonnegative")
 target = matrix[args.mc]
-base = ROOT / "build" / args.mc / args.loader / "selftest"
+base = ROOT / "build" / args.mc / args.loader / ("startup" if args.startup_only else "selftest")
 run = base / ("packaged-server" + ("-baseline" if args.baseline else "") + ("-vanilla" if args.vanilla else ""))
 run.mkdir(parents=True, exist_ok=True)
 # Never reuse worlds: previous normal chunks would hide disk-write regressions.
 world = run / "world"
 if world.exists():
     shutil.rmtree(world)
-report = run / "integration-result.txt"
+report = run / ("startup-result.txt" if args.startup_only else "integration-result.txt")
 report.unlink(missing_ok=True)
 (run / "benchmark-result.json").unlink(missing_ok=True)
 
@@ -81,7 +84,7 @@ def modrinth(version, name):
 
 if not args.skip_build:
     subprocess.run([str(ROOT / "gradlew"), f"-PmcVersion={args.mc}", f"-Ploader={args.loader}",
-                    "-PselfTest=true", "build"], cwd=ROOT, check=True)
+                    "-PstartupTest=true" if args.startup_only else "-PselfTest=true", "build"], cwd=ROOT, check=True)
 artifacts = [p for p in (base / "libs").glob("*.jar") if p.name.endswith(f"-{mod_version}.jar")]
 if len(artifacts) != 1:
     raise SystemExit("Build the self-test variant first")
@@ -119,28 +122,32 @@ if args.native_workers:
 (run / "config" / "lodgen.toml").write_text(f"enabled={'false' if args.baseline else 'true'}\npipelineBatches={args.pipeline_batches}\nqueuedBatches=64\nspatialBatching={str(not args.no_spatial_batching).lower()}\n")
 (run / "server.properties").write_text("online-mode=false\nserver-port=0\nlevel-seed=123456789\n"
                                        "view-distance=2\nsimulation-distance=2\nmax-tick-time=180000\n")
+heap = "-Xmx2G" if args.startup_only else "-Xmx8G"
 if args.loader == "fabric":
     version = target["fabricApi"]
     download(f"https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/{version}/fabric-api-{version}.jar",
              run / "mods" / "fabric-api.jar")
     download(f"https://meta.fabricmc.net/v2/versions/loader/{args.mc}/{target['fabricLoader']}/1.1.1/server/jar",
              run / "fabric-server-launch.jar")
-    command = [args.java, "-Xmx8G", "-Dlodgen.test.chunky=" + str(args.chunky).lower(), "-Dlodgen.test.benchmark=" + str(args.benchmark), "-jar", "fabric-server-launch.jar", "nogui"]
+    command = [args.java, heap, "-Dlodgen.test.chunky=" + str(args.chunky).lower(), "-Dlodgen.test.benchmark=" + str(args.benchmark), "-jar", "fabric-server-launch.jar", "nogui"]
 else:
     nf = target["neoForge"]
     installer = run / f"neoforge-{nf}-installer.jar"
     download(f"https://maven.neoforged.net/releases/net/neoforged/neoforge/{nf}/neoforge-{nf}-installer.jar",
              installer)
     argument_file = run / "libraries" / "net" / "neoforged" / "neoforge" / nf / "unix_args.txt"
+    cached_libraries = ROOT / "build" / args.mc / args.loader / "selftest/packaged-server/libraries"
+    if args.startup_only and not argument_file.exists() and (cached_libraries / "net" / "neoforged" / "neoforge" / nf / "unix_args.txt").exists():
+        shutil.copytree(cached_libraries, run / "libraries", dirs_exist_ok=True)
     if not argument_file.exists():
         subprocess.run([args.java, "-jar", str(installer), "--installServer"], cwd=run, check=True)
     if argument_file.exists():
-        command = [args.java, "-Xmx8G", "-Dlodgen.test.chunky=" + str(args.chunky).lower(), "-Dlodgen.test.benchmark=" + str(args.benchmark), "@" + str(argument_file), "nogui"]
+        command = [args.java, heap, "-Dlodgen.test.chunky=" + str(args.chunky).lower(), "-Dlodgen.test.benchmark=" + str(args.benchmark), "@" + str(argument_file), "nogui"]
     else:
         launchers = list(run.glob("neoforge-*-server.jar"))
         if len(launchers) != 1:
             raise SystemExit("NeoForge installer did not produce a recognized server launcher")
-        command = [args.java, "-Xmx8G", "-Dlodgen.test.chunky=" + str(args.chunky).lower(), "-Dlodgen.test.benchmark=" + str(args.benchmark), "-jar", str(launchers[0]), "nogui"]
+        command = [args.java, heap, "-Dlodgen.test.chunky=" + str(args.chunky).lower(), "-Dlodgen.test.benchmark=" + str(args.benchmark), "-jar", str(launchers[0]), "nogui"]
 
 benchmark_options = [f"-Dlodgen.test.layout={args.layout}", f"-Dlodgen.test.workers={args.workers}",
                      f"-Dlodgen.test.skipWarmup={str(args.quick).lower()}",
@@ -159,10 +166,15 @@ command[1:1] = benchmark_options
 log = run / "integration-server.log"
 print(f"Testing packaged {args.mc} {args.loader}; log: {log}", flush=True)
 with log.open("w") as output:
-    subprocess.run(command, cwd=run, stdout=output, stderr=subprocess.STDOUT, timeout=120 if args.quick else 900, check=True)
+    subprocess.run(command, cwd=run, stdout=output, stderr=subprocess.STDOUT, timeout=120 if args.quick or args.startup_only else 900, check=True)
 if not report.exists() or not report.read_text().startswith("PASS:"):
     print(log.read_text()[-16000:])
     raise SystemExit(report.read_text() if report.exists() else "Server stopped without an integration result")
+if args.startup_only:
+    if any(world.rglob("*.mca")):
+        raise SystemExit("Startup-only check generated chunks")
+    print(report.read_text().strip())
+    raise SystemExit(0)
 reload_report = run / "integration-reload-result.txt"
 reload_report.unlink(missing_ok=True)
 reload_command = command[:1] + ["-Dlodgen.test.reload=true"] + [arg for arg in command[1:] if not arg.startswith("-XX:StartFlightRecording=")]

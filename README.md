@@ -2,7 +2,7 @@
 
 Fabric and NeoForge addon that sends Distant Horizons `FEATURES` requests through Minecraft's normal asynchronous chunk system, without saving chunk, POI, or entity data for terrain loaded solely for DH. C2ME and its optional OpenCL addon accelerate that pipeline automatically.
 
-The project is in development. **The version stays at `0.0.0` until it is ready to release.** Development builds can make breaking changes without migrations or compatibility guarantees for earlier addon builds. The current installable development build is `dist/lodgen-1.21.1-neoforge-0.0.0.jar`.
+The project is in development. **The version stays at `0.0.0` until it is ready to release.** Development builds can make breaking changes without migrations or compatibility guarantees for earlier addon builds. Matching installable development jars for every target are collected in `dist/`.
 
 ## Use
 
@@ -52,7 +52,7 @@ Sources and build setup support both loaders with shared code:
 | 26.2 | 25 | Fabric, NeoForge | 3.3.3 |
 | 26.3 | 25 | Fabric, NeoForge | 3.3.4 |
 
-**This update is built and validated only for 1.21.1 NeoForge**, as requested. Other targets remain unverified for this change. OpenCL requires Java 25, including on Minecraft 1.21.1. Exact dependencies are recorded in `versions.json` and `test-versions.json`.
+Every target is built and checked for packaged client/server startup with DH and C2ME. The client check opens and renders the title screen, Options, and LODgen's config screen; the server check transforms every generation mixin target before loading world levels. World generation tests are separate. OpenCL requires Java 25, including on Minecraft 1.21.1. Exact dependencies are recorded in `versions.json` and `test-versions.json`.
 
 Use JDK 25 for Gradle with the JDK 21 compilation toolchain installed:
 
@@ -60,9 +60,18 @@ Use JDK 25 for Gradle with the JDK 21 compilation toolchain installed:
 ./gradlew -PmcVersion=1.21.1 -Ploader=neoforge build
 ```
 
-Install the regular jar from `build/1.21.1/neoforge/libs/`, not the `-dev.jar` or self-test jar. Run target builds sequentially because Unimined shares remapping files and task history. `scripts/build-all.py` retains the full matrix workflow; the development version remains `0.0.0`.
+Install the regular jar from the target's `libs/` directory, not the `-dev.jar`, self-test jar, or startup fixture. Run target builds sequentially because Unimined shares remapping files and task history. `scripts/build-all.py` builds/tests the full matrix and collects the regular jars; the development version remains `0.0.0`.
 
 ## Quick checks
+
+Build all targets, then check packaged startup without generating terrain:
+
+```sh
+python3 scripts/build-all.py
+xvfb-run -a python3 scripts/startup-test.py
+```
+
+The Linux startup runner uses JDK 21 for 1.21.1 and JDK 25 for 26.x. It accepts `--mc`, `--loader`, `--java`, and `--skip-build` to check a single target or reuse its startup fixture. Xvfb and Mesa allow CI to render menus without a physical display. Official client assets and loader installations are cached under `build/`; first runs download them. Reports/logs stay under `build/<minecraft>/<loader>/startup/`. Production class files must match the packaged fixture byte-for-byte, and test probes must be absent from the regular jar. These startup checks are available locally; the GitHub workflow keeps its existing build and packaged-server integration steps.
 
 The focused suite covers TOML parsing, live admission limits, the 512-to-128 boundary, negative/world-border coordinates, shared ownership, cancellation, and feature scopes. A small packaged-server check covers the actual DH queue, LOD storage, concurrent Chunky, lighting, no-save behavior, and restart persistence:
 
