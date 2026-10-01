@@ -10,9 +10,14 @@
   "lodgen.config.spatialBatching.tooltip": "Generate nearby terrain together within DH’s distance priority bands to share supporting chunks.",
   "lodgen.config.defaults": "Defaults",
   "lodgen.config.apply": "Apply",
-  "lodgen.config.invalid": "Active: 1–64. Waiting: 0–1024. Distance: 0 or positive.",
+  "lodgen.config.invalid": "Invalid value. Check each setting’s tooltip.",
   "lodgen.config.saveFailed": "Could not save lodgen.toml. See the log.",
   "lodgen.config.live": "Applies immediately to local generation.",
   "lodgen.config.generationDistance": "Generation distance",
-  "lodgen.config.generationDistance.tooltip": "Radius in chunks for chunk-based LOD generation. 0 uses DH’s or Voxy’s distance. Positive values override it. Changes apply immediately; running work finishes."
+  "lodgen.config.generationDistance.tooltip": "Radius in chunks for chunk-based LOD generation. 0 uses DH’s or Voxy’s distance. Positive values override it. Changes apply immediately; running work finishes.",
+  "lodgen.config.showChunksPerSecond.toggle": "Show chunks per second: %s",
+  "lodgen.config.showChunksPerSecond.tooltip": "Show completed LOD chunks per second above the hotbar using Minecraft’s action bar. Hidden at zero throughput or when DH uses its own overlay.",
+  "lodgen.overlay.throughput": "LODgen: %s chunks/s",
+  "lodgen.config.chunksPerSecondUpdateIntervalMs": "Overlay update interval (ms)",
+  "lodgen.config.chunksPerSecondUpdateIntervalMs.tooltip": "1–60000 milliseconds between chunks/second updates. Default: 1000 (one second). The rate still averages the last five seconds. Changes apply immediately."
 }

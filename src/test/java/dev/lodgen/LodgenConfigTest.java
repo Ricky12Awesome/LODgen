@@ -14,7 +14,7 @@ class LodgenConfigTest {
     @Test void createsTomlAndRoundTripsAllSettings() throws Exception {
         Path file = directory.resolve("lodgen.toml");
         assertEquals(LodgenConfig.DEFAULTS, LodgenConfig.load(file));
-        var edited = new LodgenConfig(false, 12, 0, false, 64);
+        var edited = new LodgenConfig(false, 12, 0, false, 64, true, 250);
         LodgenConfig.write(file, edited);
         assertEquals(edited, LodgenConfig.read(file));
         assertTrue(Files.readString(file).contains("pipelineBatches = 12"));
@@ -24,14 +24,14 @@ class LodgenConfigTest {
     @Test void parsesRealTomlAndPreservesUnrelatedTables() throws Exception {
         Path file = directory.resolve("lodgen.toml");
         Files.writeString(file, "enabled = true # Inline comment\npipelineBatches = 0x20\nqueuedBatches = 1_024\n[notes]\nvalue = 'keep me'\n");
-        assertEquals(new LodgenConfig(true, 32, 1024, true, 0), LodgenConfig.read(file));
+        assertEquals(new LodgenConfig(true, 32, 1024, true, 0, false, 1000), LodgenConfig.read(file));
         LodgenConfig.write(file, LodgenConfig.DEFAULTS);
         assertTrue(Files.readString(file).contains("keep me"));
     }
 
     @Test void invalidTypesAndBoundsDisableWithoutRewritingTheBadFile() throws Exception {
         Path file = directory.resolve("lodgen.toml");
-        for (String text : new String[]{"enabled = 'false'", "pipelineBatches = 0", "pipelineBatches = 65", "queuedBatches = -1", "queuedBatches = 1.5", "enabled = invalid", "generationDistance = -1", "generationDistance = 1.5", "generationDistance = 2147483648"}) {
+        for (String text : new String[]{"enabled = 'false'", "showChunksPerSecond = 1", "chunksPerSecondUpdateIntervalMs = 0", "chunksPerSecondUpdateIntervalMs = 60001", "chunksPerSecondUpdateIntervalMs = 1.5", "pipelineBatches = 0", "pipelineBatches = 65", "queuedBatches = -1", "queuedBatches = 1.5", "enabled = invalid", "generationDistance = -1", "generationDistance = 1.5", "generationDistance = 2147483648"}) {
             Files.writeString(file, text);
             assertFalse(LodgenConfig.load(file).enabled(), text);
             assertEquals(text, Files.readString(file));

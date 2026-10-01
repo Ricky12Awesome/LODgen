@@ -2,7 +2,14 @@
   "required": true,
   "package": "dev.lodgen.startup.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": ["ServerStartupMixin"],
-  "client": ["ClientStartupMixin"],
-  "injectors": {"defaultRequire": 1}
+  "mixins": [
+    "ServerStartupMixin"
+  ],
+  "client": [
+    "ClientStartupMixin",
+    "OverlayRenderCheckMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
 }

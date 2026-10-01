@@ -27,7 +27,7 @@ public final class DistanceCheck {
         Config.Client.Advanced.Graphics.Quality.lodChunkRenderDistanceRadius.set(128);
         Config.Common.WorldGenerator.chunkGeneratorMode.set(EDhApiDistantGeneratorMode.FEATURES);
         if (!Config.Common.WorldGenerator.generatorPlan.get().chunkGenEnabled) throw new AssertionError("Test needs chunk-enabled generator plan");
-        LodgenConfig.apply(new LodgenConfig(true, 1, 0, true, 64));
+        LodgenConfig.apply(new LodgenConfig(true, 1, 0, true, 64, false, 1000));
         var queue = new WorldGenerationQueue(generator, (IDhServerLevel) generator.serverLevelWrapper.getDhLevel());
         int centerX = 4096, centerZ = -4096;
         int insideX = centerX + 60, outsideX = centerX + 96;
@@ -41,7 +41,7 @@ public final class DistanceCheck {
                     if (data == null || data.getApiDataPointColumn(0, 0).isEmpty()) throw new AssertionError("Inside custom radius did not generate LODs");
                     data.close();
                     if (PersistenceRegistry.get(level).suppress(outsideX, centerZ)) throw new AssertionError("Outside custom radius reached native generation");
-                    try { LodgenConfig.apply(new LodgenConfig(true, 1, 0, true, 0)); }
+                    try { LodgenConfig.apply(new LodgenConfig(true, 1, 0, true, 0, false, 1000)); }
                     catch (Exception failure) { throw new RuntimeException(failure); }
                     return queue.submitRetrievalTask(DhSectionPos.encode((byte) 6, outsideX / 4, centerZ / 4), (byte) 0)
                             .orTimeout(30, TimeUnit.SECONDS);

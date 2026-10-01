@@ -24,7 +24,9 @@
     "OptionsScreenMixin",
     "VoxyClientTickMixin",
     "VoxyShutdownMixin",
-    "VoxyEngineCloseMixin"
+    "VoxyEngineCloseMixin",
+    "GenerationOverlayMixin",
+    "ActionBarAccess"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -43,6 +43,12 @@ public abstract class ClientStartupMixin {
             if (minecraft.level != null) throw new AssertionError("Startup check opened a world");
             if (lodgen$stage == 0) {
                 StartupCheck.checkTargets();
+                dev.lodgen.startup.OverlayCheck.check();
+                // #if MC_262_PLUS
+                Class.forName(net.minecraft.client.gui.Hud.class.getName());
+                // #else
+                Class.forName(net.minecraft.client.gui.Gui.class.getName());
+                // #endif
                 if (Boolean.getBoolean("lodgen.test.voxy")) new dev.lodgen.voxy.VoxyBridge();
                 ClientScreens.open(minecraft, new TitleScreen());
                 lodgen$stage = 1;
@@ -85,7 +91,7 @@ public abstract class ClientStartupMixin {
                 return;
             }
             Screen config = ClientScreens.current(minecraft);
-            if (!(config instanceof LodgenConfigScreen) || config.children().size() != 8) throw new AssertionError("Config widgets missing");
+            if (!(config instanceof LodgenConfigScreen) || config.children().size() != 10) throw new AssertionError("Config widgets missing");
             config.onClose();
             if (ClientScreens.current(minecraft) != lodgen$configParent) throw new AssertionError("Config did not return to its parent");
             StartupCheck.report("PASS: client title, Options button and LODgen config initialized and rendered; "

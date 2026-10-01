@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 /** Small real single-player regression with Voxy/C2ME and no DH installed. */
 public final class VoxyWorldCheck {
     private static long started;
+    private static long idleStarted;
     private static int stage;
     private static int completedTiles;
     private static CompletableFuture<Void> far;
@@ -29,7 +30,7 @@ public final class VoxyWorldCheck {
     public static void start(Minecraft client) throws Exception {
         started = System.nanoTime();
         // Keep generation paused while the normal player/spawn chunks load.
-        LodgenConfig.apply(new LodgenConfig(false, 1, 0, true, 1));
+        LodgenConfig.apply(new LodgenConfig(false, 1, 0, true, 1, true, 1000));
         if (Boolean.getBoolean("lodgen.test.voxyReload")) {
             client.createWorldOpenFlows().openWorld("lodgen-voxy-check", () -> { throw new AssertionError("World reopen cancelled"); });
             return;
@@ -52,7 +53,7 @@ public final class VoxyWorldCheck {
     }
 
     public static void tick(Minecraft client) {
-        if (stage == 3) return;
+        if (stage == 4) return;
         try {
             if (System.nanoTime() - started > TimeUnit.SECONDS.toNanos(100)) throw new AssertionError("Voxy world check timed out");
             if (client.level == null || client.player == null || client.getSingleplayerServer() == null) return;
@@ -60,7 +61,7 @@ public final class VoxyWorldCheck {
             var context = bridge.context(client.level);
             if (context == null) throw new AssertionError("Voxy ingestion unavailable in the real client");
             if (stage == 0) {
-                LodgenConfig.apply(new LodgenConfig(true, 1, 0, true, 1));
+                LodgenConfig.apply(new LodgenConfig(true, 1, 0, true, 1, true, 1000));
                 stage = 1; return;
             }
             if (stage == 1) {
@@ -79,9 +80,9 @@ public final class VoxyWorldCheck {
                     if (!saved.equals(completed.get(session))) throw new AssertionError("Coverage did not prevent regeneration after reopening");
                     checkStoredFarSection(context.engine());
                     StartupCheck.report("PASS: Voxy reopened without DH; completed generation coverage restored and nonempty far LOD data survived restart.");
-                    stage = 3; client.stop(); return;
+                    stage = 4; client.stop(); return;
                 }
-                LodgenConfig.apply(new LodgenConfig(false, 1, 0, true, 1));
+                LodgenConfig.apply(new LodgenConfig(false, 1, 0, true, 1, true, 1000));
                 VoxyGeneration.beforeShutdown();
                 var server = client.getSingleplayerServer();
                 var level = server.getLevel(client.level.dimension());
@@ -96,11 +97,29 @@ public final class VoxyWorldCheck {
                 far.whenComplete((ignored, error) -> pipeline.close());
                 stage = 2; return;
             }
-            if (!far.isDone()) return;
+            if (stage == 3) {
+                if (System.nanoTime() - idleStarted < TimeUnit.SECONDS.toNanos(6)) return;
+                dev.lodgen.client.GenerationOverlay.tick(client);
+                // #if MC_262_PLUS
+                var actionBar = (dev.lodgen.mixin.ActionBarAccess) client.gui.hud;
+                // #else
+                var actionBar = (dev.lodgen.mixin.ActionBarAccess) client.gui;
+                // #endif
+                var message = actionBar.lodgen$actionBarMessage();
+                if (message != null && !message.getString().isEmpty()) throw new AssertionError("Zero throughput left action-bar text behind");
+                StartupCheck.report("PASS: Voxy without DH generated " + completedTiles
+                        + " nearby tiles (radius 1) and 16 far native chunks; vanilla action-bar throughput appeared, cleared at zero, and preserved another message. Total target chunks <= 80.");
+                stage = 4; client.stop(); return;
+            }
+            if (!far.isDone() || !OverlayCheck.rendered) return;
             far.join();
-            StartupCheck.report("PASS: Voxy without DH loaded and rendered config; its own scheduler completed " + completedTiles
-                    + " nearby tiles (radius 1), and 16 far native chunks produced nonempty Voxy data with transient ownership. Total target chunks <= 80.");
-            stage = 3; client.stop();
+            if (!dev.lodgen.client.GenerationOverlay.visible()) throw new AssertionError("Voxy-only HUD hidden");
+            if (PersistenceRegistry.throughput(client.getSingleplayerServer().getLevel(client.level.dimension())).chunksPerSecond() <= 0)
+                throw new AssertionError("Successful far batch missing from throughput counter");
+            OverlayCheck.checkMessageOwnership(client);
+            idleStarted = System.nanoTime();
+            stage = 3;
+
         } catch (Throwable failure) {
             StartupCheck.report("FAIL: " + failure);
             throw new RuntimeException("Voxy world check failed", failure);

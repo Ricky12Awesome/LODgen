@@ -11,11 +11,13 @@ import java.util.function.Function;
 /** Shared admission and ticket lifetime for both renderer integrations. */
 public final class ChunkGenerationPipeline implements AutoCloseable {
     private final NormalChunkBackend backend;
+    private final dev.lodgen.generation.ChunkThroughput throughput;
     private final BatchGate gate;
     private final Consumer<LodgenConfig> listener;
 
     public ChunkGenerationPipeline(Object level) {
         backend = PersistenceRegistry.backend(level);
+        throughput = PersistenceRegistry.throughput(level);
         gate = new BatchGate(LodgenConfig.INSTANCE.pipelineBatches(), LodgenConfig.INSTANCE.queuedBatches());
         listener = settings -> gate.reconfigure(settings.pipelineBatches(), settings.queuedBatches());
         LodgenConfig.listen(listener);
@@ -31,6 +33,7 @@ public final class ChunkGenerationPipeline implements AutoCloseable {
             // let a renderer advance its completed frontier.
             return conversion.handle((ignored, error) -> batch.release().thenApply(released -> {
                 if (error != null) throw new java.util.concurrent.CompletionException(error);
+                throughput.completed(batch.chunks.size());
                 return (Void) null;
             })).thenCompose(Function.identity());
         }));

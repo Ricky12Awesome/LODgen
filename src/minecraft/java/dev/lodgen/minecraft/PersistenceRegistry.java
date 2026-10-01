@@ -21,6 +21,7 @@ public final class PersistenceRegistry {
     private static final Map<ServerLevel, SavePolicy> LEVELS = new IdentityHashMap<>();
     private static final Map<ResourceKey<Level>, SavePolicy> STORAGE = new HashMap<>();
     private static final Map<Object, SavePolicy> TICKETS = new IdentityHashMap<>();
+    private static final Map<ServerLevel, dev.lodgen.generation.ChunkThroughput> THROUGHPUT = new IdentityHashMap<>();
     private static final Map<ServerLevel, NormalChunkBackend> BACKENDS = new IdentityHashMap<>();
     // OpenCL batches can expand the vanilla dependency footprint by up to 3 chunks.
     public static final int BATCH_PADDING = 4;
@@ -43,6 +44,10 @@ public final class PersistenceRegistry {
     public static synchronized SavePolicy get(RegionStorageInfo info) { return STORAGE.get(info.dimension()); }
     public static synchronized NormalChunkBackend backend(Object level) {
         return BACKENDS.computeIfAbsent((ServerLevel) level, NormalChunkBackend::new);
+    }
+
+    public static synchronized dev.lodgen.generation.ChunkThroughput throughput(Object level) {
+        return THROUGHPUT.computeIfAbsent((ServerLevel) level, ignored -> new dev.lodgen.generation.ChunkThroughput());
     }
 
     public static synchronized void normalTicket(Object owner, long pos, Ticket ticket) {
@@ -75,6 +80,7 @@ public final class PersistenceRegistry {
         STORAGE.remove(level.dimension(), policy);
         TICKETS.values().removeIf(value -> value == policy);
         BACKENDS.remove(level);
+        THROUGHPUT.remove(level);
     }
 
     public static int x(ChunkPos pos) {

@@ -1,21 +1,21 @@
 # LODgen development validation — 0.0.0
 
-All eight configured targets build and pass packaged **client and dedicated-server startup** with their pinned Distant Horizons and C2ME versions. Small Voxy-only client worlds on all three supported targets verify generation and restart persistence, using at most 80 target chunks each. A small Minecraft 1.21.1 NeoForge DH world test additionally checks custom generation distance using only 32 target chunks. This pass does not run full-radius generation, OpenCL, Chunky, or throughput tests. The development version remains **0.0.0**.
+All eight configured targets build and pass packaged **client and dedicated-server startup** with their pinned Distant Horizons and C2ME versions. Small Voxy-only client worlds on all three supported targets verify native action-bar messages, zero-rate hiding, and generation/restart persistence, using at most 80 target chunks each. The earlier Minecraft 1.21.1 NeoForge DH distance regression remains recorded below (32 target chunks); it is not repeated for this HUD change. This pass does not run full-radius generation, OpenCL, Chunky, or performance benchmarks. The development version remains **0.0.0**.
 
 ## Matrix results
 
 | Minecraft | Loader | Build / unit tests | Packaged client | Packaged server | Cached software startup time |
 | --- | --- | --- | --- | --- | --- |
-| 1.21.1 | Fabric | PASS / 30 | PASS | PASS | 27.55 s |
-| 1.21.1 | NeoForge | PASS / 30 | PASS | PASS | 21.3 s |
-| 26.1.2 | Fabric | PASS / 30 | PASS | PASS | 22.9 s |
-| 26.1.2 | NeoForge | PASS / 30 | PASS | PASS | 18.95 s |
-| 26.2 | Fabric | PASS / 30 | PASS | PASS | 23.26 s |
-| 26.2 | NeoForge | PASS / 30 | PASS | PASS | 17.32 s |
-| 26.3 | Fabric | PASS / 30 | PASS | PASS | 25.59 s |
-| 26.3 | NeoForge | PASS / 30 | PASS | PASS | 18.08 s |
+| 1.21.1 | Fabric | PASS / 33 | PASS | PASS | 21.71 s |
+| 1.21.1 | NeoForge | PASS / 33 | PASS | PASS | 20.92 s |
+| 26.1.2 | Fabric | PASS / 33 | PASS | PASS | 18.09 s |
+| 26.1.2 | NeoForge | PASS / 33 | PASS | PASS | 18.17 s |
+| 26.2 | Fabric | PASS / 33 | PASS | PASS | 16.31 s |
+| 26.2 | NeoForge | PASS / 33 | PASS | PASS | 16.78 s |
+| 26.3 | Fabric | PASS / 33 | PASS | PASS | 17.34 s |
+| 26.3 | NeoForge | PASS / 33 | PASS | PASS | 18.7 s |
 
-There are **240 passing unit-test executions**, with zero failures, errors, or skipped tests, plus **16 successful runtime checks**. The table records the final pass with cached assets and Mesa llvmpipe software rendering, including fixture builds; initial uncached asset downloads take longer. Minecraft 1.21.1 uses Java 21; 26.x uses Java 25. Exact DH/C2ME/loader versions are in `versions.json`.
+There are **264 passing unit-test executions**, with zero failures, errors, or skipped tests, plus **16 successful runtime checks**. The table records the final pass with cached assets and Mesa llvmpipe software rendering, including fixture builds; initial uncached asset downloads take longer. Minecraft 1.21.1 uses Java 21; 26.x uses Java 25. Exact DH/C2ME/loader versions are in `versions.json`.
 
 ## Fixes verified
 
@@ -23,9 +23,15 @@ The shared config screen no longer calls `EditBox.setFilter`, which is absent on
 
 These Minecraft signature differences use the existing source preprocessor. Generation, configuration, scheduling, and tests continue sharing one implementation across targets.
 
+## Chunks-per-second overlay
+
+`showChunksPerSecond` is an opt-in TOML and in-game toggle. The client HUD displays successful target LOD chunk completions over a rolling five-second window. Supporting chunks, failed conversions, and normal player/Chunky requests are excluded. Counters are shared by DH/Voxy within a server dimension and removed when the level closes. The HUD is hidden with F1 and on remote servers.
+
+All eight packaged clients force the native action-bar accessor target and check live overlay priority with the toggle both on and off and DH's progress location set to Overlay, Chat, Log and Disabled, restoring original settings afterward. Tiny Voxy-only worlds enable the new display without DH and observe the actual vanilla action-bar text and assert that a completed distant batch contributes a positive throughput value. `chunksPerSecondUpdateIntervalMs` controls HUD refresh frequency (1–60000 ms, default 1000). Cached rates refresh immediately when the interval or server dimension changes, or the HUD toggle is re-enabled after being off. Fake-clock tests cover interval boundaries, live changes, cache resets and idle decay without sleeping. The averaging window remains five seconds. The custom HUD drawing is removed: a client tick sends the same vanilla message used by DH, at the configured interval. Zero-rate or disabled displays clear only LODgen’s own current message. Voxy world checks also verify zero-rate clearing and preservation of another action-bar message. No workflow changes or full-distance performance tests are required.
+
 ## Mod Menu support
 
-Fabric builds register an optional `modmenu` entrypoint that opens the existing LODgen config screen and preserves the Mods screen as its parent. Mod Menu is a development dependency, is not bundled, and is not required by the installed addon. All four Fabric targets pass packaged client checks with their pinned Mod Menu versions from `versions.json`: the probe requests LODgen's registered factory through Mod Menu, renders its eight widgets, closes the config and verifies return to Mods. Their dedicated-server checks run without Mod Menu. No worlds are opened for these checks; the generation code is unchanged from the Voxy/DH tests below.
+Fabric builds register an optional `modmenu` entrypoint that opens the existing LODgen config screen and preserves the Mods screen as its parent. Mod Menu is a development dependency, is not bundled, and is not required by the installed addon. All four Fabric targets pass packaged client checks with their pinned Mod Menu versions from `versions.json`: the probe requests LODgen's registered factory through Mod Menu, renders its ten widgets, closes the config and verifies return to Mods. Their dedicated-server checks run without Mod Menu. No worlds are opened for these checks; the generation behavior is unchanged; successful completion now also updates the HUD counter.
 
 ```sh
 xvfb-run -a python3 scripts/startup-test.py --loader fabric --modmenu
@@ -55,7 +61,7 @@ Roxy's published jar filename is retained in the test launcher: renaming it to `
 
 The startup runner uses ordinary packaged loaders and remapped mod jars, not the development client launcher. That avoids DH's embedded Fabric API having intermediary access-widener names in a named development runtime. NeoForge client installations use the official installer; Fabric client installations use its published launcher profile. Minecraft libraries, native libraries, assets, and selected mods are cached under `build/` with artifact checksums verified where published.
 
-The client probe waits for initial resources to load, opens the title screen and Options, presses the actual **LODgen…** button, initializes all eight config widgets, lets the config render over multiple ticks, and checks that closing it returns to Options. It also loads every generation mixin target through the runtime transformer. The final local pass uses a Linux virtual display and Mesa llvmpipe software rendering without a desktop or GPU.
+The client probe waits for initial resources to load, opens the title screen and Options, presses the actual **LODgen…** button, initializes all ten config widgets, lets the config render over multiple ticks, and checks that closing it returns to Options. It also loads every generation mixin target through the runtime transformer. The final local pass uses a Linux virtual display and Mesa llvmpipe software rendering without a desktop or GPU. One initial 26.1.2 NeoForge refresh-interval check hit a GLX `BadAccess` error before opening the config; its check was retried on a fresh virtual display.
 
 The dedicated-server probe loads LODgen, DH, C2ME, and every generation mixin target. It checks that no `ServerLevel` exists and ends the isolated process before normal server initialization loads world levels. Vanilla bootstrap may create world metadata; no chunk/POI/entity region files may exist. This checks class loading and mixin compatibility, not ticket dispatch, persistence, shutdown, or terrain generation.
 
