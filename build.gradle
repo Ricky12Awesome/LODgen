@@ -1,4 +1,7 @@
 import groovy.json.JsonSlurper
+import java.nio.file.Path
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.internal.file.UnionFileCollection
 
 plugins {
     id 'java'
@@ -47,6 +50,25 @@ unimined.minecraft {
     } else {
         def prefix = mc == '1.21.1' ? '21.1.' : (mc == '26.1.2' ? '26.1.2.' : "${mc}.0.")
         neoForged { loader target.neoForge.substring(prefix.length()); useToolchains = false }
+    }
+}
+
+// Unimined adds Fabric's development mappings as a raw Path. IntelliJ 2026.2
+// treats Path as Iterable and recurses until its dependency importer overflows.
+// Keep the classpath structure, but expose that entry as a Gradle RegularFile.
+if (platform == 'fabric') {
+    afterEvaluate {
+        def normalizePaths
+        normalizePaths = { classpath ->
+            if (classpath instanceof ConfigurableFileCollection) {
+                classpath.setFrom(classpath.from.collect { entry ->
+                    entry instanceof Path ? layout.projectDirectory.file(entry.toString()) : entry
+                })
+            } else if (classpath instanceof UnionFileCollection) {
+                classpath.sources.each { normalizePaths(it) }
+            }
+        }
+        normalizePaths(sourceSets.main.runtimeClasspath)
     }
 }
 
