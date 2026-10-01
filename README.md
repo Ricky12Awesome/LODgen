@@ -1,12 +1,12 @@
 # LODgen
 
-Fabric and NeoForge addon that sends Distant Horizons `FEATURES` requests through Minecraft's normal asynchronous chunk system, without saving chunk, POI, or entity data for terrain loaded solely for DH. C2ME and its optional OpenCL addon accelerate that pipeline automatically.
+Fabric and NeoForge addon that generates chunk-based LODs for Distant Horizons `FEATURES` and Voxy through Minecraft's normal asynchronous chunk system, without saving chunk, POI, or entity data for terrain loaded solely for LODs. C2ME and its optional OpenCL addon accelerate that pipeline automatically.
 
 The project is in development. **The version stays at `0.0.0` until it is ready to release.** Development builds can make breaking changes without migrations or compatibility guarantees for earlier addon builds. Matching installable development jars for every target are collected in `dist/`.
 
 ## Use
 
-Install Distant Horizons and the matching LODgen jar. Choose **FEATURES** in DH's chunk generator settings and enable a generator plan that includes chunks. C2ME, [the C2ME OpenCL addon](https://modrinth.com/mod/qtPMklut), ScalableLux, and Chunky are optional and are never bundled.
+Install the matching LODgen jar and either Distant Horizons or a supported Voxy installation. DH is optional. With DH, choose **FEATURES** in its chunk generator settings and enable a generator plan that includes chunks. C2ME, [the C2ME OpenCL addon](https://modrinth.com/mod/qtPMklut), ScalableLux, and Chunky are optional and are never bundled.
 
 Open **Options → LODgen…** in game. On NeoForge, **Mods → LODgen → Config** opens the same screen. Adjust enabled generation, active batches, waiting batches, generation distance, and grouping of nearby requests, then click **Apply**. **Cancel** discards edits; **Defaults** restores the draft defaults. Changes apply immediately to local generation, including the integrated server. Running native work drains safely when the limit decreases or the addon is disabled.
 
@@ -22,9 +22,31 @@ generationDistance = 0
 
 `pipelineBatches` accepts 1–64 active batches per dimension; 32 default-size DH requests provide 512 target chunks plus their native dependencies. `queuedBatches` accepts 0–1024 waiting requests, which do not occupy waiting workers. Larger windows use more memory. `spatialBatching` groups nearby requests within DH's distance/detail priority bands. DH's thread count and C2ME's worker count also affect parallelism.
 
-`generationDistance` is a radius in chunks. **0 follows DH's distance**; a positive value overrides the chunk-based FEATURES generation radius. For example, `generationDistance = 512` with DH set to 1024 limits new chunk-based LOD generation to 512 while retaining DH's 1024 render distance. Changing it in game drops waiting requests beyond the new limit; active batches finish. Whole sections overlapping the boundary are retained, and native supporting chunks may extend beyond it. DH still controls which LODs are requested. Dedicated servers use the explicit override too; 0 preserves their existing request ranges. This only affects LODgen's FEATURES queue; normal player and Chunky generation keep their ranges.
+`generationDistance` is a radius in chunks. **0 follows the active renderer's distance**; a positive value overrides the chunk-based FEATURES generation radius. For example, `generationDistance = 512` with DH set to 1024 limits new chunk-based LOD generation to 512 while retaining DH's 1024 render distance. Changing it in game drops waiting requests beyond the new limit; active batches finish. Whole sections overlapping the boundary are retained, and native supporting chunks may extend beyond it. DH still controls which LODs are requested. Dedicated servers use the explicit override too; 0 preserves their existing request ranges. This only affects LODgen's FEATURES queue; normal player and Chunky generation keep their ranges.
 
 LODgen reads only `config/lodgen.toml` and creates it with defaults if missing. Manual file edits are read at startup. In multiplayer, this screen changes the local installation's settings; a dedicated server uses its own TOML file.
+
+## Voxy
+
+Voxy has no generation queue, so LODgen supplies one for single-player and LAN hosts. It generates nearby 4×4 chunk tiles through the same normal asynchronous pipeline used for DH, allowing C2ME/OpenCL to replace vanilla generation. Block, biome and lighting snapshots are converted into Voxy data without saving LOD-only native chunks. Ordinary player and Chunky requests still adopt chunks normally.
+
+| Minecraft | Loader | Tested Voxy setup |
+| --- | --- | --- |
+| 1.21.1 | NeoForge | [Roxy](https://modrinth.com/mod/roxy) + [Voxy 0.2.16-beta for 1.21.11](https://modrinth.com/mod/voxy/version/H3w2nVdU) |
+| 26.1.2 | Fabric | [Voxy 0.2.18-beta](https://modrinth.com/mod/voxy/version/Zt3LPI0b) |
+| 26.2 | Fabric | [Voxy 0.2.19-beta](https://modrinth.com/mod/voxy/version/LzyXnE51) |
+
+Install Voxy's required Sodium/Fabric API dependencies, and Roxy's dependencies where applicable. These mods are not bundled. Voxy support is disabled on other LODgen targets.
+
+**Options → LODgen… → Generation distance** controls both integrations. With Voxy, `0` follows its render distance (`section_render_distance × 32` chunks); a positive value sets a custom radius. Voxy's ingestion and LODgen's **Enabled** setting must both be on. Movement, dimension changes and lowering the distance update the frontier immediately; existing native work drains. Generation uses square bounds, retains whole boundary tiles, and can require supporting chunks beyond the radius.
+
+Completed tiles are tracked per Voxy world/dimension and checkpointed under Voxy's storage path in `lodgen/<world-id>.tiles` after the engine closes. Reopening a world restores that coverage; deleting the entire Voxy cache resets it. A crash before a checkpoint can cause some tiles to regenerate. Voxy still saves its own LOD database. LODgen never changes Voxy's render distance or forces distant chunks into a remote server: multiplayer clients can only ingest terrain sent by that server.
+
+To run the small disposable Voxy-only client checks (no DH, at most 80 target chunks per target):
+
+```sh
+xvfb-run -a python3 scripts/voxy-test.py --world --reload
+```
 
 ## Render-distance changes
 
@@ -96,3 +118,5 @@ python3 scripts/integration-test.py --mc 1.21.1 --loader neoforge --quick \
 See [VALIDATION.md](VALIDATION.md) for current checks. Earlier performance measurements belong to the predecessor and are preserved in [docs/VALIDATION-0.2.1.md](docs/VALIDATION-0.2.1.md); they are not a new benchmark of this development build.
 
 Upstream: [Distant Horizons](https://gitlab.com/distant-horizons-team/distant-horizons), [C2ME](https://github.com/RelativityMC/C2ME-fabric), [Chunky](https://github.com/pop4959/Chunky).
+
+LODgen bundles a relocated copy of NightConfig for TOML support without DH. Its LGPL-3.0 license is retained in `META-INF/licenses/night-config.txt`; source is available from [NightConfig](https://github.com/TheElectronWill/night-config). No renderer or generation mod is bundled.

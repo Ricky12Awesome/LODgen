@@ -1,8 +1,8 @@
 package dev.lodgen;
 
-import DistantHorizons.libraries.electronwill.nightconfig.core.CommentedConfig;
-import DistantHorizons.libraries.electronwill.nightconfig.toml.TomlParser;
-import DistantHorizons.libraries.electronwill.nightconfig.toml.TomlWriter;
+import com.electronwill.nightconfig.core.CommentedConfig;
+import com.electronwill.nightconfig.toml.TomlParser;
+import com.electronwill.nightconfig.toml.TomlWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,7 +39,7 @@ public record LodgenConfig(boolean enabled, int pipelineBatches, int queuedBatch
             write(file, DEFAULTS);
             return DEFAULTS;
         } catch (IOException | RuntimeException error) {
-            LOGGER.error("Cannot read LODgen configuration; keeping DH's default generator", error);
+            LOGGER.error("Cannot read LODgen configuration; disabling LODgen generation", error);
             return new LodgenConfig(false, 32, 64, true, 0);
         }
     }
@@ -94,8 +94,8 @@ public record LodgenConfig(boolean enabled, int pipelineBatches, int queuedBatch
         values.set("pipelineBatches", settings.pipelineBatches());
         values.set("queuedBatches", settings.queuedBatches());
         values.set("spatialBatching", settings.spatialBatching());
-        values.setComment("generationDistance", " Chunk-based LOD generation radius in chunks. 0 follows DH; positive values override it.");
-        values.setComment("enabled", " Use normal asynchronous chunk generation for DH FEATURES. Changes apply in game.");
+        values.setComment("generationDistance", " Chunk-based LOD generation radius in chunks. 0 follows DH/Voxy; positive values override it.");
+        values.setComment("enabled", " Use normal asynchronous chunk generation for DH FEATURES and Voxy. Changes apply in game.");
         values.setComment("pipelineBatches", " Active batches per dimension (1–64). 32 batches = 512 target chunks at DH detail 6.");
         values.setComment("queuedBatches", " Waiting batches (0–1024). Waiting requests do not occupy workers.");
         values.setComment("spatialBatching", " Group nearby requests within DH's distance priority bands.");

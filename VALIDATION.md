@@ -1,27 +1,47 @@
 # LODgen development validation — 0.0.0
 
-All eight configured targets build and pass packaged **client and dedicated-server startup** with their pinned Distant Horizons and C2ME versions. A small Minecraft 1.21.1 NeoForge world test additionally checks the custom generation distance using only 32 target chunks. This pass does not run full-radius generation, OpenCL, Chunky, or throughput tests. The development version remains **0.0.0**.
+All eight configured targets build and pass packaged **client and dedicated-server startup** with their pinned Distant Horizons and C2ME versions. Small Voxy-only client worlds on all three supported targets verify generation and restart persistence, using at most 80 target chunks each. A small Minecraft 1.21.1 NeoForge DH world test additionally checks custom generation distance using only 32 target chunks. This pass does not run full-radius generation, OpenCL, Chunky, or throughput tests. The development version remains **0.0.0**.
 
 ## Matrix results
 
 | Minecraft | Loader | Build / unit tests | Packaged client | Packaged server | Cached software startup time |
 | --- | --- | --- | --- | --- | --- |
-| 1.21.1 | Fabric | PASS / 27 | PASS | PASS | 17.18 s |
-| 1.21.1 | NeoForge | PASS / 27 | PASS | PASS | 17.99 s |
-| 26.1.2 | Fabric | PASS / 27 | PASS | PASS | 14.33 s |
-| 26.1.2 | NeoForge | PASS / 27 | PASS | PASS | 15.53 s |
-| 26.2 | Fabric | PASS / 27 | PASS | PASS | 14.9 s |
-| 26.2 | NeoForge | PASS / 27 | PASS | PASS | 15.69 s |
-| 26.3 | Fabric | PASS / 27 | PASS | PASS | 15.5 s |
-| 26.3 | NeoForge | PASS / 27 | PASS | PASS | 16.33 s |
+| 1.21.1 | Fabric | PASS / 30 | PASS | PASS | 22.33 s |
+| 1.21.1 | NeoForge | PASS / 30 | PASS | PASS | 21.3 s |
+| 26.1.2 | Fabric | PASS / 30 | PASS | PASS | 18.52 s |
+| 26.1.2 | NeoForge | PASS / 30 | PASS | PASS | 18.95 s |
+| 26.2 | Fabric | PASS / 30 | PASS | PASS | 17.51 s |
+| 26.2 | NeoForge | PASS / 30 | PASS | PASS | 17.32 s |
+| 26.3 | Fabric | PASS / 30 | PASS | PASS | 16.88 s |
+| 26.3 | NeoForge | PASS / 30 | PASS | PASS | 18.08 s |
 
-There are **216 passing unit-test executions**, with zero failures, errors, or skipped tests, plus **16 successful runtime checks**. The table records the final pass with cached assets and Mesa llvmpipe software rendering, including fixture builds; initial uncached asset downloads take longer. Minecraft 1.21.1 uses Java 21; 26.x uses Java 25. Exact DH/C2ME/loader versions are in `versions.json`.
+There are **240 passing unit-test executions**, with zero failures, errors, or skipped tests, plus **16 successful runtime checks**. The table records the final pass with cached assets and Mesa llvmpipe software rendering, including fixture builds; initial uncached asset downloads take longer. Minecraft 1.21.1 uses Java 21; 26.x uses Java 25. Exact DH/C2ME/loader versions are in `versions.json`.
 
 ## Fixes verified
 
 The shared config screen no longer calls `EditBox.setFilter`, which is absent on 26.x Fabric. Apply validates numbers and ranges and displays the existing validation error. Screen navigation uses Minecraft's `gui.setScreen` API on 26.2/26.3 and `setScreen` on earlier targets. On 26.x, Minecraft already extracts the screen background before calling `extractRenderState`; the addon no longer repeats that operation. The startup check reproduced the resulting “Can only blur once per frame” crash before the duplicate call was removed.
 
 These Minecraft signature differences use the existing source preprocessor. Generation, configuration, scheduling, and tests continue sharing one implementation across targets.
+
+## Voxy support verified
+
+DH is now optional. LODgen bundles its own relocated NightConfig TOML parser, and a mixin plugin excludes missing renderer integrations before their targets load. DH and Voxy share the native chunk backend, admission gate and ticket cleanup through `ChunkGenerationPipeline`. Voxy alone supplies its own bounded 4×4 tile frontier; block/biome palettes and lighting are copied on the server thread before conversion workers update the client Voxy engine. Renderer shutdown drains conversion before Voxy stops saving. Completed coverage is checkpointed after engine close, and restored on reopening.
+
+| Minecraft / loader | Pinned Voxy setup | Client, generation, shutdown | Reopen / LOD persistence | Target chunks |
+| --- | --- | --- | --- | --- |
+| 1.21.1 NeoForge | Roxy 0.3.3 + Voxy 0.2.16-beta (1.21.11) | PASS | PASS | 80 |
+| 26.1.2 Fabric | Voxy 0.2.18-beta | PASS | PASS | 80 |
+| 26.2 Fabric | Voxy 0.2.19-beta | PASS | PASS | 48 |
+
+Each disposable client has **no DH installed**. It opens Options and renders the LODgen config, creates a small single-player world, enables the actual Voxy scheduler at radius 1, and checks completion without repeated generation. A separate 4×4 batch at chunk coordinates `(4096,-4096)` goes through the shared native path and produces a nonempty section in Voxy. On shutdown, no native chunk, POI or entity region files may exist in that distant area. A second client process reopens the world and checks that completed coverage restores and that the nonempty distant Voxy data survives. Normal player/spawn chunks retain their normal saves. The maximum target count is 80 per target (including 16 distant chunks); vanilla generates supporting and spawn chunks too.
+
+These are real packaged clients with C2ME and Voxy's pinned dependencies from `voxy-versions.json`. Voxy ingestion/storage runs normally; LOD rendering is disabled to keep software rendering tests short. Visual LOD rendering, multiplayer generation, full-distance throughput, and OpenCL performance are outside this pass. Voxy generation intentionally runs only on single-player/LAN hosts with an integrated server. Native remote multiplayer chunks require server-side support outside this addon.
+
+```sh
+xvfb-run -a python3 scripts/voxy-test.py --world --reload
+```
+
+Roxy's published jar filename is retained in the test launcher: renaming it to `roxy.jar` collides with the `roxy` metadata module it creates in another module layer. Original download bytes are unchanged. Detailed reports and logs remain in `build/<minecraft>/<loader>/voxy-test/` and copied reports accompany the development artifacts.
 
 ## Runtime checks
 

@@ -1,6 +1,7 @@
 package dev.lodgen.startup.mixin;
 
 import dev.lodgen.startup.StartupCheck;
+import dev.lodgen.startup.VoxyWorldCheck;
 
 import dev.lodgen.client.ClientScreens;
 import dev.lodgen.client.LodgenConfigScreen;
@@ -27,7 +28,11 @@ public abstract class ClientStartupMixin {
     @Inject(method = "tick", at = @At("TAIL"))
     private void lodgen$startup(CallbackInfo callback) {
         Minecraft minecraft = (Minecraft) (Object) this;
-        if (!minecraft.isGameLoadFinished() || lodgen$stage == 3) return;
+        if (!minecraft.isGameLoadFinished()) return;
+        if (lodgen$stage == 3) {
+            if (Boolean.getBoolean("lodgen.test.voxyWorld")) VoxyWorldCheck.tick(minecraft);
+            return;
+        }
         // #if MC_262_PLUS
         if (minecraft.gui.overlay() != null) return;
         // #else
@@ -37,6 +42,7 @@ public abstract class ClientStartupMixin {
             if (minecraft.level != null) throw new AssertionError("Startup check opened a world");
             if (lodgen$stage == 0) {
                 StartupCheck.checkTargets();
+                if (Boolean.getBoolean("lodgen.test.voxy")) new dev.lodgen.voxy.VoxyBridge();
                 ClientScreens.open(minecraft, new TitleScreen());
                 lodgen$stage = 1;
                 return;
@@ -72,7 +78,8 @@ public abstract class ClientStartupMixin {
             if (ClientScreens.current(minecraft) != lodgen$options) throw new AssertionError("Config did not return to Options");
             StartupCheck.report("PASS: client title, Options button and LODgen config initialized and rendered; generation mixin targets loaded; no world opened.");
             lodgen$stage = 3;
-            minecraft.stop();
+            if (Boolean.getBoolean("lodgen.test.voxyWorld")) VoxyWorldCheck.start(minecraft);
+            else minecraft.stop();
         } catch (Throwable failure) {
             StartupCheck.report("FAIL: " + failure);
             throw new RuntimeException("Client startup check failed", failure);

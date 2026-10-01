@@ -1,6 +1,7 @@
 package dev.lodgen.startup;
 
 import dev.lodgen.LodgenConfig;
+import dev.lodgen.ModSupport;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -31,8 +32,11 @@ public final class StartupCheck {
                 "com.seibel.distanthorizons.core.generation.queues.WorldGenerationQueue",
                 "com.seibel.distanthorizons.core.generation.queues.WorldGenerationQueue$TaskDistancePair"
         };
-        for (String target : targets) Class.forName(target, false, StartupCheck.class.getClassLoader());
-        if (!LodgenConfig.INSTANCE.enabled()) throw new AssertionError("Default config is disabled");
+        for (String target : targets) {
+            if (target.startsWith("com.seibel.") && !ModSupport.loaded("distanthorizons")) continue;
+            Class.forName(target, false, StartupCheck.class.getClassLoader());
+        }
+        if (!LodgenConfig.INSTANCE.enabled() && !Boolean.getBoolean("lodgen.test.voxy")) throw new AssertionError("Default config is disabled");
         if (!Files.exists(LodgenConfig.FILE)) throw new AssertionError("TOML config missing");
     }
 

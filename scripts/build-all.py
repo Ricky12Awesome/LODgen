@@ -9,6 +9,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 matrix = json.loads((ROOT / "versions.json").read_text())
 optional_tests = json.loads((ROOT / "test-versions.json").read_text())
+voxy_targets = json.loads((ROOT / "voxy-versions.json").read_text())
 mod_version = next(line.split("=", 1)[1] for line in (ROOT / "gradle.properties").read_text().splitlines() if line.startswith("modVersion="))
 logs = ROOT / "build" / "matrix-logs"
 logs.mkdir(parents=True, exist_ok=True)
@@ -33,7 +34,8 @@ for mc in matrix:
         shutil.copyfile(jars[0], artifact)
         manifest[artifact.name] = {"sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
                                    "minecraft": mc, "loader": loader,
-                                   "requiredMods": {"minecraft": mc, "distanthorizons": matrix[mc]["dhVersion"]},
+                                   "requiredMods": {"minecraft": mc},
+                                   "optionalRenderers": {"distanthorizons": matrix[mc]["dhVersion"], "voxy": voxy_targets.get(mc, {}).get(loader)},
                                    "testedVersions": matrix[mc],
                                    "optionalTestMods": {project: versions[mc][loader] for project, versions in optional_tests.items()}}
 (dist / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")

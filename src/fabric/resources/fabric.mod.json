@@ -3,20 +3,25 @@
   "id": "lodgen",
   "version": "${version}",
   "name": "LODgen",
-  "description": "Uses normal asynchronous chunk generation for Distant Horizons FEATURES without saving DH-only chunks.",
+  "description": "Generates chunk-based LODs for Distant Horizons FEATURES and Voxy without saving LOD-only chunks.",
   "license": "MIT",
   "environment": "*",
-  "entrypoints": { "main": ["dev.lodgen.fabric.LodgenEntrypoint"] },
+  "entrypoints": {
+    "main": [
+      "dev.lodgen.fabric.LodgenEntrypoint"
+    ]
+  },
   "mixins": [
     "lodgen.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=${fabricLoader}",
     "minecraft": "=${minecraft}",
-    "java": ">=${java}",
-    "distanthorizons": "=${dhVersion}"
+    "java": ">=${java}"
   },
   "suggests": {
-    "c2me": "*"
+    "c2me": "*",
+    "distanthorizons": "=${dhVersion}",
+    "voxy": "*"
   }
 }

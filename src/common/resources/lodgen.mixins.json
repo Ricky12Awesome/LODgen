@@ -20,8 +20,14 @@
     "C2meStorageMixin",
     "LevelCloseMixin"
   ],
-  "client": ["OptionsScreenMixin"],
+  "client": [
+    "OptionsScreenMixin",
+    "VoxyClientTickMixin",
+    "VoxyShutdownMixin",
+    "VoxyEngineCloseMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
-  }
+  },
+  "plugin": "dev.lodgen.mixin.LodgenMixinPlugin"
 }

@@ -14,5 +14,5 @@
   "lodgen.config.saveFailed": "Could not save lodgen.toml. See the log.",
   "lodgen.config.live": "Applies immediately to local generation.",
   "lodgen.config.generationDistance": "Generation distance",
-  "lodgen.config.generationDistance.tooltip": "Radius in chunks for chunk-based LOD generation. 0 uses DH’s distance. Positive values override it. Changes apply immediately; running work finishes."
+  "lodgen.config.generationDistance.tooltip": "Radius in chunks for chunk-based LOD generation. 0 uses DH’s or Voxy’s distance. Positive values override it. Changes apply immediately; running work finishes."
 }

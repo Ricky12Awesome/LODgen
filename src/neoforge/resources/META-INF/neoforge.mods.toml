@@ -6,7 +6,7 @@ license="MIT"
 modId="lodgen"
 version="${version}"
 displayName="LODgen"
-description="Uses normal asynchronous chunk generation for Distant Horizons FEATURES without saving DH-only chunks."
+description="Generates chunk-based LODs for Distant Horizons FEATURES and Voxy without saving LOD-only chunks."
 
 [[mixins]]
 config="lodgen.mixins.json"
@@ -27,7 +27,7 @@ side="BOTH"
 
 [[dependencies.lodgen]]
 modId="distanthorizons"
-type="required"
+type="optional"
 versionRange="[${dhVersion}]"
 ordering="AFTER"
 side="BOTH"

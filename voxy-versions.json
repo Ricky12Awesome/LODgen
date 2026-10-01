@@ -1,0 +1,22 @@
+{
+  "1.21.1": {
+    "neoforge": {
+      "voxy": "H3w2nVdU",
+      "roxy": "Tbny1Cq6",
+      "sodium": "S3DUMfBo",
+      "owo-lib": "dAxle9F7"
+    }
+  },
+  "26.1.2": {
+    "fabric": {
+      "voxy": "Zt3LPI0b",
+      "sodium": "vf7UgZpC"
+    }
+  },
+  "26.2": {
+    "fabric": {
+      "voxy": "LzyXnE51",
+      "sodium": "2Yom1N68"
+    }
+  }
+}
