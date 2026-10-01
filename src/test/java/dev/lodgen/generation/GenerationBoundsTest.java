@@ -1,12 +1,24 @@
 package dev.lodgen.generation;
 
 import org.junit.jupiter.api.Test;
+import dev.lodgen.LodgenConfig;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class GenerationBoundsTest {
+    @Test void custom64OverridesDh128AndZeroRestoresItsDistance() {
+        var custom = new LodgenConfig(true, 32, 64, true, 64);
+        int radius = custom.generationRadius(128, true);
+        assertTrue(GenerationBounds.overlaps(60 * 16, 0, 64, 0, 0, radius));
+        assertFalse(GenerationBounds.overlaps(80 * 16, 0, 64, 0, 0, radius));
+        assertTrue(GenerationBounds.overlaps(80 * 16, 0, 64, 0, 0, LodgenConfig.DEFAULTS.generationRadius(128, true)));
+        assertEquals(512, new LodgenConfig(true, 32, 64, true, 512).generationRadius(1024, true));
+        assertEquals(256, new LodgenConfig(true, 32, 64, true, 256).generationRadius(128, true));
+        assertEquals(0, LodgenConfig.DEFAULTS.generationRadius(128, false));
+        assertEquals(64, custom.generationRadius(128, false));
+    }
     @Test void smallerDistanceCancelsTheOldWaitingFutureButAllowsAFreshExpandedRequest() {
         var waiting = new ConcurrentHashMap<Long, CompletableFuture<Void>>();
         var old = new CompletableFuture<Void>();

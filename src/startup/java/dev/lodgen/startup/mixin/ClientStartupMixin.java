@@ -67,7 +67,7 @@ public abstract class ClientStartupMixin {
                 return;
             }
             Screen config = ClientScreens.current(minecraft);
-            if (!(config instanceof LodgenConfigScreen) || config.children().size() != 7) throw new AssertionError("Config widgets missing");
+            if (!(config instanceof LodgenConfigScreen) || config.children().size() != 8) throw new AssertionError("Config widgets missing");
             config.onClose();
             if (ClientScreens.current(minecraft) != lodgen$options) throw new AssertionError("Config did not return to Options");
             StartupCheck.report("PASS: client title, Options button and LODgen config initialized and rendered; generation mixin targets loaded; no world opened.");

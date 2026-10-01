@@ -19,6 +19,8 @@ public final class LodgenConfigScreen extends Screen {
     private final Screen parent;
     private boolean enabled = LodgenConfig.INSTANCE.enabled();
     private boolean spatial = LodgenConfig.INSTANCE.spatialBatching();
+    private String distance = Integer.toString(LodgenConfig.INSTANCE.generationDistance());
+    private EditBox distanceInput;
     private String pipeline = Integer.toString(LodgenConfig.INSTANCE.pipelineBatches());
     private String queued = Integer.toString(LodgenConfig.INSTANCE.queuedBatches());
     private Button enabledButton;
@@ -37,7 +39,7 @@ public final class LodgenConfigScreen extends Screen {
     @Override protected void init() {
         int rowWidth = Math.min(310, width - 24);
         left = (width - rowWidth) / 2;
-        top = Math.max(40, height / 2 - 66);
+        top = Math.max(40, height / 2 - 82);
         enabledButton = addRenderableWidget(Button.builder(toggle("enabled", enabled), button -> {
             enabled = !enabled;
             button.setMessage(toggle("enabled", enabled));
@@ -46,10 +48,12 @@ public final class LodgenConfigScreen extends Screen {
         pipelineInput.setResponder(value -> pipeline = value);
         queuedInput = numberInput(left + rowWidth - 70, top + 64, "queuedBatches", queued);
         queuedInput.setResponder(value -> queued = value);
+        distanceInput = numberInput(left + rowWidth - 70, top + 96, "generationDistance", distance);
+        distanceInput.setResponder(value -> distance = value);
         spatialButton = addRenderableWidget(Button.builder(toggle("spatialBatching", spatial), button -> {
             spatial = !spatial;
             button.setMessage(toggle("spatialBatching", spatial));
-        }).bounds(left, top + 96, rowWidth, 20).tooltip(tip("spatialBatching")).build());
+        }).bounds(left, top + 128, rowWidth, 20).tooltip(tip("spatialBatching")).build());
         int footer = height - 28;
         int buttonWidth = (rowWidth - 8) / 3;
         addRenderableWidget(Button.builder(Component.translatable("lodgen.config.defaults"), button -> reset())
@@ -62,7 +66,7 @@ public final class LodgenConfigScreen extends Screen {
 
     private EditBox numberInput(int x, int y, String key, String value) {
         EditBox input = new EditBox(font, x, y, 70, 20, Component.translatable("lodgen.config." + key));
-        input.setMaxLength(4);
+        input.setMaxLength(key.equals("generationDistance") ? 10 : 4);
         // Validate on Apply: 26.x Fabric no longer exposes EditBox.setFilter.
         input.setValue(value);
         input.setTooltip(tip(key));
@@ -81,12 +85,13 @@ public final class LodgenConfigScreen extends Screen {
         spatialButton.setMessage(toggle("spatialBatching", spatial));
         pipelineInput.setValue(Integer.toString(LodgenConfig.DEFAULTS.pipelineBatches()));
         queuedInput.setValue(Integer.toString(LodgenConfig.DEFAULTS.queuedBatches()));
+        distanceInput.setValue(Integer.toString(LodgenConfig.DEFAULTS.generationDistance()));
         error = null;
     }
 
     private void apply() {
         try {
-            LodgenConfig settings = new LodgenConfig(enabled, Integer.parseInt(pipeline), Integer.parseInt(queued), spatial);
+            LodgenConfig settings = new LodgenConfig(enabled, Integer.parseInt(pipeline), Integer.parseInt(queued), spatial, Integer.parseInt(distance));
             LodgenConfig.apply(settings);
             onClose();
         } catch (IllegalArgumentException invalid) {
@@ -104,6 +109,7 @@ public final class LodgenConfigScreen extends Screen {
         graphics.drawCenteredString(font, title, width / 2, 16, 0xffffffff);
         graphics.drawString(font, Component.translatable("lodgen.config.pipelineBatches"), left, top + 38, 0xffffffff);
         graphics.drawString(font, Component.translatable("lodgen.config.queuedBatches"), left, top + 70, 0xffffffff);
+        graphics.drawString(font, Component.translatable("lodgen.config.generationDistance"), left, top + 102, 0xffffffff);
         graphics.drawCenteredString(font, error == null ? Component.translatable("lodgen.config.live") : error,
                 width / 2, height - 46, error == null ? 0xffaaaaaa : 0xffff6666);
     }
@@ -114,6 +120,7 @@ public final class LodgenConfigScreen extends Screen {
         graphics.centeredText(font, title, width / 2, 16, 0xffffffff);
         graphics.text(font, Component.translatable("lodgen.config.pipelineBatches"), left, top + 38, 0xffffffff);
         graphics.text(font, Component.translatable("lodgen.config.queuedBatches"), left, top + 70, 0xffffffff);
+        graphics.text(font, Component.translatable("lodgen.config.generationDistance"), left, top + 102, 0xffffffff);
         graphics.centeredText(font, error == null ? Component.translatable("lodgen.config.live") : error,
                 width / 2, height - 46, error == null ? 0xffaaaaaa : 0xffff6666);
     }

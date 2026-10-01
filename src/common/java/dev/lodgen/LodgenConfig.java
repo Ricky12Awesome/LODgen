@@ -15,16 +15,22 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /** Immutable snapshots let generation workers observe complete live changes. */
-public record LodgenConfig(boolean enabled, int pipelineBatches, int queuedBatches, boolean spatialBatching) {
+public record LodgenConfig(boolean enabled, int pipelineBatches, int queuedBatches, boolean spatialBatching, int generationDistance) {
     public static final Logger LOGGER = LoggerFactory.getLogger("LODgen");
-    public static final LodgenConfig DEFAULTS = new LodgenConfig(true, 32, 64, true);
+    public static final LodgenConfig DEFAULTS = new LodgenConfig(true, 32, 64, true, 0);
     public static final Path FILE = Path.of("config", "lodgen.toml");
     private static final CopyOnWriteArrayList<Consumer<LodgenConfig>> LISTENERS = new CopyOnWriteArrayList<>();
     public static volatile LodgenConfig INSTANCE = load(FILE);
 
     public LodgenConfig {
+        if (generationDistance < 0) throw new IllegalArgumentException("generationDistance must be nonnegative");
         if (pipelineBatches < 1 || pipelineBatches > 64) throw new IllegalArgumentException("pipelineBatches must be 1–64");
         if (queuedBatches < 0 || queuedBatches > 1024) throw new IllegalArgumentException("queuedBatches must be 0–1024");
+    }
+
+    /** Zero preserves dedicated-server request ranges when no override is set. */
+    public int generationRadius(int dhRadius, boolean integratedServer) {
+        return generationDistance > 0 ? generationDistance : integratedServer ? dhRadius : 0;
     }
 
     static LodgenConfig load(Path file) {
@@ -34,7 +40,7 @@ public record LodgenConfig(boolean enabled, int pipelineBatches, int queuedBatch
             return DEFAULTS;
         } catch (IOException | RuntimeException error) {
             LOGGER.error("Cannot read LODgen configuration; keeping DH's default generator", error);
-            return new LodgenConfig(false, 32, 64, true);
+            return new LodgenConfig(false, 32, 64, true, 0);
         }
     }
 
@@ -44,7 +50,8 @@ public record LodgenConfig(boolean enabled, int pipelineBatches, int queuedBatch
             return new LodgenConfig(bool(values.get("enabled"), DEFAULTS.enabled(), "enabled"),
                     integer(values.get("pipelineBatches"), DEFAULTS.pipelineBatches(), "pipelineBatches"),
                     integer(values.get("queuedBatches"), DEFAULTS.queuedBatches(), "queuedBatches"),
-                    bool(values.get("spatialBatching"), DEFAULTS.spatialBatching(), "spatialBatching"));
+                    bool(values.get("spatialBatching"), DEFAULTS.spatialBatching(), "spatialBatching"),
+                    integer(values.get("generationDistance"), DEFAULTS.generationDistance(), "generationDistance"));
         }
     }
 
@@ -82,10 +89,12 @@ public record LodgenConfig(boolean enabled, int pipelineBatches, int queuedBatch
             try (var reader = Files.newBufferedReader(file)) { values = new TomlParser().parse(reader); }
             catch (RuntimeException invalidOldFile) { LOGGER.warn("Replacing invalid LODgen TOML with the supplied settings"); }
         }
+        values.set("generationDistance", settings.generationDistance());
         values.set("enabled", settings.enabled());
         values.set("pipelineBatches", settings.pipelineBatches());
         values.set("queuedBatches", settings.queuedBatches());
         values.set("spatialBatching", settings.spatialBatching());
+        values.setComment("generationDistance", " Chunk-based LOD generation radius in chunks. 0 follows DH; positive values override it.");
         values.setComment("enabled", " Use normal asynchronous chunk generation for DH FEATURES. Changes apply in game.");
         values.setComment("pipelineBatches", " Active batches per dimension (1–64). 32 batches = 512 target chunks at DH detail 6.");
         values.setComment("queuedBatches", " Waiting batches (0–1024). Waiting requests do not occupy workers.");

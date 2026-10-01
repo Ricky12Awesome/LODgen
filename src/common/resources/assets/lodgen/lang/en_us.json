@@ -10,7 +10,9 @@
   "lodgen.config.spatialBatching.tooltip": "Generate nearby terrain together within DH’s distance priority bands to share supporting chunks.",
   "lodgen.config.defaults": "Defaults",
   "lodgen.config.apply": "Apply",
-  "lodgen.config.invalid": "Active batches: 1–64. Waiting batches: 0–1024.",
+  "lodgen.config.invalid": "Active: 1–64. Waiting: 0–1024. Distance: 0 or positive.",
   "lodgen.config.saveFailed": "Could not save lodgen.toml. See the log.",
-  "lodgen.config.live": "Applies immediately to local generation."
+  "lodgen.config.live": "Applies immediately to local generation.",
+  "lodgen.config.generationDistance": "Generation distance",
+  "lodgen.config.generationDistance.tooltip": "Radius in chunks for chunk-based LOD generation. 0 uses DH’s distance. Positive values override it. Changes apply immediately; running work finishes."
 }

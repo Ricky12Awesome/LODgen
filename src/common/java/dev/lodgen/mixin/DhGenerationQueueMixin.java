@@ -57,14 +57,13 @@ public abstract class DhGenerationQueueMixin {
                 || !Config.Common.WorldGenerator.generatorPlan.get().chunkGenEnabled) {
             return tasks.reduceEntries(threshold, transform, reduce);
         }
-        // Dedicated servers have independent per-player/pregen ranges. Only the
-        // integrated server should obey the local graphics setting. Cancel waiting
-        // work, never pooled data currently read by native workers.
-        boolean limitToRenderDistance = PersistenceRegistry.isIntegratedServer(level.getServerLevelWrapper().getWrappedMcObject());
-        int radius = Config.Client.Advanced.Graphics.Quality.lodChunkRenderDistanceRadius.get();
+        // An explicit override also bounds dedicated-server DH requests. Without
+        // one, only the integrated server follows the local graphics setting.
+        int radius = settings.generationRadius(Config.Client.Advanced.Graphics.Quality.lodChunkRenderDistanceRadius.get(),
+                PersistenceRegistry.isIntegratedServer(level.getServerLevelWrapper().getWrappedMcObject()));
         Function<Map.Entry<Long, DataSourceRetrievalTask>, Object> filtered = entry -> {
             var task = entry.getValue();
-            if (limitToRenderDistance && !GenerationBounds.retain(tasks, entry.getKey(), task, task.future,
+            if (radius > 0 && !GenerationBounds.retain(tasks, entry.getKey(), task, task.future,
                     GenerationBounds.overlaps(DhSectionPos.getMinCornerBlockX(task.pos),
                     DhSectionPos.getMinCornerBlockZ(task.pos), DhSectionPos.getBlockWidth(task.pos), targetPos.x, targetPos.z, radius))) {
                 return null;

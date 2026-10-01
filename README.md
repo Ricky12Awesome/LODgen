@@ -8,7 +8,7 @@ The project is in development. **The version stays at `0.0.0` until it is ready 
 
 Install Distant Horizons and the matching LODgen jar. Choose **FEATURES** in DH's chunk generator settings and enable a generator plan that includes chunks. C2ME, [the C2ME OpenCL addon](https://modrinth.com/mod/qtPMklut), ScalableLux, and Chunky are optional and are never bundled.
 
-Open **Options → LODgen…** in game. On NeoForge, **Mods → LODgen → Config** opens the same screen. Adjust enabled generation, active batches, waiting batches, and grouping of nearby requests, then click **Apply**. **Cancel** discards edits; **Defaults** restores the draft defaults. Changes apply immediately to local generation, including the integrated server. Running native work drains safely when the limit decreases or the addon is disabled.
+Open **Options → LODgen…** in game. On NeoForge, **Mods → LODgen → Config** opens the same screen. Adjust enabled generation, active batches, waiting batches, generation distance, and grouping of nearby requests, then click **Apply**. **Cancel** discards edits; **Defaults** restores the draft defaults. Changes apply immediately to local generation, including the integrated server. Running native work drains safely when the limit decreases or the addon is disabled.
 
 Settings are stored in `config/lodgen.toml`:
 
@@ -17,9 +17,12 @@ enabled = true
 pipelineBatches = 32
 queuedBatches = 64
 spatialBatching = true
+generationDistance = 0
 ```
 
 `pipelineBatches` accepts 1–64 active batches per dimension; 32 default-size DH requests provide 512 target chunks plus their native dependencies. `queuedBatches` accepts 0–1024 waiting requests, which do not occupy waiting workers. Larger windows use more memory. `spatialBatching` groups nearby requests within DH's distance/detail priority bands. DH's thread count and C2ME's worker count also affect parallelism.
+
+`generationDistance` is a radius in chunks. **0 follows DH's distance**; a positive value overrides the chunk-based FEATURES generation radius. For example, `generationDistance = 512` with DH set to 1024 limits new chunk-based LOD generation to 512 while retaining DH's 1024 render distance. Changing it in game drops waiting requests beyond the new limit; active batches finish. Whole sections overlapping the boundary are retained, and native supporting chunks may extend beyond it. DH still controls which LODs are requested. Dedicated servers use the explicit override too; 0 preserves their existing request ranges. This only affects LODgen's FEATURES queue; normal player and Chunky generation keep their ranges.
 
 LODgen reads only `config/lodgen.toml` and creates it with defaults if missing. Manual file edits are read at startup. In multiplayer, this screen changes the local installation's settings; a dedicated server uses its own TOML file.
 
@@ -73,7 +76,13 @@ xvfb-run -a python3 scripts/startup-test.py
 
 The Linux startup runner uses JDK 21 for 1.21.1 and JDK 25 for 26.x. It accepts `--mc`, `--loader`, `--java`, and `--skip-build` to check a single target or reuse its startup fixture. Xvfb and Mesa allow CI to render menus without a physical display. Official client assets and loader installations are cached under `build/`; first runs download them. Reports/logs stay under `build/<minecraft>/<loader>/startup/`. Production class files must match the packaged fixture byte-for-byte, and test probes must be absent from the regular jar. These startup checks are available locally; the GitHub workflow keeps its existing build and packaged-server integration steps.
 
-The focused suite covers TOML parsing, live admission limits, the 512-to-128 boundary, negative/world-border coordinates, shared ownership, cancellation, and feature scopes. A small packaged-server check covers the actual DH queue, LOD storage, concurrent Chunky, lighting, no-save behavior, and restart persistence:
+The focused suite covers TOML parsing, live admission limits, the 512-to-128 boundary, negative/world-border coordinates, shared ownership, cancellation, and feature scopes. The distance regression uses DH 128/custom 64 with just two 4×4 sections (32 target chunks), including a live reset to 0:
+
+```sh
+python3 scripts/integration-test.py --mc 1.21.1 --loader neoforge --quick --distance-check
+```
+
+A small packaged-server check covers the actual DH queue, LOD storage, concurrent Chunky, lighting, no-save behavior, and restart persistence:
 
 ```sh
 python3 scripts/integration-test.py --mc 1.21.1 --loader neoforge --quick \

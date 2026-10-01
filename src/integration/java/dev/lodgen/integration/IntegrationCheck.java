@@ -49,6 +49,10 @@ public final class IntegrationCheck {
             }
             require(wrapper != null, "DH must expose the server level");
             DhWorldGenerator generator = new DhWorldGenerator((IDhServerLevel) wrapper.getDhLevel());
+            if (Boolean.getBoolean("lodgen.test.distance")) {
+                DistanceCheck.run(server, level, generator, executor);
+                return;
+            }
             if (Boolean.getBoolean("lodgen.test.reload")) {
                 reload(server, level, generator, executor);
                 return;

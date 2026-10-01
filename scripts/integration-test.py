@@ -18,6 +18,7 @@ parser.add_argument("--loader", choices=("fabric", "neoforge"), required=True)
 parser.add_argument("--java", default="java", help="Java 21 for MC 1.21.1; Java 25 for MC 26.x")
 parser.add_argument("--skip-build", action="store_true")
 parser.add_argument("--startup-only", action="store_true", help="Load the packaged startup fixture and stop before opening a world")
+parser.add_argument("--distance-check", action="store_true", help="Check custom 64 versus DH 128 using only two 4x4 LOD sections")
 parser.add_argument("--quick", action="store_true", help="Skip benchmark warmup and cap server checks at 120/60 seconds")
 parser.add_argument("--opencl", action="store_true", help="Install the optional C2ME OpenCL addon and ScalableLux; requires Java 25")
 parser.add_argument("--chunky", action="store_true", help="Install Chunky and exercise a real concurrent pregen task")
@@ -38,6 +39,8 @@ parser.add_argument("--trace-ownership", action="store_true", help="Log the call
 parser.add_argument("--vanilla", action="store_true", help="Test without C2ME")
 parser.add_argument("--baseline", action="store_true", help="Run the same check with DH's original FEATURES generator")
 args = parser.parse_args()
+if args.distance_check and (args.startup_only or args.benchmark or args.baseline):
+    parser.error("--distance-check cannot be combined with startup-only, benchmark or baseline")
 if args.startup_only and (args.opencl or args.chunky or args.benchmark or args.worldgen_instance or args.baseline or args.vanilla):
     parser.error("--startup-only checks the default DH/C2ME stack without worldgen or benchmark options")
 if args.vanilla and args.opencl:
@@ -150,6 +153,7 @@ else:
         command = [args.java, heap, "-Dlodgen.test.chunky=" + str(args.chunky).lower(), "-Dlodgen.test.benchmark=" + str(args.benchmark), "-jar", str(launchers[0]), "nogui"]
 
 benchmark_options = [f"-Dlodgen.test.layout={args.layout}", f"-Dlodgen.test.workers={args.workers}",
+                     f"-Dlodgen.test.distance={str(args.distance_check).lower()}",
                      f"-Dlodgen.test.skipWarmup={str(args.quick).lower()}",
                      f"-Dlodgen.test.nativeWorkers={args.native_workers}",
                      f"-Dlodgen.test.dhExecutor={str(args.dh_executor).lower()}",
@@ -173,6 +177,13 @@ if not report.exists() or not report.read_text().startswith("PASS:"):
 if args.startup_only:
     if any(world.rglob("*.mca")):
         raise SystemExit("Startup-only check generated chunks")
+    print(report.read_text().strip())
+    raise SystemExit(0)
+if args.distance_check:
+    for region in world.rglob("r.*.*.mca"):
+        parts = region.name.split(".")
+        if 127 <= int(parts[1]) <= 132 and -130 <= int(parts[2]) <= -126:
+            raise SystemExit(f"Distance-check LOD area was saved: {region}")
     print(report.read_text().strip())
     raise SystemExit(0)
 reload_report = run / "integration-reload-result.txt"
