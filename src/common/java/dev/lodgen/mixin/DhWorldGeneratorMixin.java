@@ -35,7 +35,11 @@ public abstract class DhWorldGeneratorMixin implements GenerationAdmission {
                                                      IDhApiFullDataSource data, EDhApiDistantGeneratorMode mode,
                                                      ExecutorService executor, Consumer<IDhApiFullDataSource> consumer,
                                                      CallbackInfoReturnable<CompletableFuture<Void>> callback) {
-        if (!LodgenConfig.INSTANCE.enabled() || mode != EDhApiDistantGeneratorMode.FEATURES || detail != 0
+        if (!Config.Common.WorldGenerator.generatorPlan.get().generationEnabled) {
+            callback.setReturnValue(CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("DH generation disabled")));
+            return;
+        }
+        if (mode != EDhApiDistantGeneratorMode.FEATURES || detail != 0
                 || !Config.Common.WorldGenerator.generatorPlan.get().chunkGenEnabled) return;
         if (lodgen$closed) {
             callback.setReturnValue(CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("Generator closed")));

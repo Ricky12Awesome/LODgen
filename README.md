@@ -6,7 +6,16 @@ The project is in development. **The version stays at `0.0.0` until it is ready 
 
 ## Use
 
-Install the matching LODgen jar and either Distant Horizons or a supported Voxy installation. DH is optional. With DH, choose **FEATURES** in its chunk generator settings and enable a generator plan that includes chunks. C2ME, [the C2ME OpenCL addon](https://modrinth.com/mod/qtPMklut), ScalableLux, and Chunky are optional and are never bundled.
+Install the matching LODgen jar and either Distant Horizons or a supported Voxy installation. DH is optional. With DH, choose **FEATURES** in its chunk generator settings. LODgen follows DH's generator plan:
+
+| DH generator plan | Automatic behavior |
+| --- | --- |
+| Surface Then Chunks | DH generates rough surfaces through its normal path, then its chunk phase uses LODgen, even when LODgen's Automatic generation setting is off. |
+| Surface Only | DH keeps generating rough surfaces. LODgen adds chunk-based LODs only when Automatic generation is on. |
+| Chunks Only | DH's chunk phase uses LODgen, even when LODgen's Automatic generation setting is off. |
+| Disabled | No automatic LODgen generation, including saved-radius pregen and Voxy when DH is installed. Explicit `/lodgen` commands can still run and resume. |
+
+Other DH chunk generator modes retain DH's own behavior. C2ME, [the C2ME OpenCL addon](https://modrinth.com/mod/qtPMklut), ScalableLux, and Chunky are optional and are never bundled.
 
 Open **Options → LODgen…** in game. On Fabric with Mod Menu installed, **Mods → LODgen → Configure** opens the same screen. On NeoForge, **Mods → LODgen → Config** opens it too. All settings appear in one list from top to bottom, including generation, center, saving, CPU load and action-bar options. Scroll down to reach lower settings on smaller windows; **Apply**, **Cancel** and **Defaults** stay visible at the bottom. **Apply** saves the draft, **Cancel** discards it, and **Defaults** resets every option. Unsaved edits and scroll position survive resizing. Changes apply immediately to automatic local generation, including the integrated server. Running native work drains safely when the limit decreases or the addon is disabled.
 
@@ -40,7 +49,9 @@ For maximum OpenCL throughput, use Java 25+ with a sufficiently large heap, `-XX
 
 `generationDistance` is a radius in chunks. **0 follows the active renderer's distance**; a positive value overrides the chunk-based FEATURES generation radius. For example, `generationDistance = 512` with DH set to 1024 limits new chunk-based LOD generation to 512 while retaining DH's 1024 render distance. Changing it in game drops waiting requests beyond the new limit; active batches finish. Whole sections overlapping the boundary are retained, and native supporting chunks may extend beyond it. With the default current-position center, DH still controls which LODs are requested. Dedicated-server current-position mode uses the explicit override too; 0 preserves client request ranges. Normal player and Chunky generation keep their ranges.
 
-`generationCenter` accepts `"current"`, `"origin"` or `"custom"`. Current follows the player; origin uses **world spawn**, rather than coordinate 0,0; custom uses `centerX` and `centerZ`, in **blocks**. Fixed-center DH FEATURES generation runs independently of the player's viewport, and Voxy uses the selected center for its own frontier.
+`generationCenter` accepts `"current"`, `"origin"` or `"custom"`. Current follows the player; origin uses **world spawn**, rather than coordinate 0,0; custom uses `centerX` and `centerZ`, in **blocks**. With Automatic generation on, fixed-center DH FEATURES generation runs independently of the player's viewport, and Voxy uses the selected center for its own frontier. Surface Only also starts chunk jobs for the current position when automatic generation is on. Fixed-area surface plans run DH's normal rough generator before their native chunk jobs, while DH can continue requesting rough surfaces across its render distance.
+
+Chunk jobs begin at the selected center and expand through nearby compact 32×32 patches. DH's native chunk queue uses the same center-relative priority, rather than an absolute coordinate ordering that could favor the outer corner. Lowering a radius, moving the center or disabling generation stops completion callbacks from refilling the old area; admitted work finishes safely.
 
 `savedChunkRadius` is a radius in **chunks**, default **0**. Targets inside it save as ordinary terrain; targets outside it remain LOD-only. If the saved radius exceeds the LOD radius, generation extends to the saved radius and only converts LODs inside the LOD radius. The saved area is also generated when its LODs already exist. Previously saved chunks stay saved after lowering this setting. Ordinary player and Chunky requests can still adopt terrain outside the saved radius.
 
@@ -70,9 +81,11 @@ For a smaller example:
 /lodgen continue
 ```
 
-Status reports dimension, center X/Z, LOD and saved radii, completed/total chunks, percentage, active batches, throughput and any error. Pause stops new dispatch while active work finishes. Continue resumes a paused task; stop ends it and permits another start. One command task runs per server. An active or paused command takes priority over automatic generation in its dimension. Explicit commands run even when automatic generation's **Enabled** setting is off.
+Status reports dimension, center X/Z, LOD and saved radii, completed/total chunks, percentage, active batches, throughput and any error. Pause stops new dispatch while active work finishes. Continue resumes a paused task; stop ends it and permits another start. One command task runs per server. An active or paused command takes priority over automatic generation in its dimension. Explicit commands run even when automatic generation is off or DH's generator plan is Disabled.
 
 Task state and completion checkpoints are stored in `<world>/lodgen/task.toml`. A running task automatically continues on world load/server start; paused tasks stay paused and stopped/completed tasks stay finished. Orderly shutdown checkpoints outstanding work; after an abrupt crash, some uncheckpointed batches may run again. Fixed-center automatic generation and automatic saved areas have separate dimension checkpoints in the same folder.
+
+The center-out traversal uses checkpoint layout 2. Earlier development checkpoints are not imported; start a new command task to replace them. Automatic area checkpoints regenerate with the new layout.
 
 LOD-only command work requires DH or a supported local Voxy installation. Voxy generation remains restricted to single-player/LAN hosts. Without either renderer, a saved radius at least as large as the LOD radius allows ordinary chunk pregen. All paths preserve normal player/Chunky ownership and saving.
 
@@ -182,6 +195,12 @@ The distance regression uses DH 128/custom 64 with just two 4×4 sections (32 ta
 
 ```sh
 python3 scripts/integration-test.py --mc 1.21.1 --loader neoforge --quick --distance-check
+```
+
+The DH plan regression exercises both native chunk plans with automatic generation off, rough surfaces, opt-in Surface Only chunks, center-first queue selection, mid-task disabling and re-enabling, disabled saved-radius jobs, and commands with DH disabled. Its largest automatic radius is 5c and it generates 156 native LOD targets:
+
+```sh
+python3 scripts/integration-test.py --mc 26.1.2 --loader fabric --quick --dh-plan-check
 ```
 
 A small packaged-server check covers the actual DH queue, LOD storage, concurrent Chunky, lighting, no-save behavior, and restart persistence:

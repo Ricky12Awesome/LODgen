@@ -1,6 +1,5 @@
 package dev.lodgen.mixin;
 
-import com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiDistantGeneratorMode;
 import com.seibel.distanthorizons.api.interfaces.override.worldGenerator.IDhApiWorldGenerator;
 import com.seibel.distanthorizons.core.config.Config;
 import com.seibel.distanthorizons.core.generation.DhWorldGenerator;
@@ -36,18 +35,40 @@ public abstract class DhGenerationQueueMixin {
     @Shadow @Final private IDhApiWorldGenerator generator;
     @Shadow @Final private IDhServerLevel level;
     @Unique private final dev.lodgen.generation.SpatialTaskIndex<Long, DataSourceRetrievalTask> lodgen$index = new dev.lodgen.generation.SpatialTaskIndex<>();
+    @Unique private final java.util.concurrent.atomic.AtomicInteger lodgen$roughPending = new java.util.concurrent.atomic.AtomicInteger();
+    @Unique private final java.util.concurrent.atomic.AtomicInteger lodgen$roughActive = new java.util.concurrent.atomic.AtomicInteger();
+
+    @Inject(method = "submitRetrievalTask", at = @At("RETURN"))
+    private void lodgen$countSurfaceRequests(long pos, byte detail, CallbackInfoReturnable<java.util.concurrent.CompletableFuture<com.seibel.distanthorizons.core.generation.tasks.DataSourceRetrievalResult>> callback) {
+        var future = callback.getReturnValue();
+        if (DhSectionPos.getDetailLevel(pos) <= 6 || future.isDone()) return;
+        lodgen$roughPending.incrementAndGet();
+        future.whenComplete((ignored, error) -> lodgen$roughPending.decrementAndGet());
+    }
+    @Inject(method = "startWorldGenTaskGroup", at = @At("HEAD"))
+    private void lodgen$countActiveSurfaces(DataSourceRetrievalTask task, CallbackInfo callback) {
+        if (DhSectionPos.getDetailLevel(task.pos) <= 6) return;
+        lodgen$roughActive.incrementAndGet();
+        task.future.whenComplete((ignored, error) -> lodgen$roughActive.decrementAndGet());
+    }
 
     @Inject(method = "close", at = @At("HEAD"))
     private void lodgen$clearIndex(CallbackInfo callback) { lodgen$index.clear(); }
 
     @Inject(method = "isGeneratorBusy", at = @At("HEAD"), cancellable = true)
     private void lodgen$backpressure(CallbackInfoReturnable<Boolean> callback) {
-        if (LodgenConfig.INSTANCE.enabled()
-                && generator instanceof GenerationAdmission admission
-                && Config.Common.WorldGenerator.chunkGeneratorMode.get() == EDhApiDistantGeneratorMode.FEATURES
-                && Config.Common.WorldGenerator.generatorPlan.get().chunkGenEnabled) {
+        if (generator instanceof GenerationAdmission admission) {
+            if (!Config.Common.WorldGenerator.generatorPlan.get().generationEnabled) {
+                callback.setReturnValue(true);
+                return;
+            }
+            if (!dev.lodgen.GenerationSettings.policy().dhChunks()) return;
+            boolean extraChunks = dev.lodgen.minecraft.GenerationTasks.overridesAutomatic(level.getServerLevelWrapper().getWrappedMcObject());
             callback.setReturnValue(com.seibel.distanthorizons.core.util.threading.ThreadPoolUtil.getWorldGenExecutor() == null
-                    || admission.lodgen$isBusy() || dev.lodgen.minecraft.GenerationTasks.overridesAutomatic(level.getServerLevelWrapper().getWrappedMcObject()));
+                    || admission.lodgen$isBusy()
+                    || lodgen$roughActive.get() > Math.max(1, Config.Common.MultiThreading.numberOfThreads.get())
+                    || dev.lodgen.minecraft.GenerationTasks.commandOverrides(level.getServerLevelWrapper().getWrappedMcObject())
+                    || extraChunks && (!Config.Common.WorldGenerator.generatorPlan.get().surfaceGenEnabled || lodgen$roughPending.get() == 0));
         }
     }
 
@@ -57,10 +78,7 @@ public abstract class DhGenerationQueueMixin {
                                       Function<Map.Entry<Long, DataSourceRetrievalTask>, Object> transform,
                                       BiFunction<Object, Object, Object> reduce, DhBlockPos2D targetPos) {
         var settings = LodgenConfig.INSTANCE;
-        if (!settings.enabled()
-                || !(generator instanceof DhWorldGenerator)
-                || Config.Common.WorldGenerator.chunkGeneratorMode.get() != EDhApiDistantGeneratorMode.FEATURES
-                || !Config.Common.WorldGenerator.generatorPlan.get().chunkGenEnabled) {
+        if (!(generator instanceof DhWorldGenerator) || !dev.lodgen.GenerationSettings.policy().dhChunks()) {
             return tasks.reduceEntries(threshold, transform, reduce);
         }
         // An explicit override also bounds dedicated-server DH requests. Without
@@ -68,8 +86,13 @@ public abstract class DhGenerationQueueMixin {
         var resolvedCenter = dev.lodgen.minecraft.GenerationCenters.resolve((net.minecraft.server.level.ServerLevel) level.getServerLevelWrapper().getWrappedMcObject(), targetPos.x, targetPos.z);
         int radius = settings.generationRadius(Config.Client.Advanced.Graphics.Quality.lodChunkRenderDistanceRadius.get(),
                 PersistenceRegistry.isIntegratedServer(level.getServerLevelWrapper().getWrappedMcObject()));
+        boolean extraChunks = dev.lodgen.minecraft.GenerationTasks.overridesAutomatic(level.getServerLevelWrapper().getWrappedMcObject());
         Function<Map.Entry<Long, DataSourceRetrievalTask>, Object> filtered = entry -> {
             var task = entry.getValue();
+            if (DhSectionPos.getDetailLevel(task.pos) > 6) return transform.apply(entry);
+            // Fixed-area jobs provide the chunk phase. DH can still request its
+            // normal rough surfaces, including beyond the custom chunk radius.
+            if (extraChunks) return null;
             if (radius > 0 && !GenerationBounds.retain(tasks, entry.getKey(), task, task.future,
                     GenerationBounds.overlaps(DhSectionPos.getMinCornerBlockX(task.pos),
                     DhSectionPos.getMinCornerBlockZ(task.pos), DhSectionPos.getBlockWidth(task.pos), resolvedCenter.getX(), resolvedCenter.getZ(), radius))) {
@@ -77,14 +100,19 @@ public abstract class DhGenerationQueueMixin {
             }
             return transform.apply(entry);
         };
-        var context = java.util.List.of(targetPos.x >> 4, targetPos.z >> 4, resolvedCenter.getX() >> 4, resolvedCenter.getZ() >> 4, radius);
+        var context = java.util.List.of(targetPos.x >> 4, targetPos.z >> 4, resolvedCenter.getX() >> 4, resolvedCenter.getZ() >> 4, radius,
+                Config.Common.WorldGenerator.generatorPlan.get(), extraChunks);
         return lodgen$index.select(tasks, context, entry -> {
             Object pair = filtered.apply(entry);
             if (pair == null) return null;
             var access = (DhTaskDistanceAccess) pair;
+            // Leave rough-surface tasks at DH's original detail/distance
+            // priority. Native ordering applies only after reaching chunks.
+            if (DhSectionPos.getDetailLevel(access.lodgen$task().pos) > 6)
+                return new SpatialGenerationOrder.Ranked<>(pair, Long.MIN_VALUE + Math.max(0, access.lodgen$distance()));
             var center = DhSectionPos.getCenterBlockPos(access.lodgen$task().pos);
             return new SpatialGenerationOrder.Ranked<>(pair,
-                    SpatialGenerationOrder.priority(access.lodgen$distance(), center.x, center.z));
+                    SpatialGenerationOrder.priority(center.x, center.z, resolvedCenter.getX(), resolvedCenter.getZ()));
         });
     }
 }

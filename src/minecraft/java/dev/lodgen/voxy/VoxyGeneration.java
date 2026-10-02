@@ -68,7 +68,7 @@ public final class VoxyGeneration {
             if (context == null) { pause(); return; }
             var level = client.getSingleplayerServer().getLevel(client.level.dimension());
             if (level == null) return;
-            if (!LodgenConfig.INSTANCE.enabled() || dev.lodgen.minecraft.GenerationTasks.overridesAutomatic(level)) { pause(); return; }
+            if (!dev.lodgen.GenerationSettings.policy().automatic() || dev.lodgen.minecraft.GenerationTasks.overridesAutomatic(level)) { pause(); return; }
             current = session(level);
             if (current == null) return;
             int radius = LodgenConfig.INSTANCE.generationDistance() > 0 ? LodgenConfig.INSTANCE.generationDistance() : context.radius();
@@ -165,7 +165,7 @@ public final class VoxyGeneration {
         }
 
         void tick(int x, int z, int distance) {
-            if (closed) return;
+            if (closed || !dev.lodgen.GenerationSettings.policy().automatic() || dev.lodgen.minecraft.GenerationTasks.overridesAutomatic(level)) return;
             if (frontier == null || x != centerX || z != centerZ || distance != radius) {
                 centerX = x; centerZ = z; radius = distance;
                 frontier = new GenerationFrontier(x, z, distance);
@@ -196,7 +196,7 @@ public final class VoxyGeneration {
                             retry.put(tile.key(), System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10));
                             LodgenConfig.LOGGER.warn("Voxy generation failed at {},{}; retrying later", tile.x(), tile.z(), error);
                         }
-                        if (!closed && current == this && LodgenConfig.INSTANCE.enabled()
+                        if (!closed && current == this && dev.lodgen.GenerationSettings.policy().automatic()
                                 && !dev.lodgen.minecraft.GenerationTasks.overridesAutomatic(level)) {
                             level.getServer().execute(() -> {
                                 if (!closed && current == this) tick(centerX, centerZ, radius);

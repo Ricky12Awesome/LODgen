@@ -119,7 +119,7 @@ public record LodgenConfig(boolean enabled, int cpuLoad, int generationDistance,
         values.set("cpuLoad", settings.cpuLoad());
         values.remove("pipelineBatches"); values.remove("queuedBatches"); values.remove("spatialBatching");
         values.setComment("generationDistance", " Chunk-based LOD generation radius in chunks. 0 follows DH/Voxy; positive values override it.");
-        values.setComment("enabled", " Use normal asynchronous chunk generation for DH FEATURES and Voxy. Changes apply in game.");
+        values.setComment("enabled", " Extra automatic chunk generation. DH Disabled blocks it; DH chunk phases use LODgen even when false. Surface Only adds chunks only when true. Commands run independently.");
         values.setComment("cpuLoad", " Voxy CPU load: 1 minimal impact, 2 low impact, 3 balanced (default), 4 aggressive, 5 full power. DH uses its own CPU Load setting.");
         Path destination = file.toAbsolutePath();
         Files.createDirectories(destination.getParent());

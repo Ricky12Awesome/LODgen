@@ -20,6 +20,7 @@ parser.add_argument("--run-name", help="Separate disposable benchmark directory 
 parser.add_argument("--skip-build", action="store_true")
 parser.add_argument("--startup-only", action="store_true", help="Load the packaged startup fixture and stop before opening a world")
 parser.add_argument("--task-check", action="store_true", help="Commands, mixed saved/LOD radius, and orderly auto-resume using only a 5c radius")
+parser.add_argument("--dh-plan-check", action="store_true", help="DH generator plans, center-first ordering, live disable and commands; maximum 5c radius")
 parser.add_argument("--distance-check", action="store_true", help="Check custom 64 versus DH 128 using only two 4x4 LOD sections")
 parser.add_argument("--quick", action="store_true", help="Skip benchmark warmup and cap server checks at 120/60 seconds")
 parser.add_argument("--opencl", action="store_true", help="Install the optional C2ME OpenCL addon and ScalableLux; requires Java 25")
@@ -49,6 +50,8 @@ if args.optimized and (args.mc != "26.2" or args.loader != "fabric"):
     parser.error("--optimized currently pins the 26.2 Fabric benchmark stack")
 if args.task_check and (args.startup_only or args.distance_check or args.benchmark or args.baseline):
     parser.error("--task-check cannot be combined with startup-only, distance-check, benchmark or baseline")
+if args.dh_plan_check and (args.startup_only or args.task_check or args.distance_check or args.benchmark or args.baseline):
+    parser.error("--dh-plan-check cannot be combined with startup-only, task-check, distance-check, benchmark or baseline")
 if args.distance_check and (args.startup_only or args.benchmark or args.baseline):
     parser.error("--distance-check cannot be combined with startup-only, benchmark or baseline")
 if args.startup_only and (args.opencl or args.chunky or args.benchmark or args.worldgen_instance or args.baseline or args.vanilla):
@@ -170,8 +173,10 @@ else:
         command = [args.java, heap, "-Dlodgen.test.chunky=" + str(args.chunky).lower(), "-Dlodgen.test.benchmark=" + str(args.benchmark), "-jar", str(launchers[0]), "nogui"]
 
 benchmark_options = [f"-Dlodgen.test.warmupAxis={args.warmup_axis}", f"-Dlodgen.test.dhThreads={args.dh_threads}", f"-Dlodgen.test.layout={args.layout}", f"-Dlodgen.test.workers={args.workers}",
+                     f"-Dlodgen.test.baseline={str(args.baseline).lower()}",
                      f"-Dlodgen.test.distance={str(args.distance_check).lower()}",
                      f"-Dlodgen.test.tasks={str(args.task_check).lower()}",
+                     f"-Dlodgen.test.dhPlans={str(args.dh_plan_check).lower()}",
                      f"-Dlodgen.test.skipWarmup={str(args.quick).lower()}",
                      f"-Dlodgen.test.nativeWorkers={args.native_workers}",
                      f"-Dlodgen.test.dhExecutor={str(args.dh_executor).lower()}",
@@ -205,6 +210,14 @@ if args.distance_check:
         if 127 <= int(parts[1]) <= 132 and -130 <= int(parts[2]) <= -126:
             raise SystemExit(f"Distance-check LOD area was saved: {region}")
     print(report.read_text().strip())
+    raise SystemExit(0)
+if args.dh_plan_check:
+    for region in world.rglob("r.*.*.mca"):
+        _, x, z, _ = region.name.split(".")
+        if abs(int(x)) > 64 or abs(int(z)) > 64:
+            raise SystemExit(f"DH plan-check LOD area was saved: {region}")
+    print(report.read_text().strip())
+    print("PASS: no native, POI or entity region files in any distant test area after shutdown.")
     raise SystemExit(0)
 reload_report = run / "integration-reload-result.txt"
 reload_report.unlink(missing_ok=True)

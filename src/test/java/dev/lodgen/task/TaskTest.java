@@ -9,6 +9,31 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class TaskTest {
+    @Test void firstBatchContainsCenterAndPatchesExpandOutward() {
+        for (int radius : new int[]{1, 3, 5, 17, 31, 33, 64}) {
+            var area = new GenerationArea(-17, 12345, radius, 0);
+            var plan = new SquarePlan(area);
+            var first = plan.batch(0);
+            assertTrue(area.chunkX() >= first.x() && area.chunkX() < first.x() + first.width());
+            assertTrue(area.chunkZ() >= first.z() && area.chunkZ() < first.z() + first.height());
+            int minX = area.chunkX() - radius, minZ = area.chunkZ() - radius;
+            int patchX = radius / 32, patchZ = radius / 32, previousRing = -1;
+            for (long i = 0; i < plan.batches(); i++) {
+                var batch = plan.batch(i);
+                int ring = Math.max(Math.abs((batch.x() - minX) / 32 - patchX), Math.abs((batch.z() - minZ) / 32 - patchZ));
+                assertTrue(ring >= previousRing, "Finish nearer patches before outer rings");
+                previousRing = ring;
+            }
+        }
+    }
+    @Test void maximumWorldPlanSupportsRandomAccessWithoutEnumeratingTerrain() {
+        var plan = new SquarePlan(new GenerationArea(0, 0, GenerationArea.MAX_RADIUS, 0));
+        var first = plan.batch(0);
+        assertTrue(first.x() <= 0 && first.x() + first.width() > 0);
+        assertTrue(first.z() <= 0 && first.z() + first.height() > 0);
+        var last = plan.batch(plan.batches() - 1);
+        assertEquals(plan.chunks() - last.chunks(), plan.chunksBefore(plan.batches() - 1));
+    }
     @Test void compactPatchOrderRetainsExactProgressAcrossPartialEdges() {
         for (int radius : new int[]{1, 3, 5, 17, 31, 33, 64}) {
             for (int center : new int[]{-17, 30_000_000}) {

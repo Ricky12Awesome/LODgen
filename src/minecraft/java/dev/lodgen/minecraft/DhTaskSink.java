@@ -23,12 +23,57 @@ final class DhTaskSink {
         return null;
     }
     static boolean ready(ServerLevel level) { return wrapper(level) != null; }
-    static boolean featuresActive() {
-        return com.seibel.distanthorizons.core.config.Config.Common.WorldGenerator.chunkGeneratorMode.get()
-                == com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiDistantGeneratorMode.FEATURES
-                && com.seibel.distanthorizons.core.config.Config.Common.WorldGenerator.generatorPlan.get().chunkGenEnabled;
-    }
     static int radius() { return com.seibel.distanthorizons.core.config.Config.Client.Advanced.Graphics.Quality.lodChunkRenderDistanceRadius.get(); }
+    /** Fixed/opt-in areas aren't requested by the viewport. Run their rough
+     * phase through DH's unchanged generator before submitting native chunks.
+     * Coarse sections cover the area with a bounded number of active sources.
+     */
+    static CompletableFuture<Void> surface(ServerLevel level, dev.lodgen.generation.GenerationArea area,
+                                           java.util.concurrent.ExecutorService executor, java.util.function.BooleanSupplier allowed) {
+        var wrapper = wrapper(level);
+        if (wrapper == null) return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("DH is not ready"));
+        var generator = new com.seibel.distanthorizons.core.generation.DhWorldGenerator(
+                (com.seibel.distanthorizons.core.level.IDhServerLevel) wrapper.getDhLevel());
+        int detail = 1;
+        while (detail < 12 && (4L << detail) < 2L * area.radius()) detail++;
+        var pass = new SurfacePass(generator, area, (byte) detail, executor, allowed);
+        return pass.next().whenComplete((ignored, failure) -> generator.close());
+    }
+    private static final class SurfacePass {
+        final com.seibel.distanthorizons.core.generation.DhWorldGenerator generator;
+        final java.util.concurrent.ExecutorService executor;
+        final java.util.function.BooleanSupplier allowed;
+        final byte detail;
+        final int width, minX, maxX, maxZ;
+        int x, z;
+        SurfacePass(com.seibel.distanthorizons.core.generation.DhWorldGenerator generator,
+                    dev.lodgen.generation.GenerationArea area, byte detail,
+                    java.util.concurrent.ExecutorService executor, java.util.function.BooleanSupplier allowed) {
+            this.generator = generator; this.detail = detail; this.executor = executor; this.allowed = allowed;
+            width = 4 << detail;
+            int edge = dev.lodgen.generation.GenerationArea.WORLD_EDGE_BLOCKS / 16;
+            minX = x = Math.floorDiv(Math.max(-edge, area.chunkX() - area.radius()), width);
+            z = Math.floorDiv(Math.max(-edge, area.chunkZ() - area.radius()), width);
+            maxX = Math.floorDiv(Math.min(edge, area.chunkX() + area.radius()) - 1, width);
+            maxZ = Math.floorDiv(Math.min(edge, area.chunkZ() + area.radius()) - 1, width);
+        }
+        CompletableFuture<Void> next() {
+            if (!allowed.getAsBoolean()) return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("Automatic surface pass stopped"));
+            if (z > maxZ) return CompletableFuture.completedFuture(null);
+            int sx = x, sz = z;
+            if (++x > maxX) { x = minX; z++; }
+            var data = FullDataSourceV2.createEmpty(com.seibel.distanthorizons.core.pos.DhSectionPos.encode((byte) (6 + detail), sx, sz));
+            try {
+                return generator.generateLod(sx * width, sz * width, sx, sz, detail, data,
+                        com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiDistantGeneratorMode.FEATURES, executor, ignored -> {})
+                        .thenCompose(ignored -> {
+                            data.recordLastSeen();
+                            return generator.serverLevelWrapper.getDhLevel().updateDataSourcesAsync(data);
+                        }).whenComplete((ignored, failure) -> data.close())
+                        .thenComposeAsync(ignored -> next(), executor);
+            } catch (Throwable error) { data.close(); return CompletableFuture.failedFuture(error); }
+        }
+    }
     static dev.lodgen.generation.GenerationProgress progress(ServerLevel level, int radius) {
         var wrapper = wrapper(level);
         if (wrapper != null && wrapper.getDhLevel().getFullDataProvider()

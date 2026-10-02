@@ -18,7 +18,7 @@ public final class TaskStore {
         if (!Files.exists(path)) return null;
         try (var reader = Files.newBufferedReader(path)) {
             var data = new TomlParser().parse(reader);
-            if (number(data.get("layoutVersion")) != 1) throw new IllegalArgumentException("Unsupported task layout");
+            if (number(data.get("layoutVersion")) != 2) throw new IllegalArgumentException("Unsupported task layout");
             var area = new GenerationArea(number(data.get("x")), number(data.get("z")), number(data.get("radius")), number(data.get("savedRadius")));
             List<?> values = data.get("completedBeyond");
             var completed = values.stream().map(value -> integer(value)).toList();
@@ -34,7 +34,7 @@ public final class TaskStore {
     }
     public static void write(Path path, TaskRecord task) throws IOException {
         var values = CommentedConfig.inMemory();
-        values.set("layoutVersion", 1);
+        values.set("layoutVersion", 2);
         values.set("dimension", task.dimension());
         values.set("x", task.area().blockX()); values.set("z", task.area().blockZ());
         values.set("radius", task.area().radius()); values.set("savedRadius", task.area().savedRadius());

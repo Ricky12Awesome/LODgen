@@ -7,7 +7,6 @@ import net.minecraft.world.level.chunk.ChunkAccess;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ConcurrentHashMap;
 
 /** Common task code never loads client renderer classes on a dedicated server. */
 public final class RendererSinks {
@@ -36,6 +35,10 @@ public final class RendererSinks {
     }
     public static int voxyRadius(ServerLevel level) { var sink = voxy; return sink == null ? 0 : sink.radius(level); }
     public static int dhRadius() { return dhAvailable() ? DhTaskSink.radius() : 0; }
+    public static CompletableFuture<Void> surface(ServerLevel level, dev.lodgen.generation.GenerationArea area,
+            java.util.concurrent.ExecutorService workers, java.util.function.BooleanSupplier allowed) {
+        return DhTaskSink.surface(level, area, workers, allowed);
+    }
     public static dev.lodgen.generation.GenerationProgress progress(ServerLevel level, int radius) {
         if (dhAvailable()) return DhTaskSink.progress(level, radius);
         var sink = voxy;

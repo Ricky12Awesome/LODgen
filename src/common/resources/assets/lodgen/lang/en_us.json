@@ -1,6 +1,6 @@
 {
   "lodgen.config.title": "LODgen",
-  "lodgen.config.enabled.tooltip": "Run automatic generation for DH FEATURES and Voxy. C2ME accelerates the normal chunk pipeline when installed. Command tasks run independently.",
+  "lodgen.config.enabled.tooltip": "Run extra automatic chunk generation for DH FEATURES and Voxy. DH’s Disabled plan blocks it. DH chunk phases still use LODgen when this is off; Surface Only adds chunks only when on. Commands run independently.",
   "lodgen.config.defaults": "Defaults",
   "lodgen.config.apply": "Apply",
   "lodgen.config.invalid": "Invalid value. Check each setting’s tooltip.",
