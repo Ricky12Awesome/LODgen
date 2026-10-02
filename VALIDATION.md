@@ -1,102 +1,86 @@
 # LODgen development validation — 0.0.0
 
-The utilization update replaces active/waiting batch limits and request grouping with five Voxy CPU-load levels. DH installations follow DH's live thread count and runtime ratio. Native work uses a larger heap-bounded window, compact spatial batches, coalesced ticket updates and immediate refill after conversion. Voxy avoids redundant uniform-air conversion, and DH amortizes repeated waiting-queue scans.
+This update addresses automatic Voxy generation slowing after 30–60 seconds and repeated `Unloaded chunk` warnings when leaving a world early. The version remains **0.0.0**. The GitHub workflow retains its existing steps.
 
-Performance tests use **26.2 Fabric**, vanilla worldgen, **32 GB maximum heap**, Java 25, ZGC, compact object headers, C2ME/OpenCL and the requested optimization stack. The best measured Voxy run averaged **1,873 completed target chunks/s**, comparable to its native-only Chunky baseline. **2,500/s was not reproduced**, including by native-only Chunky.
+## Diagnosis
 
-All eight targets build and pass packaged client/server startup. The version remains **0.0.0**, and the GitHub workflow is unchanged. World checks are limited to 26.2 for this update.
+The supplied [Spark profile](https://spark.lucko.me/gYt7M0H4Xy) is from **26.1.2 Fabric**, rather than the previous 26.2 benchmark. Its C2ME native pool has 15 workers, with surface generation prominent in the worker stacks. LODgen conversion workers mostly wait for native chunks. The testing instance's `globalExecutorParallelism = "default"` selects those 15 workers even though LODgen's full-power conversion pool permits 32.
 
-## Performance measurements
+The automatic queue traversed a widening, thin spiral of 4×4 requests. Farther rings share fewer nearby generation dependencies. A 75-second reproduction with the actual instance mods reached approximately 1,642/s, then fell to 889/s. The earlier nine-second measured benchmark did not exercise this decline.
 
-Hardware: Ryzen 9 9950X (32 logical CPUs), RTX 5070 Ti (16 GB), 62 GiB system RAM, NVIDIA driver 615.71.09. OpenCL initialized on the physical NVIDIA device. Client tests use Xvfb/Mesa software rendering at 30 FPS, vanilla view distance 2, and disabled Voxy LOD rendering. Actual voxel conversion, updates and storage remain enabled. Other desktop applications were not stopped.
+Automatic generation now finishes compact **32×32 patches** before advancing to nearby patches. Individual tiles, saved-radius rules and persisted coverage keys remain unchanged. Generation can reuse existing native dependencies as the frontier grows. Enumeration retains a fixed per-tick scan budget, exact existing tile-overlap bounds, negative-coordinate support and world-edge checks.
 
-Each warmed comparison generates 16,384 warmup targets and 16,384 measured targets, equivalent to a square 64c radius. Chunky's iterator includes boundary targets and reports 16,641 actual completions. All generation stages and vanilla structures are enabled, with seed `123456789`. Supporting terrain is excluded from the rates. LOD-only benchmark areas are audited after shutdown for native chunk, POI and entity region files.
+Shutdown previously left the Voxy session open while the integrated server unloaded chunks. Failing FULL futures logged warnings and refilled generation during teardown. An integrated-server HEAD hook now checkpoints/stops command tasks and closes automatic Voxy generation before native chunk unloading. The session closes before waiting for current conversion readers, prevents new sessions on the stopping server, and retains successfully converted coverage until Voxy closes its engine. Expected shutdown cancellations do not retry or emit warning stacks. The base-server task shutdown hook is idempotent.
 
-| Integration | C2ME workers | Measured targets | Time | Completed targets/s | Chunky targets/s |
-| --- | --- | --- | --- | --- | --- |
-| Voxy, full power | 32 | 16,384 | 9.093 s | 1,801.900 | 1,836.289 |
-| Voxy, full power | 24 | 16,384 | 8.746 s | 1,873.329 | 1,827.316 |
-| DH actual queue and database updates | 32 | 16,384 | 10.280 s | 1,593.767 | 1,617.860 |
+## Sustained automatic generation
 
-Voxy's ordinary ingestion is disabled **only during the native Chunky baseline** to measure chunk pregen without extra renderer work. LODgen's measured phase retains real voxel conversion and storage. DH's measurement uses its actual queue, executor and asynchronous database updates. Background load and terrain differ between phases; these are not isolated microbenchmarks or long-duration throughput guarantees.
+Hardware: Ryzen 9 9950X, 32 logical CPUs; RTX 5070 Ti, 16 GB VRAM; 62 GiB system RAM; NVIDIA driver 615.71.09. Other desktop applications were left running. Every run uses a **32 GiB maximum heap**, Java 25, `-XX:+UseZGC -XX:+UseCompactObjectHeaders`, vanilla seed `123456789`, all generation stages and vanilla structures. Only completed LOD target chunks count toward the rate; supporting chunks are excluded. The timer starts with automatic generation, including its warmup.
 
-During the profiled 32-worker Voxy measurement, JVM CPU utilization averaged approximately **82% of the whole machine**, and overall system utilization averaged **95%**. Native Chunky's phase averaged about 86% JVM / 95% system. These are one-second JFR samples overlapping the measured phases. The JVM reported roughly 13 GiB used heap during the Voxy phase; the 32 GiB allocation is a maximum.
+The runner copies the testing instance's mods, C2ME/Voxy configuration and Minecraft options into disposable directories. Its actual stack includes C2ME/OpenCL alpha.0.62, Voxy 0.2.18, ScalableLux, Lithium, FerriteCore, Structure Layout Optimizer and zFastNoise **1.1.0-beta.6+26.1**. No optimization mod was replaced, and no 26.2-only zFastNoise jar was installed in 26.1.2.
 
-Pinned mods are in `test-versions.json`: C2ME OpenCL, ScalableLux, Lithium, FerriteCore, Structure Layout Optimizer and its Resourceful Config dependency, zFastNoise, and Chunky. zFastNoise **1.0.40** includes the surface optimization mixins omitted by 1.1.1. No custom worldgen mods are installed.
+| Automatic order | C2ME workers | Voxy rendering | Duration | Targets | Overall targets/s | Final approximately 30 seconds |
+| --- | --- | --- | --- | --- | --- | --- |
+| Previous spiral, control | 15 (instance default) | Off | 75.024 s | 95,984 | 1,279 | 1,068/s |
+| Compact patches | 15 (instance default) | Off | 75.027 s | 103,872 | 1,384 | 1,349/s |
+| Compact patches | 24 | Off | 90.025 s | 150,720 | 1,674 | 1,702/s |
+| Compact patches | 32 | **On, physical NVIDIA GPU** | 90.030 s | 160,160 | **1,779** | **1,907/s** |
 
-Evidence is copied to `dist/validation-lodgen-0.0.0/performance/`. Original recordings remain in `build/26.2/fabric/voxy-performance/client/benchmark.jfr` and `build/26.2/fabric/selftest/performance-final/benchmark.jfr`. Benchmark fixtures preceded final error-path and stale-index safeguards; final small world checks and unit tests cover those safeguards.
+The first three comparisons use an isolated far center, Xvfb/Mesa at 30 FPS and disabled LOD rendering; voxel conversion and storage remain active. The final run uses the instance's Microsoft Java **25.0.1**, the native desktop display, Voxy rendering/ingestion enabled, center **0,0**, radius **256c**, Minecraft view/simulation distance **12**, FPS limit **90**, and Voxy service threads **10**. C2ME's worker override is applied only to each disposable copy by the test runner.
 
-```sh
-xvfb-run -a python3 scripts/voxy-test.py --mc 26.2 --benchmark 64 \
-  --cpu-load 5 --native-workers 24 --heap 32G --jfr --chunky-native-only
+The final run's last period spans **29.648 seconds**. Its last five-second samples are 1,904/s, 1,862/s, 2,128/s and 2,019/s. It keeps 256 batches active, records zero retry tiles, and remains faster at the end than at 30 seconds. JVM CPU utilization averages **89.4% of the whole machine** over 89 one-second JFR samples; system CPU averages 98.7%. The maximum observed sampled heap use is approximately 19.9 GiB, within the 32 GiB limit.
 
-python3 scripts/integration-test.py --mc 26.2 --loader fabric \
-  --java /usr/lib/jvm/java-25-openjdk/bin/java --run-name performance-check \
-  --opencl --chunky --optimized --heap 32G --benchmark 128 --warmup-axis 128 \
-  --workers 256 --dh-threads 32 --native-workers 32 --chunky-working-count 768 \
-  --dh-queue --dh-executor --store-lods --jfr
-```
+**2,500/s was not reproduced.** These measurements test the reported first-minute decline; they do not establish an entire-distance throughput guarantee. Seeds, terrain, JVM warmup and background load differ between phases. The 15-worker controls isolate the compact-order change; the rendered 32-worker run additionally changes the native worker count, center, Java distribution and rendering path.
 
-## CPU load and scheduling
+Each run deliberately exits with **256 unfinished batches**. The complete log is checked for both `Voxy generation failed` and `Unloaded chunk`. All four checks pass without either warning. Shutdown audits find no native chunk/POI/entity region files in the isolated LOD-only areas. Near-origin player/spawn regions are allowed to save normally; outer LOD-only regions in the rendered run contain no native files. The final rendered fixture matches all current production class bytes.
 
-Voxy levels use DH's processor fractions: 10%, 25%, 50%, 75% and 100%, rounded upward. Level 1 also uses a 50% conversion duty ratio; level 3 is the default. On this 32-thread / 32 GB setup, worker counts are **4 / 8 / 16 / 24 / 32**, and admission windows are **4 / 16 / 32 / 96 / 256** native batches. Each full batch has 16 targets. A 128 MiB-per-batch heap-sizing heuristic accounts for targets and dependencies. Smaller heaps reduce admission; existing active work drains when settings decrease.
-
-DH's advanced thread/runtime settings are queried live. Its original small in-progress cap is bypassed only for the builtin chunk-enabled FEATURES generator. Voxy and command tasks resize conversion pools instead of retaining a fixed eight-worker maximum. C2ME's global worker configuration is not rewritten. These presets are not strict CPU caps for the entire Minecraft process.
-
-Commands traverse compact 32×32 patches with exact square edges and at most 16 targets per batch. New task checkpoints require `layoutVersion = 1`; unversioned development checkpoints are not imported. Radius rounding, clipped borders, completion prefixes and restart progress have unit coverage across uneven patch sizes.
-
-The backend claims shared dependency rectangles and processes admissions/releases together. Immediate completion-driven refill keeps native work available. DH's cached selection heap validates task identity and current bounds on every selection and rebuilds on movement, growth, exhaustion or 64 selections. Tests cover replaced tasks, stale final candidates and new work.
-
-Voxy snapshots preserve block, biome and lighting data. Missing sky layers above the highest occupied section share a full-sky array. Uniform air uses the same air/light mapping as Voxy's converter, followed by normal mip generation and storage updates. The real-world check compares all base voxels and generated mips against Voxy's original converter and samples native light values across every section, including **244 optimized air sections**.
-
-## Build and startup matrix
-
-| Minecraft | Loader | Build / unit tests | Packaged client | Packaged server | Cached startup check |
-| --- | --- | --- | --- | --- | --- |
-| 1.21.1 | Fabric | PASS / 47 | PASS | PASS | 19.45 s |
-| 1.21.1 | NeoForge | PASS / 47 | PASS | PASS | 19.16 s |
-| 26.1.2 | Fabric | PASS / 47 | PASS | PASS | 16.97 s |
-| 26.1.2 | NeoForge | PASS / 47 | PASS | PASS | 17.25 s |
-| 26.2 | Fabric | PASS / 47 | PASS | PASS | 16.78 s |
-| 26.2 | NeoForge | PASS / 47 | PASS | PASS | 17.17 s |
-| 26.3 | Fabric | PASS / 47 | PASS | PASS | 22.77 s |
-| 26.3 | NeoForge | PASS / 47 | PASS | PASS | 18.39 s |
-
-There are **376 passing unit-test executions**, with zero failures, errors or skipped tests, plus **16 successful DH/C2ME runtime checks**. Java 21 is used for 1.21.1; Java 25 for 26.x. Startup times include cached fixture builds and setup. Exact loader/DH/C2ME/Mod Menu versions are in `versions.json`.
-
-Each packaged client renders LODgen's single scrollable **nine-setting** page, exercising wheel scrolling, focus, signed coordinates, draft retention across resizing, center selection and CPU-load controls. With DH installed, the CPU control is disabled and points to DH; Voxy-only clients cycle all five levels. Native action-bar priority and zero-rate checks remain. All four Fabric clients also exercise Mod Menu's config entrypoint.
-
-Dedicated-server probes load every applicable generation mixin before world initialization. Client probes open no worlds. No chunk/POI/entity region files may be created. These are basic runtime compatibility checks, not terrain or visual LOD-rendering tests.
-
-Every installable production class matches its packaged startup fixture byte-for-byte; test probes are excluded from installable jars. Results, class counts and SHA-256 values are in `dist/validation-lodgen-0.0.0/results.json` and `artifact-audit.json`. Original logs remain in `build/<minecraft>/<loader>/startup/`.
-
-## Small 26.2 regression checks
-
-The DH native regression runs its actual queue and database updates alongside a small real Chunky pregen, using C2ME/OpenCL and the requested optimization stack. It verifies nonempty lit LODs, shared requests and live thread-limit changes. The LOD-only area has no native chunk, POI or entity files. Normal/adopted gold and diamond edits survive restart; cold FEATURES reads leave the existing native region byte-for-byte unchanged. Its 8×8 benchmark area is a correctness check.
-
-The command check uses a **5c radius / 100 targets**, a **1c saved radius / four native saves**, and four additional fixed-center automatic DH targets. It executes start/status/pause/continue/stop, checks origin, optional saved radius and block rounding, closes with incomplete running work, and resumes automatically after restart. The fixture explicitly gives DH one worker so this tiny task is not entirely admitted before pausing. Active batches drain; new dispatch stops. The region-header audit finds only the four inner native saves and no outer target/supporting chunk, POI or entity writes. The audit accounts for 26.x's dimension-specific Overworld folder.
-
-The distance check sets custom distance **64** and DH distance **128**, requesting only two 4×4 sections (32 targets). The section at 60 chunks generates; the section at 96 is cancelled before native generation. Resetting to 0 live allows the second section without changing DH's 128 distance. Shutdown audits cover both regions. Boundary and 512-to-128 behavior also have pure unit coverage.
-
-The Voxy-only 26.2 world/restart checks cover at most **88 targets**, real voxel storage, four inner native saves, far Overworld/Nether commands without visiting the Nether, all center modes, pause/resume/stop, action-bar throughput/ownership, snapshot/light/mip parity, and persisted coverage after reopening. DH is absent. Additional Voxy-only **startup** checks cover 1.21.1 NeoForge (Roxy + Voxy 0.2.16-beta) and 26.1.2 Fabric; their terrain tests are not repeated.
+Evidence: `dist/validation-lodgen-0.0.0/performance/` contains result JSON with five-second rate/heap/queue samples, CPU summaries and launch logs. Original JFR recordings remain in `build/26.1.2/fabric/voxy-automatic-<run-name>/client/automatic.jfr`.
 
 ```sh
-python3 scripts/integration-test.py --mc 26.2 --loader fabric --java /path/to/java25 \
-  --run-name regression-tasks --task-check --quick --opencl --optimized --heap 32G
-python3 scripts/integration-test.py --mc 26.2 --loader fabric --java /path/to/java25 \
-  --run-name regression-distance --distance-check --quick --opencl --optimized --heap 32G
-xvfb-run -a python3 scripts/voxy-test.py --mc 26.2 --world --reload
+DISPLAY=:0 python3 scripts/voxy-test.py --mc 26.1.2 \
+  --java /path/to/instance/java25/bin/java --instance /path/to/Prism/minecraft \
+  --automatic-seconds 90 --automatic-radius 256 \
+  --automatic-center-x 0 --automatic-center-z 0 --render-voxy \
+  --cpu-load 5 --native-workers 32 --heap 32G --jfr --run-name rendered-32
 ```
 
-## Reproduction and scope
+Use `--native-workers 0` to retain the source instance's C2ME configuration. Omit `--render-voxy` for a virtual-display check; real ingestion remains active. The performance runner never edits the original Prism instance or its worlds.
+
+After validation, the stopped `LODGen-Testing` instance received the matching production jar and `globalExecutorParallelism = 32`. Both previous files were backed up under the instance's `lodgen-backups/` directory, outside `mods/`. Its worlds, other mods, LODgen settings and JVM options were retained. `instance-update.json` records the backup location and before/after hashes. LODgen itself does not automatically rewrite C2ME configuration.
+
+## Build and runtime compatibility
+
+| Minecraft | Loader | Build / unit tests | Packaged client | Packaged server |
+| --- | --- | --- | --- | --- |
+| 1.21.1 | Fabric | PASS / 48 | PASS | PASS |
+| 1.21.1 | NeoForge | PASS / 48 | PASS | PASS |
+| 26.1.2 | Fabric | PASS / 48 | PASS | PASS |
+| 26.1.2 | NeoForge | PASS / 48 | PASS | PASS |
+| 26.2 | Fabric | PASS / 48 | PASS | PASS |
+| 26.2 | NeoForge | PASS / 48 | PASS | PASS |
+| 26.3 | Fabric | PASS / 48 | PASS | PASS |
+| 26.3 | NeoForge | PASS / 48 | PASS | PASS |
+
+The eight builds execute **384 passing unit tests**, with no failures, errors or skipped cases. The new regression checks compact distant dispatch and the first center tile; existing tests cover complete unique traversal, odd/negative centers, shrink/expansion, world edges, spatial selection, task persistence and saved-radius rounding.
+
+There are **16 DH/C2ME client/server startup checks**, with no worlds opened. Each packaged client renders the single scrollable nine-setting config page; all four Fabric clients exercise the Mod Menu config factory. Dedicated servers load applicable generation mixins. Java 21 runs 1.21.1; Java 25 runs 26.x. Every installable production class matches its startup fixture byte-for-byte, and test probes are excluded from installable jars. Artifact hashes, class counts and runtime reports are collected with the package.
+
+Three additional **Voxy-only** checks omit DH: 1.21.1 NeoForge with Roxy/Voxy 0.2.16-beta, 26.1.2 Fabric with Voxy 0.2.18, and 26.2 Fabric with Voxy 0.2.19. They also force the integrated-server class through Mixin transformation, checking the early-shutdown hook. Only 26.1.2 opens a small world for this update; older-version world checks are not repeated.
+
+## Small 26.1.2 correctness checks
+
+The Voxy world/restart check uses **at most 88 targets**. It verifies real voxel storage, block/biome/light snapshot and mip parity with Voxy's original converter, all center modes, four inner native saves, and zero outer chunk/POI/entity saves. Far Overworld/Nether command tasks run without visiting the Nether. Start/status/pause/continue/stop, native action-bar ownership and hiding at zero are exercised. Completed tile coverage and stored voxel data survive reopening.
+
+The DH command regression uses a **5c radius / 100 targets**, a **1c saved radius / four native saves**, and four additional automatic fixed-center targets. It checks command controls and arguments, pauses with work incomplete, closes a running task, and resumes its persisted frontier after restart. Region-header audits require exactly four inner native chunks, with no outer target/supporting chunk, POI or entity saves. This also exercises the idempotent task shutdown hook with DH.
 
 ```sh
 python3 scripts/build-all.py
 xvfb-run -a python3 scripts/startup-test.py --modmenu
 xvfb-run -a python3 scripts/voxy-test.py --mc 1.21.1
-xvfb-run -a python3 scripts/voxy-test.py --mc 26.1.2
+xvfb-run -a python3 scripts/voxy-test.py --mc 26.1.2 --world --reload
+xvfb-run -a python3 scripts/voxy-test.py --mc 26.2
+python3 scripts/integration-test.py --mc 26.1.2 --loader fabric \
+  --java /path/to/java25 --run-name regression-sustained-tasks \
+  --task-check --quick --heap 32G
 ```
 
-Use JDK 25 for Gradle with the Java 21 toolchain installed. Build targets sequentially because Unimined shares remapping data. Tests use disposable directories; original Prism instances are untouched. The workflow retains its existing steps.
-
-Visual Voxy rendering, remote multiplayer generation, custom worldgen throughput and long-duration full-distance rates are outside this pass. Earlier checks are retained in [docs/VALIDATION-config-page-0.0.0.md](docs/VALIDATION-config-page-0.0.0.md), [docs/VALIDATION-0.0.0-initial.md](docs/VALIDATION-0.0.0-initial.md) and [docs/VALIDATION-0.2.1.md](docs/VALIDATION-0.2.1.md). Their unchanged-generation claims and predecessor rates describe those historical builds, not this update.
+Build variants sequentially with JDK 25 and a Java 21 toolchain because Unimined shares remapping data. The tests use disposable worlds. Earlier DH native/Chunky and distance checks, CPU-level details, and short 26.2 benchmarks are retained in [docs/VALIDATION-utilization-0.0.0.md](docs/VALIDATION-utilization-0.0.0.md). Those reports describe the prior development build.

@@ -147,7 +147,7 @@ public final class GenerationTasks {
     }
     public static synchronized void beginShutdown(MinecraftServer server) {
         var tasks = SERVERS.get(server);
-        if (tasks == null) return;
+        if (tasks == null || tasks.closed) return;
         tasks.closed = true;
         if (tasks.command != null) { tasks.command.checkpoint(); tasks.command.close(); }
         for (var job : tasks.automatic.values()) { job.checkpoint(); job.close(); }

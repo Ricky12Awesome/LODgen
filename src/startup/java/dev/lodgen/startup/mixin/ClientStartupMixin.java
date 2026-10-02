@@ -31,7 +31,8 @@ public abstract class ClientStartupMixin {
         Minecraft minecraft = (Minecraft) (Object) this;
         if (!minecraft.isGameLoadFinished()) return;
         if (lodgen$stage == 3) {
-            if (Integer.getInteger("lodgen.test.voxyBenchmark", 0) > 0) dev.lodgen.startup.VoxyBenchmark.tick(minecraft);
+            if (Integer.getInteger("lodgen.test.automaticSeconds", 0) > 0) dev.lodgen.startup.VoxyAutomaticCheck.tick(minecraft);
+            else if (Integer.getInteger("lodgen.test.voxyBenchmark", 0) > 0) dev.lodgen.startup.VoxyBenchmark.tick(minecraft);
             else if (Boolean.getBoolean("lodgen.test.voxyWorld")) VoxyWorldCheck.tick(minecraft);
             return;
         }
@@ -50,7 +51,10 @@ public abstract class ClientStartupMixin {
                 // #else
                 Class.forName(net.minecraft.client.gui.Gui.class.getName());
                 // #endif
-                if (Boolean.getBoolean("lodgen.test.voxy")) new dev.lodgen.voxy.VoxyBridge();
+                if (Boolean.getBoolean("lodgen.test.voxy")) {
+                    new dev.lodgen.voxy.VoxyBridge();
+                    Class.forName(net.minecraft.client.server.IntegratedServer.class.getName());
+                }
                 ClientScreens.open(minecraft, new TitleScreen());
                 lodgen$stage = 1;
                 return;
@@ -105,7 +109,7 @@ public abstract class ClientStartupMixin {
                     + (Boolean.getBoolean("lodgen.test.modmenu") ? "Mod Menu factory opened config and returned to Mods; " : "")
                     + "generation mixin targets loaded; no world opened.");
             lodgen$stage = 3;
-            if (Integer.getInteger("lodgen.test.voxyBenchmark", 0) > 0) dev.lodgen.startup.VoxyBenchmark.start(minecraft);
+            if (Integer.getInteger("lodgen.test.automaticSeconds", 0) > 0 || Integer.getInteger("lodgen.test.voxyBenchmark", 0) > 0) dev.lodgen.startup.VoxyBenchmark.start(minecraft);
             else if (Boolean.getBoolean("lodgen.test.voxyWorld")) VoxyWorldCheck.start(minecraft);
             else minecraft.stop();
         } catch (Throwable failure) {

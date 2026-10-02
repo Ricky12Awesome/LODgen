@@ -25,6 +25,7 @@
   "client": [
     "OptionsScreenMixin",
     "VoxyClientTickMixin",
+    "VoxyServerShutdownMixin",
     "VoxyShutdownMixin",
     "VoxyEngineCloseMixin",
     "GenerationOverlayMixin",

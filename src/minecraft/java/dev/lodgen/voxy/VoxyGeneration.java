@@ -22,12 +22,16 @@ import java.util.concurrent.ExecutorService;
 public final class VoxyGeneration {
     private static final Map<Object, Session> SESSIONS = new IdentityHashMap<>();
     private static volatile Session current;
+    private static volatile net.minecraft.server.MinecraftServer stoppingServer;
     private static VoxyBridge bridge;
     private static boolean failed;
 
     public static void tick(Minecraft client) {
         if (failed) return;
         if (client.level == null || client.player == null || client.getSingleplayerServer() == null) {
+            pause(); return;
+        }
+        if (client.getSingleplayerServer() == stoppingServer || client.getSingleplayerServer().isStopped()) {
             pause(); return;
         }
         try {
@@ -75,6 +79,7 @@ public final class VoxyGeneration {
     }
 
     private static Session session(ServerLevel level) throws ReflectiveOperationException {
+        if (level.getServer() == stoppingServer || level.getServer().isStopped()) return null;
         var currentBridge = bridge;
         if (currentBridge == null) return null;
         var context = currentBridge.context(level);
@@ -99,7 +104,19 @@ public final class VoxyGeneration {
         Session[] sessions;
         synchronized (SESSIONS) { sessions = SESSIONS.values().toArray(Session[]::new); }
         for (var session : sessions) session.close();
-        bridge = null; failed = false;
+        bridge = null; failed = false; stoppingServer = null;
+    }
+
+    /** The integrated server unloads native chunks before Voxy's engine closes.
+     * Stop dispatch and retries first; native futures may fail normally as they
+     * drain. Keep completed coverage until engineClosed checkpoints it.
+     */
+    public static void serverStopping(net.minecraft.server.MinecraftServer server) {
+        stoppingServer = server;
+        pause();
+        Session[] sessions;
+        synchronized (SESSIONS) { sessions = SESSIONS.values().toArray(Session[]::new); }
+        for (var session : sessions) if (session.level.getServer() == server) session.close();
     }
 
     public static void engineClosed(Object engine) {
@@ -196,10 +213,11 @@ public final class VoxyGeneration {
         }
 
         @Override public void close() {
-            conversionLock.writeLock().lock();
-            try { closed = true; }
-            finally { conversionLock.writeLock().unlock(); }
+            closed = true;
             pipeline.close(); workers.shutdown();
+            // A write-lock barrier waits for readers already ingesting data.
+            conversionLock.writeLock().lock();
+            conversionLock.writeLock().unlock();
         }
     }
 }

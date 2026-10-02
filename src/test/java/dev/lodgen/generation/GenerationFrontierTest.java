@@ -5,6 +5,22 @@ import java.util.HashSet;
 import static org.junit.jupiter.api.Assertions.*;
 
 class GenerationFrontierTest {
+    @Test void distantDispatchRemainsCompactAndStartsAtTheCenterTile() {
+        var frontier = new GenerationFrontier(-3, 5, 256);
+        assertEquals(new GenerationFrontier.Tile(-4, 4), frontier.next());
+        frontier = new GenerationFrontier(-3, 5, 256);
+        for (int patch = 0; patch < 20; patch++) {
+            var tiles = new HashSet<Long>();
+            int minX = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+            for (int i = 0; i < 64; i++) {
+                var tile = frontier.next();
+                assertNotNull(tile); assertTrue(tiles.add(tile.key()));
+                minX = Math.min(minX, tile.x()); minZ = Math.min(minZ, tile.z());
+                maxX = Math.max(maxX, tile.x()); maxZ = Math.max(maxZ, tile.z());
+            }
+            assertEquals(28, maxX - minX); assertEquals(28, maxZ - minZ);
+        }
+    }
     @Test void visitsEveryIntersectingTileOnceAndTerminates() {
         for (int center : new int[]{0, -3, 63}) {
             var frontier = new GenerationFrontier(center, -center, 64);

@@ -34,7 +34,7 @@ chunksPerSecondUpdateIntervalMs = 1000
 | 4 | Aggressive | 75% | 100% |
 | 5 | Full power | 100% | 100% |
 
-Native concurrency and memory use adjust automatically; there are no batch, waiting-queue or spatial-grouping controls. Full power on a 32-thread CPU with a 32 GB heap permits 256 concurrent 4×4 requests (4,096 target chunks plus dependencies). Smaller heaps reduce that window. Requests are grouped spatially and refilled on completion, while conversion, ticket cleanup and normal play retain their own lifetimes. These settings control LODgen’s work; C2ME and renderer storage services retain their own worker settings. They are utilization presets, rather than strict limits on overall process CPU usage.
+Native concurrency and memory use adjust automatically; there are no batch, waiting-queue or spatial-grouping controls. Full power on a 32-thread CPU with a 32 GB heap permits 256 concurrent 4×4 requests (4,096 target chunks plus dependencies). Smaller heaps reduce that window. Automatic Voxy generation completes compact 32×32 patches before moving outward, keeping native dependencies useful as the radius grows. Requests refill on completion, while conversion, ticket cleanup and normal play retain their own lifetimes. These settings control LODgen’s work; C2ME and renderer storage services retain their own worker settings. They are utilization presets, rather than strict limits on overall process CPU usage.
 
 For maximum OpenCL throughput, use Java 25+ with a sufficiently large heap, `-XX:+UseZGC -XX:+UseCompactObjectHeaders`, ScalableLux, Lithium, FerriteCore, Structure Layout Optimizer and zFastNoise. Set C2ME’s `globalExecutorParallelism` to the available thread count or slightly below; its default can be lower. LODgen does not rewrite C2ME’s configuration or alter the scheduler used by ordinary player and Chunky requests. More RAM keeps useful native dependencies alive; allocating all RAM does not necessarily improve throughput.
 
@@ -104,20 +104,21 @@ xvfb-run -a python3 scripts/voxy-test.py --world --reload
 
 ## Performance checks
 
-The local 26.2 Fabric benchmark uses the Ryzen 9 9950X and RTX 5070 Ti, a 32 GB heap, vanilla seed `123456789`, all generation stages and structures, and the requested optimization mods. Voxy LOD rendering is disabled for the virtual-display test; real voxel conversion and storage remain enabled. Warmup and measured squares each contain 16,384 targets (64c radius). No worldgen shortcuts or supporting chunks are counted as completed targets.
+The sustained check copies the mods and relevant settings from the **26.1.2 Fabric** testing instance into a disposable client. It uses a Ryzen 9 9950X, RTX 5070 Ti, Microsoft Java 25, a 32 GB maximum heap, ZGC, compact object headers, vanilla seed `123456789`, and full generation stages and structures. Voxy rendering remains enabled on the physical GPU, with the instance's view/simulation distance 12 and FPS limit 90. Only completed LOD target chunks count toward throughput.
+
+The previous thin spiral reproduced the reported slowdown: with C2ME's default 15 workers, it reached 1,642/s and fell to **889/s** near 75 seconds. Compact automatic generation held roughly **1,300–1,400/s** later in the run with the same native worker count. The rendered 32-worker run completed **160,160 targets in 90.030 seconds**: **1,779/s overall**, **1,907/s over the final 29.648 seconds**, and a peak five-second sample of **2,128/s**. JVM CPU use averaged approximately 89% of the whole machine. **2,500/s was not reached**. This checks the reported 30–60 second decline; it does not establish a rate for an entire distance or every seed.
+
+The copied instance's `globalExecutorParallelism = "default"` selected 15 C2ME workers. Full power permits 32 LODgen conversion workers, but C2ME's configuration controls its native workers separately. The rendered result sets `globalExecutorParallelism = 32` in the disposable test. No optimization mods are substituted: the instance's zFastNoise 1.1.0-beta.6 remains installed.
 
 ```sh
-xvfb-run -a python3 scripts/voxy-test.py --mc 26.2 --benchmark 64 \
-  --cpu-load 5 --native-workers 32 --heap 32G --jfr --chunky-native-only
-
-python3 scripts/integration-test.py --mc 26.2 --loader fabric \
-  --java /usr/lib/jvm/java-25-openjdk/bin/java --run-name performance-check \
-  --opencl --chunky --optimized --heap 32G --benchmark 128 --warmup-axis 128 \
-  --workers 256 --dh-threads 32 --native-workers 32 --chunky-working-count 768 \
-  --dh-queue --dh-executor --store-lods --jfr
+DISPLAY=:0 python3 scripts/voxy-test.py --mc 26.1.2 \
+  --java /path/to/instance/java25/bin/java --instance /path/to/Prism/minecraft \
+  --automatic-seconds 90 --automatic-radius 256 \
+  --automatic-center-x 0 --automatic-center-z 0 --render-voxy \
+  --cpu-load 5 --native-workers 32 --heap 32G --jfr --run-name rendered-32
 ```
 
-The benchmark pins zFastNoise 1.0.40, whose surface optimizations complement OpenCL; 1.1.1 omits those optimizations. With 32 C2ME workers, Voxy measured **1,802 completed LOD chunks/s**, compared with **1,836 native Chunky chunks/s** with Voxy ingestion disabled for that baseline. With 24 C2ME workers, Voxy measured **1,873/s** versus **1,827/s** native Chunky. DH’s actual queue with database updates measured **1,594/s**. Overall system CPU utilization was around 95% in the profiled 32-worker Voxy/native comparison. **2,500/s was not reproduced**, including by the native-only baseline. These short-area results depend on terrain, warmup, background load and renderer work; they do not establish a sustained rate across every world or modpack. See [VALIDATION.md](VALIDATION.md) for logs and checks.
+The runner only changes its disposable copy, saves five-second rate/heap/queue samples, and exits with unfinished native work to exercise shutdown. Outer LOD-only regions are checked for native chunk, POI and entity files; normal player-owned chunks remain saved. Earlier short 26.2 comparisons against Chunky are preserved in [docs/VALIDATION-utilization-0.0.0.md](docs/VALIDATION-utilization-0.0.0.md). Current evidence and correctness checks are in [VALIDATION.md](VALIDATION.md).
 
 ## Render-distance changes
 
