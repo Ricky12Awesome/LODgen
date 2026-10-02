@@ -28,11 +28,12 @@ public final class VoxyWorldCheck {
     private static CompletableFuture<Void> far;
     private static CompletableFuture<String> taskStatus;
     private static boolean netherTaskStarted;
+    private static boolean snapshotsChecked;
 
     public static void start(Minecraft client) throws Exception {
         started = System.nanoTime();
         // Keep generation paused while the normal player/spawn chunks load.
-        LodgenConfig.apply(new LodgenConfig(false, 1, 0, true, 1, true, 1000, dev.lodgen.generation.GenerationCenter.CUSTOM, 16384, -16384, 1));
+        LodgenConfig.apply(new LodgenConfig(false, 1, 1, true, 1000, dev.lodgen.generation.GenerationCenter.CUSTOM, 16384, -16384, 1));
         if (Boolean.getBoolean("lodgen.test.voxyReload")) {
             client.createWorldOpenFlows().openWorld("lodgen-voxy-check", () -> { throw new AssertionError("World reopen cancelled"); });
             return;
@@ -66,7 +67,7 @@ public final class VoxyWorldCheck {
             var serverContext = bridge.context(serverLevel);
             if (serverContext == null || serverContext.engine() != context.engine()) throw new AssertionError("Server/client Voxy world identifiers differ");
             if (stage == 0) {
-                LodgenConfig.apply(new LodgenConfig(true, 1, 0, true, 1, true, 1000, dev.lodgen.generation.GenerationCenter.CUSTOM, 16384, -16384, 1));
+                LodgenConfig.apply(new LodgenConfig(true, 1, 1, true, 1000, dev.lodgen.generation.GenerationCenter.CUSTOM, 16384, -16384, 1));
                 stage = 1; return;
             }
             if (stage == 1) {
@@ -77,6 +78,7 @@ public final class VoxyWorldCheck {
                 var completed = session.getClass().getDeclaredField("completed"); completed.setAccessible(true);
                 var frontierField = session.getClass().getDeclaredField("frontier"); frontierField.setAccessible(true);
                 var frontier = (dev.lodgen.generation.GenerationFrontier) frontierField.get(session);
+                if (frontier == null) return;
                 var centerField = session.getClass().getDeclaredField("centerX"); centerField.setAccessible(true);
                 if (centerField.getInt(session) != 1024) throw new AssertionError("Custom generation center ignored");
                 if (frontier == null || !frontier.exhausted() || !((Set<?>) active.get(session)).isEmpty()) return;
@@ -91,7 +93,7 @@ public final class VoxyWorldCheck {
                     StartupCheck.report("PASS: Voxy reopened without DH; completed generation coverage restored and nonempty far LOD data survived restart.");
                     stage = 4; client.stop(); return;
                 }
-                LodgenConfig.apply(new LodgenConfig(false, 1, 0, true, 1, true, 1000, dev.lodgen.generation.GenerationCenter.CUSTOM, 16384, -16384, 1));
+                LodgenConfig.apply(new LodgenConfig(false, 1, 1, true, 1000, dev.lodgen.generation.GenerationCenter.CUSTOM, 16384, -16384, 1));
                 var server = client.getSingleplayerServer();
                 far = CompletableFuture.runAsync(() -> {
                     try {
@@ -132,6 +134,7 @@ public final class VoxyWorldCheck {
                 stage = 4; client.stop(); return;
             }
             if (!far.isDone() || !taskStatus.isDone() || !OverlayCheck.rendered) return;
+            far.join();
             String status = taskStatus.join();
             if (status.contains("error=")) throw new AssertionError(status);
             if (!status.contains("COMPLETE")) {
@@ -140,6 +143,19 @@ public final class VoxyWorldCheck {
                 return;
             }
             if (!netherTaskStarted) {
+                if (!snapshotsChecked) {
+                    snapshotsChecked = true;
+                    var server = client.getSingleplayerServer();
+                    far = PersistenceRegistry.backend(serverLevel).request(4096, -4096, 4).thenCompose(batch ->
+                            CompletableFuture.runAsync(() -> {
+                                try { VoxySnapshotCheck.verify(serverLevel, batch.chunks); }
+                                catch (Exception error) { throw new java.util.concurrent.CompletionException(error); }
+                            }, server).handle((ignored, error) -> batch.release().thenApply(released -> {
+                                if (error != null) throw new java.util.concurrent.CompletionException(error);
+                                return (Void) null;
+                            })).thenCompose(java.util.function.Function.identity()));
+                    return;
+                }
                 checkStoredFarSection(context.engine());
                 var server = client.getSingleplayerServer();
                 far = CompletableFuture.runAsync(() -> {

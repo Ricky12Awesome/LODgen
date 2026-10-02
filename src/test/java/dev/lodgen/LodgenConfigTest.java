@@ -14,24 +14,24 @@ class LodgenConfigTest {
     @Test void createsTomlAndRoundTripsAllSettings() throws Exception {
         Path file = directory.resolve("lodgen.toml");
         assertEquals(LodgenConfig.DEFAULTS, LodgenConfig.load(file));
-        var edited = new LodgenConfig(false, 12, 0, false, 64, true, 250, dev.lodgen.generation.GenerationCenter.CUSTOM, 1234, -5678, 2);
+        var edited = new LodgenConfig(false, 5, 64, true, 250, dev.lodgen.generation.GenerationCenter.CUSTOM, 1234, -5678, 2);
         LodgenConfig.write(file, edited);
         assertEquals(edited, LodgenConfig.read(file));
-        assertTrue(Files.readString(file).contains("pipelineBatches = 12"));
+        assertTrue(Files.readString(file).contains("cpuLoad = 5"));
         try (var paths = Files.list(directory)) { assertEquals(1, paths.count(), "No temporary file remains"); }
     }
 
     @Test void parsesRealTomlAndPreservesUnrelatedTables() throws Exception {
         Path file = directory.resolve("lodgen.toml");
-        Files.writeString(file, "enabled = true # Inline comment\npipelineBatches = 0x20\nqueuedBatches = 1_024\n[notes]\nvalue = 'keep me'\n");
-        assertEquals(new LodgenConfig(true, 32, 1024, true, 0, false, 1000, dev.lodgen.generation.GenerationCenter.CURRENT, 0, 0, 0), LodgenConfig.read(file));
+        Files.writeString(file, "enabled = true # Inline comment\ncpuLoad = 0x3\n[notes]\nvalue = 'keep me'\n");
+        assertEquals(new LodgenConfig(true, 3, 0, false, 1000, dev.lodgen.generation.GenerationCenter.CURRENT, 0, 0, 0), LodgenConfig.read(file));
         LodgenConfig.write(file, LodgenConfig.DEFAULTS);
         assertTrue(Files.readString(file).contains("keep me"));
     }
 
     @Test void invalidTypesAndBoundsDisableWithoutRewritingTheBadFile() throws Exception {
         Path file = directory.resolve("lodgen.toml");
-        for (String text : new String[]{"enabled = 'false'", "showChunksPerSecond = 1", "generationCenter = 'invalid'", "generationCenter = true", "savedChunkRadius = -1", "centerX = 30000001", "chunksPerSecondUpdateIntervalMs = 0", "chunksPerSecondUpdateIntervalMs = 60001", "chunksPerSecondUpdateIntervalMs = 1.5", "pipelineBatches = 0", "pipelineBatches = 65", "queuedBatches = -1", "queuedBatches = 1.5", "enabled = invalid", "generationDistance = -1", "generationDistance = 1.5", "generationDistance = 2147483648"}) {
+        for (String text : new String[]{"enabled = 'false'", "showChunksPerSecond = 1", "generationCenter = 'invalid'", "generationCenter = true", "savedChunkRadius = -1", "centerX = 30000001", "chunksPerSecondUpdateIntervalMs = 0", "chunksPerSecondUpdateIntervalMs = 60001", "chunksPerSecondUpdateIntervalMs = 1.5", "cpuLoad = 0", "cpuLoad = 6", "cpuLoad = 1.5", "enabled = invalid", "generationDistance = -1", "generationDistance = 1.5", "generationDistance = 2147483648"}) {
             Files.writeString(file, text);
             assertFalse(LodgenConfig.load(file).enabled(), text);
             assertEquals(text, Files.readString(file));

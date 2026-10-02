@@ -52,5 +52,30 @@
       "fabric": null,
       "neoforge": null
     }
+  },
+  "lithium": {
+    "26.2": {
+      "fabric": "f7vZ0VWU"
+    }
+  },
+  "ferritecore": {
+    "26.2": {
+      "fabric": "d5ddUdiB"
+    }
+  },
+  "structure-layout-optimizer": {
+    "26.2": {
+      "fabric": "JwbecFqq"
+    }
+  },
+  "resourceful-config": {
+    "26.2": {
+      "fabric": "RqoPv70U"
+    }
+  },
+  "zfastnoise": {
+    "26.2": {
+      "fabric": "9TGMeiu2"
+    }
   }
 }

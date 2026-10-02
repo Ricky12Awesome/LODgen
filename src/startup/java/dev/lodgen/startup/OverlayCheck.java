@@ -17,8 +17,7 @@ public final class OverlayCheck {
         // #endif
         var original = LodgenConfig.INSTANCE;
         try {
-            LodgenConfig.INSTANCE = new LodgenConfig(original.enabled(), original.pipelineBatches(), original.queuedBatches(),
-                    original.spatialBatching(), original.generationDistance(), false, original.chunksPerSecondUpdateIntervalMs(), original.generationCenter(), original.centerX(), original.centerZ(), original.savedChunkRadius());
+            LodgenConfig.INSTANCE = new LodgenConfig(original.enabled(), original.cpuLoad(), original.generationDistance(), false, original.chunksPerSecondUpdateIntervalMs(), original.generationCenter(), original.centerX(), original.centerZ(), original.savedChunkRadius());
             GenerationOverlay.tick(client);
             // #if MC_262_PLUS
             var actionBar = (dev.lodgen.mixin.ActionBarAccess) client.gui.hud;
@@ -43,8 +42,7 @@ public final class OverlayCheck {
                 set = entry.getClass().getMethod("set", Object.class);
             }
             for (boolean enabled : new boolean[]{false, true}) {
-                LodgenConfig.INSTANCE = new LodgenConfig(original.enabled(), original.pipelineBatches(),
-                        original.queuedBatches(), original.spatialBatching(), original.generationDistance(), enabled, original.chunksPerSecondUpdateIntervalMs(), original.generationCenter(), original.centerX(), original.centerZ(), original.savedChunkRadius());
+                LodgenConfig.INSTANCE = new LodgenConfig(original.enabled(), original.cpuLoad(), original.generationDistance(), enabled, original.chunksPerSecondUpdateIntervalMs(), original.generationCenter(), original.centerX(), original.centerZ(), original.savedChunkRadius());
                 if (entry == null) {
                     if (GenerationOverlay.visible() != enabled) throw new AssertionError("Voxy-only overlay toggle ignored");
                 } else {

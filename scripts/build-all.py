@@ -37,6 +37,6 @@ for mc in matrix:
                                    "requiredMods": {"minecraft": mc},
                                    "optionalRenderers": {"distanthorizons": matrix[mc]["dhVersion"], "voxy": voxy_targets.get(mc, {}).get(loader)},
                                    "testedVersions": matrix[mc],
-                                   "optionalTestMods": {project: versions[mc][loader] for project, versions in optional_tests.items()}}
+                                   "optionalTestMods": {project: versions.get(mc, {}).get(loader) for project, versions in optional_tests.items()}}
 (dist / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 print(f"Built and tested {len(manifest)} jars: {dist}")

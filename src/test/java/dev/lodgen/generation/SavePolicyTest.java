@@ -4,6 +4,21 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SavePolicyTest {
+    @Test void rectangleClaimsReuseDependenciesAndKeepNormalOwnership() {
+        var policy = new SavePolicy();
+        java.util.concurrent.atomic.AtomicInteger lookups = new java.util.concurrent.atomic.AtomicInteger();
+        policy.claimArea(-33, -2, 67, 5, key -> { lookups.incrementAndGet(); return key == 0; });
+        assertEquals(335, lookups.get());
+        policy.promote(-1, -1);
+        policy.saveGenerated(1, 1);
+        policy.claimArea(-33, -2, 67, 5, key -> { fail("Known dependency queried twice"); return false; });
+        assertFalse(policy.suppress(0, 0));
+        assertFalse(policy.suppress(-1, -1));
+        assertFalse(policy.suppress(1, 1));
+        assertTrue(policy.generated(1, 1));
+        assertTrue(policy.suppress(-33, -2));
+        assertTrue(policy.suppress(33, 2));
+    }
     @Test void newClaimsStayEphemeralAcrossRepeatedRequests() {
         var policy = new SavePolicy();
         policy.claim(-1, -33, false);

@@ -1,11 +1,6 @@
 {
   "lodgen.config.title": "LODgen",
   "lodgen.config.enabled.tooltip": "Run automatic generation for DH FEATURES and Voxy. C2ME accelerates the normal chunk pipeline when installed. Command tasks run independently.",
-  "lodgen.config.pipelineBatches": "Active batches",
-  "lodgen.config.pipelineBatches.tooltip": "1–64 batches per dimension. Higher values keep more chunks in flight and use more memory. Default: 32.",
-  "lodgen.config.queuedBatches": "Waiting batches",
-  "lodgen.config.queuedBatches.tooltip": "0–1024 waiting batches. These requests do not occupy workers. Default: 64.",
-  "lodgen.config.spatialBatching.tooltip": "Generate nearby terrain together within DH’s distance priority bands to share supporting chunks.",
   "lodgen.config.defaults": "Defaults",
   "lodgen.config.apply": "Apply",
   "lodgen.config.invalid": "Invalid value. Check each setting’s tooltip.",
@@ -29,7 +24,14 @@
   "lodgen.config.savedChunkRadius": "Saved chunk radius",
   "lodgen.config.savedChunkRadius.tooltip": "Square radius in chunks to save as ordinary terrain. Default 0 keeps LOD-only terrain transient. Normal player and Chunky chunks always retain their saves.",
   "lodgen.config.enabled": "Automatic generation",
-  "lodgen.config.spatialBatching": "Group nearby requests",
   "lodgen.config.showChunksPerSecond": "Show chunks per second",
-  "lodgen.config.units": "Distances are in chunks; X/Z are in blocks."
+  "lodgen.config.units": "Distances are in chunks; X/Z are in blocks.",
+  "lodgen.config.cpuLoad": "CPU load",
+  "lodgen.config.cpuLoad.tooltip": "Voxy utilization: 1 minimal impact, 2 low impact, 3 balanced, 4 aggressive, 5 full power. Uses DH’s CPU Load setting when DH is installed. Concurrency and conversion workers adjust automatically; more RAM allows a larger native work window.",
+  "lodgen.config.cpuLoad.dh": "Uses DH CPU Load",
+  "lodgen.config.cpuLoad.1": "1 — Minimal impact",
+  "lodgen.config.cpuLoad.2": "2 — Low impact",
+  "lodgen.config.cpuLoad.3": "3 — Balanced",
+  "lodgen.config.cpuLoad.4": "4 — Aggressive",
+  "lodgen.config.cpuLoad.5": "5 — Full power"
 }

@@ -16,10 +16,12 @@ import dev.lodgen.minecraft.PersistenceRegistry;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -33,15 +35,19 @@ import java.util.function.Function;
 public abstract class DhGenerationQueueMixin {
     @Shadow @Final private IDhApiWorldGenerator generator;
     @Shadow @Final private IDhServerLevel level;
+    @Unique private final dev.lodgen.generation.SpatialTaskIndex<Long, DataSourceRetrievalTask> lodgen$index = new dev.lodgen.generation.SpatialTaskIndex<>();
 
-    @Inject(method = "isGeneratorBusy", at = @At("RETURN"), cancellable = true)
+    @Inject(method = "close", at = @At("HEAD"))
+    private void lodgen$clearIndex(CallbackInfo callback) { lodgen$index.clear(); }
+
+    @Inject(method = "isGeneratorBusy", at = @At("HEAD"), cancellable = true)
     private void lodgen$backpressure(CallbackInfoReturnable<Boolean> callback) {
-        if (!callback.getReturnValue() && LodgenConfig.INSTANCE.enabled()
+        if (LodgenConfig.INSTANCE.enabled()
                 && generator instanceof GenerationAdmission admission
                 && Config.Common.WorldGenerator.chunkGeneratorMode.get() == EDhApiDistantGeneratorMode.FEATURES
-                && Config.Common.WorldGenerator.generatorPlan.get().chunkGenEnabled
-                && (admission.lodgen$isBusy() || dev.lodgen.minecraft.GenerationTasks.overridesAutomatic(level.getServerLevelWrapper().getWrappedMcObject()))) {
-            callback.setReturnValue(true);
+                && Config.Common.WorldGenerator.generatorPlan.get().chunkGenEnabled) {
+            callback.setReturnValue(com.seibel.distanthorizons.core.util.threading.ThreadPoolUtil.getWorldGenExecutor() == null
+                    || admission.lodgen$isBusy() || dev.lodgen.minecraft.GenerationTasks.overridesAutomatic(level.getServerLevelWrapper().getWrappedMcObject()));
         }
     }
 
@@ -71,15 +77,14 @@ public abstract class DhGenerationQueueMixin {
             }
             return transform.apply(entry);
         };
-        if (!settings.spatialBatching()) return tasks.reduceEntries(threshold, filtered, reduce);
-        SpatialGenerationOrder.Ranked<Object> selected = tasks.reduceEntries(threshold, entry -> {
+        var context = java.util.List.of(targetPos.x >> 4, targetPos.z >> 4, resolvedCenter.getX() >> 4, resolvedCenter.getZ() >> 4, radius);
+        return lodgen$index.select(tasks, context, entry -> {
             Object pair = filtered.apply(entry);
             if (pair == null) return null;
             var access = (DhTaskDistanceAccess) pair;
             var center = DhSectionPos.getCenterBlockPos(access.lodgen$task().pos);
             return new SpatialGenerationOrder.Ranked<>(pair,
                     SpatialGenerationOrder.priority(access.lodgen$distance(), center.x, center.z));
-        }, (a, b) -> a.priority() <= b.priority() ? a : b);
-        return selected == null ? null : selected.value();
+        });
     }
 }

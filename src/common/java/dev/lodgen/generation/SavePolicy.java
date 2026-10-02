@@ -18,6 +18,25 @@ public final class SavePolicy {
         if (!region.permanent.get(index)) { region.ephemeral.set(index); region.lodOwned.set(index); }
     }
 
+    /** Adjacent batches share most dependencies. Check native holders only for
+     * previously unknown chunks, under one ownership lock per rectangle.
+     */
+    public synchronized void claimArea(int minX, int minZ, int width, int height, java.util.function.LongPredicate loaded) {
+        for (int rx = minX >> 5; rx <= (minX + width - 1) >> 5; rx++) {
+            for (int rz = minZ >> 5; rz <= (minZ + height - 1) >> 5; rz++) {
+                Region region = regions.computeIfAbsent(regionKey(rx << 5, rz << 5), ignored -> new Region());
+                for (int z = Math.max(minZ, rz << 5); z < Math.min(minZ + height, (rz + 1) << 5); z++) {
+                    for (int x = Math.max(minX, rx << 5); x < Math.min(minX + width, (rx + 1) << 5); x++) {
+                        int index = index(x, z);
+                        if (region.ephemeral.get(index) || region.permanent.get(index)) continue;
+                        if (loaded.test((x & 0xffffffffL) | (long) z << 32)) region.permanent.set(index);
+                        else { region.ephemeral.set(index); region.lodOwned.set(index); }
+                    }
+                }
+            }
+        }
+    }
+
     public synchronized boolean suppress(int x, int z) {
         Region region = regions.get(regionKey(x, z));
         return region != null && region.ephemeral.get(index(x, z));

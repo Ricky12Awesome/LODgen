@@ -8,15 +8,13 @@ The project is in development. **The version stays at `0.0.0` until it is ready 
 
 Install the matching LODgen jar and either Distant Horizons or a supported Voxy installation. DH is optional. With DH, choose **FEATURES** in its chunk generator settings and enable a generator plan that includes chunks. C2ME, [the C2ME OpenCL addon](https://modrinth.com/mod/qtPMklut), ScalableLux, and Chunky are optional and are never bundled.
 
-Open **Options → LODgen…** in game. On Fabric with Mod Menu installed, **Mods → LODgen → Configure** opens the same screen. On NeoForge, **Mods → LODgen → Config** opens it too. All settings appear in one list from top to bottom, including generation, center, saving, concurrency and action-bar options. Scroll down to reach lower settings on smaller windows; **Apply**, **Cancel** and **Defaults** stay visible at the bottom. **Apply** saves the draft, **Cancel** discards it, and **Defaults** resets every option. Unsaved edits and scroll position survive resizing. Changes apply immediately to automatic local generation, including the integrated server. Running native work drains safely when the limit decreases or the addon is disabled.
+Open **Options → LODgen…** in game. On Fabric with Mod Menu installed, **Mods → LODgen → Configure** opens the same screen. On NeoForge, **Mods → LODgen → Config** opens it too. All settings appear in one list from top to bottom, including generation, center, saving, CPU load and action-bar options. Scroll down to reach lower settings on smaller windows; **Apply**, **Cancel** and **Defaults** stay visible at the bottom. **Apply** saves the draft, **Cancel** discards it, and **Defaults** resets every option. Unsaved edits and scroll position survive resizing. Changes apply immediately to automatic local generation, including the integrated server. Running native work drains safely when the limit decreases or the addon is disabled.
 
 Settings are stored in `config/lodgen.toml`:
 
 ```toml
 enabled = true
-pipelineBatches = 32
-queuedBatches = 64
-spatialBatching = true
+cpuLoad = 3
 generationDistance = 0
 generationCenter = "current"
 centerX = 0
@@ -26,7 +24,19 @@ showChunksPerSecond = false
 chunksPerSecondUpdateIntervalMs = 1000
 ```
 
-`pipelineBatches` accepts 1–64 active batches per dimension; 32 default-size DH requests provide 512 target chunks plus their native dependencies. `queuedBatches` accepts 0–1024 waiting requests, which do not occupy waiting workers. Larger windows use more memory. `spatialBatching` groups nearby requests within DH's distance/detail priority bands. DH's thread count and C2ME's worker count also affect parallelism.
+`cpuLoad` controls Voxy utilization. With DH installed, LODgen follows **DH’s CPU Load** (including its advanced thread count and runtime ratio); the Voxy control is disabled. Both changes apply live. The five Voxy levels match DH’s processor scaling:
+
+| Value | CPU load | Conversion workers | Duty ratio |
+| --- | --- | --- | --- |
+| 1 | Minimal impact | 10% of available processors, rounded up | 50% |
+| 2 | Low impact | 25% | 100% |
+| 3 | Balanced (default) | 50% | 100% |
+| 4 | Aggressive | 75% | 100% |
+| 5 | Full power | 100% | 100% |
+
+Native concurrency and memory use adjust automatically; there are no batch, waiting-queue or spatial-grouping controls. Full power on a 32-thread CPU with a 32 GB heap permits 256 concurrent 4×4 requests (4,096 target chunks plus dependencies). Smaller heaps reduce that window. Requests are grouped spatially and refilled on completion, while conversion, ticket cleanup and normal play retain their own lifetimes. These settings control LODgen’s work; C2ME and renderer storage services retain their own worker settings. They are utilization presets, rather than strict limits on overall process CPU usage.
+
+For maximum OpenCL throughput, use Java 25+ with a sufficiently large heap, `-XX:+UseZGC -XX:+UseCompactObjectHeaders`, ScalableLux, Lithium, FerriteCore, Structure Layout Optimizer and zFastNoise. Set C2ME’s `globalExecutorParallelism` to the available thread count or slightly below; its default can be lower. LODgen does not rewrite C2ME’s configuration or alter the scheduler used by ordinary player and Chunky requests. More RAM keeps useful native dependencies alive; allocating all RAM does not necessarily improve throughput.
 
 `generationDistance` is a radius in chunks. **0 follows the active renderer's distance**; a positive value overrides the chunk-based FEATURES generation radius. For example, `generationDistance = 512` with DH set to 1024 limits new chunk-based LOD generation to 512 while retaining DH's 1024 render distance. Changing it in game drops waiting requests beyond the new limit; active batches finish. Whole sections overlapping the boundary are retained, and native supporting chunks may extend beyond it. With the default current-position center, DH still controls which LODs are requested. Dedicated-server current-position mode uses the explicit override too; 0 preserves client request ranges. Normal player and Chunky generation keep their ranges.
 
@@ -91,6 +101,23 @@ To run the small disposable Voxy-only client checks (no DH, at most 88 target ch
 ```sh
 xvfb-run -a python3 scripts/voxy-test.py --world --reload
 ```
+
+## Performance checks
+
+The local 26.2 Fabric benchmark uses the Ryzen 9 9950X and RTX 5070 Ti, a 32 GB heap, vanilla seed `123456789`, all generation stages and structures, and the requested optimization mods. Voxy LOD rendering is disabled for the virtual-display test; real voxel conversion and storage remain enabled. Warmup and measured squares each contain 16,384 targets (64c radius). No worldgen shortcuts or supporting chunks are counted as completed targets.
+
+```sh
+xvfb-run -a python3 scripts/voxy-test.py --mc 26.2 --benchmark 64 \
+  --cpu-load 5 --native-workers 32 --heap 32G --jfr --chunky-native-only
+
+python3 scripts/integration-test.py --mc 26.2 --loader fabric \
+  --java /usr/lib/jvm/java-25-openjdk/bin/java --run-name performance-check \
+  --opencl --chunky --optimized --heap 32G --benchmark 128 --warmup-axis 128 \
+  --workers 256 --dh-threads 32 --native-workers 32 --chunky-working-count 768 \
+  --dh-queue --dh-executor --store-lods --jfr
+```
+
+The benchmark pins zFastNoise 1.0.40, whose surface optimizations complement OpenCL; 1.1.1 omits those optimizations. With 32 C2ME workers, Voxy measured **1,802 completed LOD chunks/s**, compared with **1,836 native Chunky chunks/s** with Voxy ingestion disabled for that baseline. With 24 C2ME workers, Voxy measured **1,873/s** versus **1,827/s** native Chunky. DH’s actual queue with database updates measured **1,594/s**. Overall system CPU utilization was around 95% in the profiled 32-worker Voxy/native comparison. **2,500/s was not reproduced**, including by the native-only baseline. These short-area results depend on terrain, warmup, background load and renderer work; they do not establish a sustained rate across every world or modpack. See [VALIDATION.md](VALIDATION.md) for logs and checks.
 
 ## Render-distance changes
 
@@ -163,9 +190,9 @@ python3 scripts/integration-test.py --mc 1.21.1 --loader neoforge --quick \
   --worldgen-instance '/path/to/Prism/instance/minecraft'
 ```
 
-`--quick` skips benchmark warmup, caps each server run, and uses the existing versioned server installation. `--skip-build` reuses the self-test jar. The tiny workload is a correctness check, not a performance benchmark. For an enabled addon with `--dh-queue`, quick checks temporarily apply one active batch and zero waiting slots, then restore the original settings to verify live backpressure. Only the selected WWOO/Continents worldgen jars and configuration are copied. The runner accepts the EULA for a disposable server and recreates only its world under `build/`.
+`--quick` skips benchmark warmup, caps each server run, and uses the existing versioned server installation. `--skip-build` reuses the self-test jar. The tiny workload is a correctness check, not a performance benchmark. For an enabled addon with `--dh-queue`, quick checks temporarily set DH to one worker, then restore its original CPU load to verify live backpressure. Only the selected WWOO/Continents worldgen jars and configuration are copied. The runner accepts the EULA for a disposable server and recreates only its world under `build/`.
 
-See [VALIDATION.md](VALIDATION.md) for current checks. Earlier performance measurements belong to the predecessor and are preserved in [docs/VALIDATION-0.2.1.md](docs/VALIDATION-0.2.1.md); they are not a new benchmark of this development build.
+See [VALIDATION.md](VALIDATION.md) for current checks. The 26.2 vanilla/OpenCL measurements include generation and real renderer conversion; the 2,500 chunks/s expectation is not reached in every test area. Earlier performance measurements belong to the predecessor and are preserved in [docs/VALIDATION-0.2.1.md](docs/VALIDATION-0.2.1.md); they are not a new benchmark of this development build.
 
 Upstream: [Distant Horizons](https://gitlab.com/distant-horizons-team/distant-horizons), [C2ME](https://github.com/RelativityMC/C2ME-fabric), [Chunky](https://github.com/pop4959/Chunky).
 

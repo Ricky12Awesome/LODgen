@@ -23,7 +23,7 @@ public final class FeatureGenerationService implements AutoCloseable {
         this.level = level;
         this.pipeline = new ChunkGenerationPipeline(level.getWrappedMcObject());
         LodgenConfig.LOGGER.info("Normal chunk pipeline active for DH FEATURES in {} ({} concurrent batches)",
-                level.getDimensionType(), LodgenConfig.INSTANCE.pipelineBatches());
+                level.getDimensionType(), GenerationSettings.current().batches());
     }
 
     public CompletableFuture<Void> generate(int minX, int minZ, IDhApiFullDataSource pooled,

@@ -16,6 +16,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--mc", choices=matrix, required=True)
 parser.add_argument("--loader", choices=("fabric", "neoforge"), required=True)
 parser.add_argument("--java", default="java", help="Java 21 for MC 1.21.1; Java 25 for MC 26.x")
+parser.add_argument("--run-name", help="Separate disposable benchmark directory name")
 parser.add_argument("--skip-build", action="store_true")
 parser.add_argument("--startup-only", action="store_true", help="Load the packaged startup fixture and stop before opening a world")
 parser.add_argument("--task-check", action="store_true", help="Commands, mixed saved/LOD radius, and orderly auto-resume using only a 5c radius")
@@ -24,22 +25,28 @@ parser.add_argument("--quick", action="store_true", help="Skip benchmark warmup 
 parser.add_argument("--opencl", action="store_true", help="Install the optional C2ME OpenCL addon and ScalableLux; requires Java 25")
 parser.add_argument("--chunky", action="store_true", help="Install Chunky and exercise a real concurrent pregen task")
 parser.add_argument("--benchmark", type=int, default=0, help="Generate an N by N chunk benchmark area (N divisible by 4)")
+parser.add_argument("--warmup-axis", type=int, default=16, help="Separate warmup area width in chunks")
 parser.add_argument("--layout", choices=("row", "radial"), default="row", help="Order DH requests by rows or distance from the area's center")
 parser.add_argument("--workers", type=int, default=8, help="Concurrent DH benchmark requests")
 parser.add_argument("--native-workers", type=int, default=0, help="Override C2ME parallelism in the disposable server (0 keeps its default)")
 parser.add_argument("--chunky-working-count", type=int, default=0, help="Override Chunky's in-flight limit in the disposable server")
-parser.add_argument("--pipeline-batches", type=int, default=32)
-parser.add_argument("--no-spatial-batching", action="store_true", help="Retain DH's original distance-only queue ordering")
+parser.add_argument("--dh-threads", type=int, default=0, help="DH conversion threads in the disposable benchmark")
 parser.add_argument("--dh-executor", action="store_true", help="Use DH's real worldgen executor for the benchmark")
 parser.add_argument("--dh-queue", action="store_true", help="Use DH's actual request selection and admission queue")
 parser.add_argument("--frontier-radius", type=int, default=0, help="Start DH queue requests on a distant square frontier, in chunks")
 parser.add_argument("--store-lods", action="store_true", help="Include DH's actual asynchronous database updates")
 parser.add_argument("--worldgen-instance", type=Path, help="Copy WWOO, Continents, their libraries and DH/C2ME settings from a Prism Minecraft directory")
+parser.add_argument("--heap", default="8G", help="Maximum heap for world tests")
+parser.add_argument("--optimized", action="store_true", help="26.2 Fabric optimization stack, ZGC and compact object headers")
 parser.add_argument("--jfr", action="store_true", help="Record the disposable server with Java Flight Recorder")
 parser.add_argument("--trace-ownership", action="store_true", help="Log the callers of transient chunk adoption")
 parser.add_argument("--vanilla", action="store_true", help="Test without C2ME")
 parser.add_argument("--baseline", action="store_true", help="Run the same check with DH's original FEATURES generator")
 args = parser.parse_args()
+if args.run_name and not re.fullmatch(r"[A-Za-z0-9_-]+", args.run_name):
+    parser.error("--run-name must be a simple directory name")
+if args.optimized and (args.mc != "26.2" or args.loader != "fabric"):
+    parser.error("--optimized currently pins the 26.2 Fabric benchmark stack")
 if args.task_check and (args.startup_only or args.distance_check or args.benchmark or args.baseline):
     parser.error("--task-check cannot be combined with startup-only, distance-check, benchmark or baseline")
 if args.distance_check and (args.startup_only or args.benchmark or args.baseline):
@@ -48,10 +55,14 @@ if args.startup_only and (args.opencl or args.chunky or args.benchmark or args.w
     parser.error("--startup-only checks the default DH/C2ME stack without worldgen or benchmark options")
 if args.vanilla and args.opencl:
     parser.error("--opencl requires C2ME; omit --vanilla")
+if args.warmup_axis < 4 or args.warmup_axis % 4:
+    parser.error("--warmup-axis must be a positive multiple of 4")
+if args.dh_threads < 0:
+    parser.error("--dh-threads must be nonnegative")
 if args.benchmark < 0 or args.benchmark % 4:
     parser.error("--benchmark must be zero or a positive multiple of 4")
-if not 1 <= args.workers <= 64 or not 1 <= args.pipeline_batches <= 64:
-    parser.error("--workers and --pipeline-batches must be between 1 and 64")
+if not 1 <= args.workers <= 1024:
+    parser.error("--workers must be between 1 and 1024")
 if args.frontier_radius < 0 or args.frontier_radius % 4:
     parser.error("--frontier-radius must be a nonnegative multiple of 4")
 if args.frontier_radius and not args.dh_queue:
@@ -60,7 +71,7 @@ if args.native_workers < 0 or args.chunky_working_count < 0:
     parser.error("Worker count overrides must be nonnegative")
 target = matrix[args.mc]
 base = ROOT / "build" / args.mc / args.loader / ("startup" if args.startup_only else "selftest")
-run = base / ("packaged-server" + ("-tasks" if args.task_check else "") + ("-baseline" if args.baseline else "") + ("-vanilla" if args.vanilla else ""))
+run = base / (args.run_name or ("packaged-server" + ("-tasks" if args.task_check else "") + ("-baseline" if args.baseline else "") + ("-vanilla" if args.vanilla else "")))
 run.mkdir(parents=True, exist_ok=True)
 # Never reuse worlds: previous normal chunks would hide disk-write regressions.
 world = run / "world"
@@ -85,7 +96,9 @@ def modrinth(version, name):
     with urllib.request.urlopen(f"https://api.modrinth.com/v2/version/{version}", timeout=60) as response:
         metadata = json.load(response)
     artifact = next(f for f in metadata["files"] if f["primary"])
-    download(artifact["url"], run / "mods" / f"{name}.jar", artifact["hashes"]["sha512"])
+    cached = ROOT / "build" / "test-mod-cache" / f"{version}.jar"
+    download(artifact["url"], cached, artifact["hashes"]["sha512"])
+    shutil.copyfile(cached, run / "mods" / f"{name}.jar")
 
 
 if not args.skip_build:
@@ -94,7 +107,8 @@ if not args.skip_build:
 artifacts = [p for p in (base / "libs").glob("*.jar") if p.name.endswith(f"-{mod_version}.jar")]
 if len(artifacts) != 1:
     raise SystemExit("Build the self-test variant first")
-(run / "mods").mkdir(exist_ok=True)
+shutil.rmtree(run / "mods", ignore_errors=True)
+(run / "mods").mkdir()
 shutil.copyfile(artifacts[0], run / "mods" / "lodgen-test.jar")
 modrinth(target["dh"], "distanthorizons")
 if not args.vanilla:
@@ -103,9 +117,9 @@ else:
     (run / "mods" / "c2me.jar").unlink(missing_ok=True)
 for optional in ("c2me-ocl", "scalablelux", "chunky"):
     (run / "mods" / f"{optional}.jar").unlink(missing_ok=True)
-if args.opencl or args.chunky:
+if args.opencl or args.chunky or args.optimized:
     tests = json.loads((ROOT / "test-versions.json").read_text())
-    for project in ((["c2me-ocl", "scalablelux"] if args.opencl else []) + (["chunky"] if args.chunky else [])):
+    for project in ((["c2me-ocl", "scalablelux"] if args.opencl else []) + (["chunky"] if args.chunky else []) + (["lithium", "ferritecore", "structure-layout-optimizer", "resourceful-config", "zfastnoise"] if args.optimized else [])):
         version = tests[project][args.mc][args.loader]
         if not version:
             raise SystemExit(f"No published {project} build for {args.mc} {args.loader}")
@@ -123,12 +137,12 @@ if args.worldgen_instance:
         shutil.copyfile(lithostitched_config, run / "config" / lithostitched_config.name)
 if args.native_workers:
     c2me_config = run / "config" / "c2me.toml"
-    current = c2me_config.read_text() if c2me_config.exists() else "globalExecutorParallelism = \"default\"\n"
+    current = c2me_config.read_text() if c2me_config.exists() else "version = 3\nglobalExecutorParallelism = \"default\"\n"
     c2me_config.write_text(re.sub(r"(?m)^globalExecutorParallelism\s*=.*$", f"globalExecutorParallelism = {args.native_workers}", current))
-(run / "config" / "lodgen.toml").write_text(f"enabled={'false' if args.baseline else 'true'}\npipelineBatches={args.pipeline_batches}\nqueuedBatches=64\nspatialBatching={str(not args.no_spatial_batching).lower()}\n")
+(run / "config" / "lodgen.toml").write_text(f"enabled={'false' if args.baseline else 'true'}\ncpuLoad=3\n")
 (run / "server.properties").write_text("online-mode=false\nserver-port=0\nlevel-seed=123456789\n"
                                        "view-distance=2\nsimulation-distance=2\nmax-tick-time=180000\n")
-heap = "-Xmx2G" if args.startup_only else "-Xmx8G"
+heap = "-Xmx2G" if args.startup_only else "-Xmx" + args.heap
 if args.loader == "fabric":
     version = target["fabricApi"]
     download(f"https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/{version}/fabric-api-{version}.jar",
@@ -155,7 +169,7 @@ else:
             raise SystemExit("NeoForge installer did not produce a recognized server launcher")
         command = [args.java, heap, "-Dlodgen.test.chunky=" + str(args.chunky).lower(), "-Dlodgen.test.benchmark=" + str(args.benchmark), "-jar", str(launchers[0]), "nogui"]
 
-benchmark_options = [f"-Dlodgen.test.layout={args.layout}", f"-Dlodgen.test.workers={args.workers}",
+benchmark_options = [f"-Dlodgen.test.warmupAxis={args.warmup_axis}", f"-Dlodgen.test.dhThreads={args.dh_threads}", f"-Dlodgen.test.layout={args.layout}", f"-Dlodgen.test.workers={args.workers}",
                      f"-Dlodgen.test.distance={str(args.distance_check).lower()}",
                      f"-Dlodgen.test.tasks={str(args.task_check).lower()}",
                      f"-Dlodgen.test.skipWarmup={str(args.quick).lower()}",
@@ -168,6 +182,8 @@ if args.trace_ownership:
     benchmark_options.append("-Dlodgen.test.traceOwnership=true")
 if args.chunky_working_count:
     benchmark_options.append(f"-Dchunky.maxWorkingCount={args.chunky_working_count}")
+if args.optimized:
+    benchmark_options += ["-XX:+UseZGC", "-XX:+UseCompactObjectHeaders"]
 if args.jfr:
     benchmark_options.append("-XX:StartFlightRecording=filename=benchmark.jfr,settings=profile,dumponexit=true")
 command[1:1] = benchmark_options
@@ -200,8 +216,12 @@ if not reload_report.exists() or not reload_report.read_text().startswith("PASS:
     raise SystemExit(reload_report.read_text() if reload_report.exists() else "Reload server stopped without a report")
 if args.task_check:
     import struct
+    # 26.x stores even the Overworld under dimensions/minecraft/overworld.
+    overworld = world / "dimensions/minecraft/overworld"
+    if not overworld.exists():
+        overworld = world
     def present(folder, x, z):
-        region = world / folder / f"r.{x // 32}.{z // 32}.mca"
+        region = overworld / folder / f"r.{x // 32}.{z // 32}.mca"
         if not region.exists():
             return False
         with region.open("rb") as file:

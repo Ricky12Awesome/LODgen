@@ -15,10 +15,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /** Immutable snapshots let generation workers observe complete live changes. */
-public record LodgenConfig(boolean enabled, int pipelineBatches, int queuedBatches, boolean spatialBatching, int generationDistance, boolean showChunksPerSecond, int chunksPerSecondUpdateIntervalMs, dev.lodgen.generation.GenerationCenter generationCenter,
+public record LodgenConfig(boolean enabled, int cpuLoad, int generationDistance, boolean showChunksPerSecond, int chunksPerSecondUpdateIntervalMs, dev.lodgen.generation.GenerationCenter generationCenter,
                            int centerX, int centerZ, int savedChunkRadius) {
     public static final Logger LOGGER = LoggerFactory.getLogger("LODgen");
-    public static final LodgenConfig DEFAULTS = new LodgenConfig(true, 32, 64, true, 0, false, 1000, dev.lodgen.generation.GenerationCenter.CURRENT, 0, 0, 0);
+    public static final LodgenConfig DEFAULTS = new LodgenConfig(true, 3, 0, false, 1000, dev.lodgen.generation.GenerationCenter.CURRENT, 0, 0, 0);
     public static final Path FILE = Path.of("config", "lodgen.toml");
     private static final CopyOnWriteArrayList<Consumer<LodgenConfig>> LISTENERS = new CopyOnWriteArrayList<>();
     public static volatile LodgenConfig INSTANCE = load(FILE);
@@ -29,8 +29,7 @@ public record LodgenConfig(boolean enabled, int pipelineBatches, int queuedBatch
         if (chunksPerSecondUpdateIntervalMs < 1 || chunksPerSecondUpdateIntervalMs > 60000)
             throw new IllegalArgumentException("chunksPerSecondUpdateIntervalMs must be 1–60000");
         if (generationDistance < 0) throw new IllegalArgumentException("generationDistance must be nonnegative");
-        if (pipelineBatches < 1 || pipelineBatches > 64) throw new IllegalArgumentException("pipelineBatches must be 1–64");
-        if (queuedBatches < 0 || queuedBatches > 1024) throw new IllegalArgumentException("queuedBatches must be 0–1024");
+        if (cpuLoad < 1 || cpuLoad > 5) throw new IllegalArgumentException("cpuLoad must be 1–5");
     }
 
     /** Zero preserves dedicated-server request ranges when no override is set. */
@@ -45,7 +44,7 @@ public record LodgenConfig(boolean enabled, int pipelineBatches, int queuedBatch
             return DEFAULTS;
         } catch (IOException | RuntimeException error) {
             LOGGER.error("Cannot read LODgen configuration; disabling LODgen generation", error);
-            return new LodgenConfig(false, 32, 64, true, 0, false, 1000, dev.lodgen.generation.GenerationCenter.CURRENT, 0, 0, 0);
+            return new LodgenConfig(false, 3, 0, false, 1000, dev.lodgen.generation.GenerationCenter.CURRENT, 0, 0, 0);
         }
     }
 
@@ -53,9 +52,7 @@ public record LodgenConfig(boolean enabled, int pipelineBatches, int queuedBatch
         try (var reader = Files.newBufferedReader(file)) {
             var values = new TomlParser().parse(reader);
             return new LodgenConfig(bool(values.get("enabled"), DEFAULTS.enabled(), "enabled"),
-                    integer(values.get("pipelineBatches"), DEFAULTS.pipelineBatches(), "pipelineBatches"),
-                    integer(values.get("queuedBatches"), DEFAULTS.queuedBatches(), "queuedBatches"),
-                    bool(values.get("spatialBatching"), DEFAULTS.spatialBatching(), "spatialBatching"),
+                    integer(values.get("cpuLoad"), DEFAULTS.cpuLoad(), "cpuLoad"),
                     integer(values.get("generationDistance"), DEFAULTS.generationDistance(), "generationDistance"),
                     bool(values.get("showChunksPerSecond"), DEFAULTS.showChunksPerSecond(), "showChunksPerSecond"),
                     integer(values.get("chunksPerSecondUpdateIntervalMs"), DEFAULTS.chunksPerSecondUpdateIntervalMs(), "chunksPerSecondUpdateIntervalMs"), center(values.get("generationCenter")),
@@ -119,14 +116,11 @@ public record LodgenConfig(boolean enabled, int pipelineBatches, int queuedBatch
         values.set("chunksPerSecondUpdateIntervalMs", settings.chunksPerSecondUpdateIntervalMs());
         values.setComment("chunksPerSecondUpdateIntervalMs", " HUD refresh interval in milliseconds (1–60000). Does not change the five-second averaging window.");
         values.setComment("showChunksPerSecond", " Show LODgen chunks/second on the HUD. Hidden when DH uses its own overlay.");
-        values.set("pipelineBatches", settings.pipelineBatches());
-        values.set("queuedBatches", settings.queuedBatches());
-        values.set("spatialBatching", settings.spatialBatching());
+        values.set("cpuLoad", settings.cpuLoad());
+        values.remove("pipelineBatches"); values.remove("queuedBatches"); values.remove("spatialBatching");
         values.setComment("generationDistance", " Chunk-based LOD generation radius in chunks. 0 follows DH/Voxy; positive values override it.");
         values.setComment("enabled", " Use normal asynchronous chunk generation for DH FEATURES and Voxy. Changes apply in game.");
-        values.setComment("pipelineBatches", " Active batches per dimension (1–64). 32 batches = 512 target chunks at DH detail 6.");
-        values.setComment("queuedBatches", " Waiting batches (0–1024). Waiting requests do not occupy workers.");
-        values.setComment("spatialBatching", " Group nearby requests within DH's distance priority bands.");
+        values.setComment("cpuLoad", " Voxy CPU load: 1 minimal impact, 2 low impact, 3 balanced (default), 4 aggressive, 5 full power. DH uses its own CPU Load setting.");
         Path destination = file.toAbsolutePath();
         Files.createDirectories(destination.getParent());
         Path temporary = Files.createTempFile(destination.getParent(), "lodgen-", ".toml.tmp");

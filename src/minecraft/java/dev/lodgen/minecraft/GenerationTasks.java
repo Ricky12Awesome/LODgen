@@ -17,7 +17,6 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /** Server-thread task control, bounded native batches, and world-local restart checkpoints. */
 public final class GenerationTasks {
@@ -36,9 +35,7 @@ public final class GenerationTasks {
     private GenerationTasks(MinecraftServer server) {
         this.server = server;
         directory = server.getWorldPath(LevelResource.ROOT).resolve("lodgen");
-        workers = Executors.newFixedThreadPool(Math.max(1, Math.min(8, Runtime.getRuntime().availableProcessors() / 2)), task -> {
-            var thread = new Thread(task, "LODgen task conversion"); thread.setDaemon(true); return thread;
-        });
+        workers = new dev.lodgen.GenerationWorkers("LODgen task conversion");
         try {
             var record = TaskStore.read(directory.resolve("task.toml"));
             if (record != null) {
@@ -187,7 +184,7 @@ public final class GenerationTasks {
                 return;
             }
             if (waiting) return;
-            int limit = LodgenConfig.INSTANCE.pipelineBatches();
+            int limit = dev.lodgen.GenerationSettings.current().batches();
             for (int budget = 0; budget < 256 && active.size() < limit; budget++) {
                 long index = progress.next();
                 if (index < 0) break;
@@ -207,6 +204,9 @@ public final class GenerationTasks {
                         LodgenConfig.LOGGER.error("LODgen task paused at {},{}", batch.x(), batch.z(), error);
                     }
                     if (progress.state() != TaskProgress.State.RUNNING || System.nanoTime() - lastCheckpoint >= 5_000_000_000L) checkpoint();
+                    // Refill as soon as native generation and conversion drain,
+                    // rather than leaving the window empty until the next tick.
+                    tick();
                 }));
             }
         }

@@ -25,7 +25,7 @@ public final class ConfigScreenCheck {
         var lists = screen.children().stream().filter(child -> child instanceof ContainerObjectSelectionList<?>).toList();
         if (lists.size() != 1 || screen.children().size() != 4) throw new AssertionError("Expected one settings list and three footer buttons");
         var list = (ContainerObjectSelectionList<?>) lists.getFirst();
-        if (list.children().size() != 11) throw new AssertionError("All eleven settings must be on the same page");
+        if (list.children().size() != 9) throw new AssertionError("All nine settings must be on the same page");
         return list;
     }
     private static AbstractWidget control(ContainerObjectSelectionList<?> list, int index) {
@@ -71,9 +71,21 @@ public final class ConfigScreenCheck {
         original = LodgenConfig.INSTANCE;
         originalWidth = screen.width; originalHeight = screen.height;
         var list = list(screen);
-        if (input(list, "centerX").active || input(list, "centerZ").active) throw new AssertionError("Default center must disable custom coordinates");
+        boolean custom = original.generationCenter() == dev.lodgen.generation.GenerationCenter.CUSTOM;
+        if (input(list, "centerX").active != custom || input(list, "centerZ").active != custom) throw new AssertionError("Custom coordinate activation differs from configured center");
         var center = (Button) control(list, 1);
-        press(center); press(center);
+        var cpu = (Button) control(list, 6);
+        if (dev.lodgen.ModSupport.loaded("distanthorizons")) {
+            if (cpu.active || !cpu.getMessage().getString().contains("DH")) throw new AssertionError("DH CPU load must control the disabled Voxy setting");
+        } else {
+            if (!cpu.active) throw new AssertionError("Voxy CPU load is disabled without DH");
+            var initial = cpu.getMessage();
+            for (int i = 0; i < 5; i++) press(cpu);
+            if (!initial.equals(cpu.getMessage())) throw new AssertionError("CPU load did not cycle through all five levels");
+        }
+        var centerMode = original.generationCenter();
+        for (int i = 0; i < 3; i++) { press(center); centerMode = centerMode.next(); }
+        while (centerMode != dev.lodgen.generation.GenerationCenter.CUSTOM) { press(center); centerMode = centerMode.next(); }
         if (!input(list, "centerX").active || !input(list, "centerZ").active) throw new AssertionError("Custom center did not enable X/Z");
         input(list, "centerX").setValue("-123"); input(list, "centerZ").setValue("456");
         input(list, "generationDistance").setValue("64");

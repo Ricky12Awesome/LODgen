@@ -9,6 +9,25 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class TaskTest {
+    @Test void compactPatchOrderRetainsExactProgressAcrossPartialEdges() {
+        for (int radius : new int[]{1, 3, 5, 17, 31, 33, 64}) {
+            for (int center : new int[]{-17, 30_000_000}) {
+                var area = new GenerationArea(center, -center, radius, 0);
+                var plan = new SquarePlan(area); var seen = new HashSet<Long>();
+                long chunks = 0;
+                for (long i = 0; i < plan.batches(); i++) {
+                    assertEquals(chunks, plan.chunksBefore(i));
+                    var batch = plan.batch(i); chunks += batch.chunks();
+                    for (int x = batch.x(); x < batch.x() + batch.width(); x++) for (int z = batch.z(); z < batch.z() + batch.height(); z++) {
+                        assertTrue(area.lods(x, z));
+                        assertTrue(seen.add((x & 0xffffffffL) | (long) z << 32));
+                    }
+                }
+                assertEquals(plan.chunks(), chunks);
+                assertEquals(chunks, plan.chunksBefore(plan.batches()));
+            }
+        }
+    }
     @TempDir Path directory;
     @Test void commandExamplesAndRoundUpUseTheSameChunkRadii() {
         assertEquals(512, RadiusParser.chunks("512c"));

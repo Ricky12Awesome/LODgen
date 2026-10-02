@@ -20,8 +20,8 @@ public final class ChunkGenerationPipeline implements AutoCloseable {
         this.level = (net.minecraft.server.level.ServerLevel) level;
         backend = PersistenceRegistry.backend(level);
         throughput = PersistenceRegistry.throughput(level);
-        gate = new BatchGate(LodgenConfig.INSTANCE.pipelineBatches(), LodgenConfig.INSTANCE.queuedBatches());
-        listener = settings -> gate.reconfigure(settings.pipelineBatches(), settings.queuedBatches());
+        gate = new BatchGate(dev.lodgen.GenerationSettings.current().batches(), 0);
+        listener = settings -> refresh();
         LodgenConfig.listen(listener);
     }
 
@@ -32,6 +32,7 @@ public final class ChunkGenerationPipeline implements AutoCloseable {
 
     public CompletableFuture<Void> generate(int x, int z, int width, int height, dev.lodgen.generation.GenerationArea area, Executor executor,
                                             Function<NormalChunkBackend.Batch, CompletableFuture<Void>> convert) {
+        refresh();
         return gate.submit(executor, () -> backend.request(x, z, width, height, area).thenCompose(batch -> {
             CompletableFuture<Void> conversion;
             try { conversion = convert.apply(batch); }
@@ -46,6 +47,7 @@ public final class ChunkGenerationPipeline implements AutoCloseable {
         }));
     }
 
-    public boolean isBusy() { return gate.isBusy(); }
+    private void refresh() { gate.reconfigure(dev.lodgen.GenerationSettings.current().batches(), 0); }
+    public boolean isBusy() { refresh(); return gate.isBusy(); }
     @Override public void close() { LodgenConfig.stopListening(listener); gate.close(); }
 }

@@ -23,6 +23,8 @@ import java.util.List;
  * Minecraft types never appear in reflected method names or descriptors.
  */
 public final class VoxyBridge {
+    private static final int[] FULL_SKY = new int[256];
+    static { java.util.Arrays.fill(FULL_SKY, 15); }
     private final Class<?> config = type("client.config.VoxyConfig");
     private final Class<?> common = type("commonImpl.VoxyCommon");
     private final Class<?> identifier = type("commonImpl.WorldIdentifier");
@@ -32,6 +34,9 @@ public final class VoxyBridge {
     private final Method convert = method(type("common.voxelization.WorldConversionFactory"), "convert", 5);
     private final Method mip = method(type("common.voxelization.WorldVoxilizedSectionMipper"), "mipSection", 2);
     private final Method insert = method(type("common.world.WorldUpdater"), "insertUpdate", 2);
+    private final java.lang.reflect.Field voxels = field(voxel, "section");
+    private final java.lang.reflect.Field nonAir = field(voxel, "lvl0NonAirCount");
+    private final long airSky = air(15), airDark = air(0);
 
     public record Context(Object engine, Path coverageFile, int radius) {}
     public record Section(int x, int y, int z, LevelChunkSection data, DataLayer block, DataLayer sky, int[] inheritedSky) {}
@@ -78,6 +83,9 @@ public final class VoxyBridge {
         var block = light.getLayerListener(LightLayer.BLOCK);
         var sky = light.getLayerListener(LightLayer.SKY);
         for (var chunk : chunks) {
+            int top = chunk.getSections().length - 1;
+            while (top >= 0 && chunk.getSections()[top].hasOnlyAir()) top--;
+            int sectionIndex = 0;
             // #if MC_1211
             int y = chunk.getMinSection();
             // #else
@@ -89,11 +97,16 @@ public final class VoxyBridge {
                 int[] inherited = null;
                 // Sky engines omit uniform layers; read their inherited values.
                 if (s == null && level.dimensionType().hasSkyLight()) {
-                    inherited = new int[256];
-                    var position = new BlockPos.MutableBlockPos();
-                    for (int x = 0; x < 16; x++) for (int z = 0; z < 16; z++) {
-                        position.set(chunk.getPos().getMinBlockX() + x, y * 16, chunk.getPos().getMinBlockZ() + z);
-                        inherited[x | z << 4] = sky.getLightValue(position);
+                    // Above the highest occupied section, every column is open
+                    // to sky. Reuse one immutable layer instead of 256 queries.
+                    inherited = FULL_SKY;
+                    if (sectionIndex <= top) {
+                        inherited = new int[256];
+                        var position = new BlockPos.MutableBlockPos();
+                        for (int x = 0; x < 16; x++) for (int z = 0; z < 16; z++) {
+                            position.set(chunk.getPos().getMinBlockX() + x, y * 16, chunk.getPos().getMinBlockZ() + z);
+                            inherited[x | z << 4] = sky.getLightValue(position);
+                        }
                     }
                 } else if (s != null) s = s.copy();
                 // #if MC_1211
@@ -106,6 +119,7 @@ public final class VoxyBridge {
                 // #endif
                 sections.add(new Section(dev.lodgen.minecraft.PersistenceRegistry.x(chunk.getPos()), y++,
                         dev.lodgen.minecraft.PersistenceRegistry.z(chunk.getPos()), copy, b == null ? null : b.copy(), s, inherited));
+                sectionIndex++;
             }
         }
         return sections;
@@ -123,19 +137,41 @@ public final class VoxyBridge {
             Method position = method(voxel, "setPosition", 3);
             for (var section : sections) {
                 position.invoke(data, section.x, section.y, section.z);
-                Object supplier;
-                try { supplier = lightFactory.invokeExact(section); }
-                catch (Throwable error) { throw new IllegalStateException("Cannot create Voxy lighting supplier", error); }
-                convert.invoke(null, data, mapper, section.data.getStates(), section.data.getBiomes(), supplier);
-                mip.invoke(null, data, mapper);
+                convertSection(data, mapper, section);
                 insert.invoke(null, engine, data);
             }
         } finally { release.invoke(engine); }
     }
 
+    private void convertSection(Object data, Object mapper, Section section) throws ReflectiveOperationException {
+        boolean uniformAir = section.data.hasOnlyAir() && (section.block == null || section.block.isEmpty())
+                && (section.sky == null && (section.inheritedSky == null || section.inheritedSky == FULL_SKY)
+                    || section.sky != null && section.sky.isEmpty());
+        if (uniformAir) {
+            // Preserve air lighting and clear previous terrain. The
+            // normal converter emits this same mapping for every cell.
+            java.util.Arrays.fill((long[]) voxels.get(data), 0, 4096, section.inheritedSky == FULL_SKY ? airSky : airDark);
+            nonAir.setInt(data, 0);
+        } else {
+            Object supplier;
+            try { supplier = lightFactory.invokeExact(section); }
+            catch (Throwable error) { throw new IllegalStateException("Cannot create Voxy lighting supplier", error); }
+            convert.invoke(null, data, mapper, section.data.getStates(), section.data.getBiomes(), supplier);
+        }
+        mip.invoke(null, data, mapper);
+    }
+
     private static Class<?> type(String name) {
         try { return Class.forName("me.cortex.voxy." + name); }
         catch (ReflectiveOperationException error) { throw new IllegalStateException("Unsupported Voxy API: " + name, error); }
+    }
+    private static java.lang.reflect.Field field(Class<?> owner, String name) {
+        try { return owner.getField(name); }
+        catch (ReflectiveOperationException error) { throw new IllegalStateException("Unsupported Voxy field: " + name, error); }
+    }
+    private static long air(int light) {
+        try { return (long) method(type("common.world.other.Mapper"), "airWithLight", 1).invoke(null, light); }
+        catch (ReflectiveOperationException error) { throw new IllegalStateException("Unsupported Voxy air mapping", error); }
     }
     private static byte light(Section section, int x, int y, int z) {
         int b = section.block == null ? 0 : section.block.get(x, y, z);

@@ -31,7 +31,8 @@ public abstract class ClientStartupMixin {
         Minecraft minecraft = (Minecraft) (Object) this;
         if (!minecraft.isGameLoadFinished()) return;
         if (lodgen$stage == 3) {
-            if (Boolean.getBoolean("lodgen.test.voxyWorld")) VoxyWorldCheck.tick(minecraft);
+            if (Integer.getInteger("lodgen.test.voxyBenchmark", 0) > 0) dev.lodgen.startup.VoxyBenchmark.tick(minecraft);
+            else if (Boolean.getBoolean("lodgen.test.voxyWorld")) VoxyWorldCheck.tick(minecraft);
             return;
         }
         // #if MC_262_PLUS
@@ -100,11 +101,12 @@ public abstract class ClientStartupMixin {
             dev.lodgen.startup.ConfigScreenCheck.finish(minecraft, config);
             config.onClose();
             if (ClientScreens.current(minecraft) != lodgen$configParent) throw new AssertionError("Config did not return to its parent");
-            StartupCheck.report("PASS: client title, Options button and single-page LODgen config rendered; all 11 settings, scrolling, input focus and drafts across resizing verified; "
+            StartupCheck.report("PASS: client title, Options button and single-page LODgen config rendered; all 9 settings, scrolling, input focus and drafts across resizing verified; "
                     + (Boolean.getBoolean("lodgen.test.modmenu") ? "Mod Menu factory opened config and returned to Mods; " : "")
                     + "generation mixin targets loaded; no world opened.");
             lodgen$stage = 3;
-            if (Boolean.getBoolean("lodgen.test.voxyWorld")) VoxyWorldCheck.start(minecraft);
+            if (Integer.getInteger("lodgen.test.voxyBenchmark", 0) > 0) dev.lodgen.startup.VoxyBenchmark.start(minecraft);
+            else if (Boolean.getBoolean("lodgen.test.voxyWorld")) VoxyWorldCheck.start(minecraft);
             else minecraft.stop();
         } catch (Throwable failure) {
             StartupCheck.report("FAIL: " + failure);

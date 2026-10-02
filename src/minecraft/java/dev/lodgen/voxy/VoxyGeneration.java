@@ -15,14 +15,13 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /** Voxy has no generation queue. This scheduler drives the shared native path
  * around the local player, maintaining a completed frontier for each engine.
  */
 public final class VoxyGeneration {
     private static final Map<Object, Session> SESSIONS = new IdentityHashMap<>();
-    private static Session current;
+    private static volatile Session current;
     private static VoxyBridge bridge;
     private static boolean failed;
 
@@ -60,7 +59,10 @@ public final class VoxyGeneration {
             if (current == null) return;
             int radius = LodgenConfig.INSTANCE.generationDistance() > 0 ? LodgenConfig.INSTANCE.generationDistance() : context.radius();
             var center = dev.lodgen.minecraft.GenerationCenters.resolve(level, client.player.blockPosition().getX(), client.player.blockPosition().getZ());
-            current.tick(Math.floorDiv(center.getX(), 16), Math.floorDiv(center.getZ(), 16), radius);
+            var target = current;
+            level.getServer().execute(() -> {
+                if (current == target && !target.closed) target.tick(Math.floorDiv(center.getX(), 16), Math.floorDiv(center.getZ(), 16), radius);
+            });
 
         } catch (Throwable error) {
             failed = true; pause();
@@ -120,7 +122,7 @@ public final class VoxyGeneration {
         final java.util.concurrent.locks.ReentrantReadWriteLock conversionLock = new java.util.concurrent.locks.ReentrantReadWriteLock();
         volatile boolean closed;
         volatile int centerX, centerZ, radius;
-        GenerationFrontier frontier;
+        volatile GenerationFrontier frontier;
 
         Session(ServerLevel level, VoxyBridge.Context context, Set<Long> previous) {
             this.level = level; this.context = context;
@@ -128,9 +130,7 @@ public final class VoxyGeneration {
             catch (Exception invalid) { LodgenConfig.LOGGER.warn("Ignoring invalid Voxy generation coverage", invalid); }
             completed.addAll(previous);
             pipeline = new ChunkGenerationPipeline(level);
-            workers = Executors.newFixedThreadPool(Math.max(1, Math.min(8, Runtime.getRuntime().availableProcessors() / 2)), task -> {
-                Thread thread = new Thread(task, "LODgen Voxy conversion"); thread.setDaemon(true); return thread;
-            });
+            workers = new dev.lodgen.GenerationWorkers("LODgen Voxy conversion");
             LodgenConfig.LOGGER.info("Normal chunk pipeline active for Voxy in {}", level.dimension());
         }
 
@@ -140,7 +140,7 @@ public final class VoxyGeneration {
                 centerX = x; centerZ = z; radius = distance;
                 frontier = new GenerationFrontier(x, z, distance);
             }
-            int limit = LodgenConfig.INSTANCE.pipelineBatches();
+            int limit = dev.lodgen.GenerationSettings.current().batches();
             for (var entry : retry.entrySet()) {
                 if (active.size() >= limit) return;
                 var tile = Tile.fromKey(entry.getKey());
@@ -164,6 +164,12 @@ public final class VoxyGeneration {
                             // Retry failures with backoff, never regenerate completed tiles.
                             retry.put(tile.key(), System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10));
                             LodgenConfig.LOGGER.warn("Voxy generation failed at {},{}; retrying later", tile.x(), tile.z(), error);
+                        }
+                        if (!closed && current == this && LodgenConfig.INSTANCE.enabled()
+                                && !dev.lodgen.minecraft.GenerationTasks.overridesAutomatic(level)) {
+                            level.getServer().execute(() -> {
+                                if (!closed && current == this) tick(centerX, centerZ, radius);
+                            });
                         }
                     });
         }

@@ -29,7 +29,7 @@ public final class LodgenConfigScreen extends Screen {
     private static final int ROW_HEIGHT = 28;
     private final Screen parent;
     private boolean enabled = LodgenConfig.INSTANCE.enabled();
-    private boolean spatial = LodgenConfig.INSTANCE.spatialBatching();
+    private int cpuLoad = LodgenConfig.INSTANCE.cpuLoad();
     private boolean throughput = LodgenConfig.INSTANCE.showChunksPerSecond();
     private GenerationCenter center = LodgenConfig.INSTANCE.generationCenter();
     private final Map<String, String> numbers = new HashMap<>();
@@ -44,8 +44,6 @@ public final class LodgenConfigScreen extends Screen {
         setNumbers(LodgenConfig.INSTANCE);
     }
     private void setNumbers(LodgenConfig values) {
-        numbers.put("pipelineBatches", Integer.toString(values.pipelineBatches()));
-        numbers.put("queuedBatches", Integer.toString(values.queuedBatches()));
         numbers.put("generationDistance", Integer.toString(values.generationDistance()));
         numbers.put("savedChunkRadius", Integer.toString(values.savedChunkRadius()));
         numbers.put("centerX", Integer.toString(values.centerX()));
@@ -68,9 +66,12 @@ public final class LodgenConfigScreen extends Screen {
         numberInput("centerZ").active = center == GenerationCenter.CUSTOM;
         numberInput("generationDistance");
         numberInput("savedChunkRadius");
-        numberInput("pipelineBatches");
-        numberInput("queuedBatches");
-        toggleButton("spatialBatching", () -> spatial, value -> spatial = value);
+        var load = Button.builder(cpuValue(), button -> {
+            cpuLoad = cpuLoad % 5 + 1; button.setMessage(cpuValue());
+        }).bounds(0, 0, controlWidth, 20).tooltip(tip("cpuLoad"))
+                .createNarration(ignored -> label("cpuLoad").copy().append(": ").append(cpuValue())).build();
+        load.active = !dev.lodgen.ModSupport.loaded("distanthorizons");
+        settings.add("cpuLoad", load);
         toggleButton("showChunksPerSecond", () -> throughput, value -> throughput = value);
         numberInput("chunksPerSecondUpdateIntervalMs");
         settings.setScrollAmount(scroll);
@@ -94,6 +95,9 @@ public final class LodgenConfigScreen extends Screen {
         settings.add(key, input);
         return input;
     }
+    private Component cpuValue() {
+        return Component.translatable(dev.lodgen.ModSupport.loaded("distanthorizons") ? "lodgen.config.cpuLoad.dh" : "lodgen.config.cpuLoad." + cpuLoad);
+    }
     private Component centerValue() {
         return Component.translatable("lodgen.config.center." + center.name().toLowerCase(java.util.Locale.ROOT));
     }
@@ -103,12 +107,12 @@ public final class LodgenConfigScreen extends Screen {
     private int number(String key) { return Integer.parseInt(numbers.get(key)); }
     private void reset() {
         var defaults = LodgenConfig.DEFAULTS;
-        enabled = defaults.enabled(); spatial = defaults.spatialBatching(); throughput = defaults.showChunksPerSecond(); center = defaults.generationCenter();
+        enabled = defaults.enabled(); cpuLoad = defaults.cpuLoad(); throughput = defaults.showChunksPerSecond(); center = defaults.generationCenter();
         setNumbers(defaults); error = null; rebuildWidgets();
     }
     private void apply() {
         try {
-            LodgenConfig.apply(new LodgenConfig(enabled, number("pipelineBatches"), number("queuedBatches"), spatial,
+            LodgenConfig.apply(new LodgenConfig(enabled, cpuLoad,
                     number("generationDistance"), throughput, number("chunksPerSecondUpdateIntervalMs"), center, number("centerX"), number("centerZ"), number("savedChunkRadius")));
             onClose();
         } catch (IllegalArgumentException invalid) { error = Component.translatable("lodgen.config.invalid"); }

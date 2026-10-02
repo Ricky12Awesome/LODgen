@@ -30,18 +30,22 @@ public final class BenchmarkCheck {
         if (axis == 0) return CompletableFuture.completedFuture(null);
         if (axis % 4 != 0) return CompletableFuture.failedFuture(new IllegalArgumentException("Benchmark axis must be divisible by 4"));
         var originalSettings = LodgenConfig.INSTANCE;
+        int originalDhThreads = com.seibel.distanthorizons.core.config.Config.Common.MultiThreading.numberOfThreads.get();
+        int dhThreads = Integer.getInteger("lodgen.test.dhThreads", 0);
+        if (dhThreads > 0) com.seibel.distanthorizons.core.config.Config.Common.MultiThreading.numberOfThreads.set(dhThreads);
         boolean checkLiveConfig = Boolean.getBoolean("lodgen.test.skipWarmup")
                 && Boolean.getBoolean("lodgen.test.dhQueue") && originalSettings.enabled();
         if (checkLiveConfig) {
             try {
-                LodgenConfig.apply(new LodgenConfig(true, 1, 0, originalSettings.spatialBatching(), originalSettings.generationDistance(), originalSettings.showChunksPerSecond(), originalSettings.chunksPerSecondUpdateIntervalMs(), originalSettings.generationCenter(), originalSettings.centerX(), originalSettings.centerZ(), originalSettings.savedChunkRadius()));
-                LodgenConfig.LOGGER.info("QUICK CHECK: applied live limits of one active batch and zero waiting slots");
+                LodgenConfig.apply(new LodgenConfig(true, 1, originalSettings.generationDistance(), originalSettings.showChunksPerSecond(), originalSettings.chunksPerSecondUpdateIntervalMs(), originalSettings.generationCenter(), originalSettings.centerX(), originalSettings.centerZ(), originalSettings.savedChunkRadius()));
+                com.seibel.distanthorizons.core.config.Config.Common.MultiThreading.numberOfThreads.set(1);
+                LodgenConfig.LOGGER.info("QUICK CHECK: applied live DH CPU load of one worker");
             } catch (Exception failure) { return CompletableFuture.failedFuture(failure); }
         }
         ExecutorService benchmarkExecutor = Boolean.getBoolean("lodgen.test.dhExecutor") ? ThreadPoolUtil.getWorldGenExecutor() : executor;
         // Give CPU JIT compilation and the optional GPU kernels a separate warmup area.
         CompletableFuture<Void> warmup = Boolean.getBoolean("lodgen.test.skipWarmup")
-                ? CompletableFuture.completedFuture(null) : area(generator, benchmarkExecutor, 12000, -12000, 16);
+                ? CompletableFuture.completedFuture(null) : area(generator, benchmarkExecutor, 12000, -12000, Integer.getInteger("lodgen.test.warmupAxis", 16));
         return warmup.thenCompose(ignored -> {
             long start = System.nanoTime();
             return (Boolean.getBoolean("lodgen.test.dhQueue") ? queuedArea(generator, 10240, -10240, axis)
@@ -54,6 +58,7 @@ public final class BenchmarkCheck {
                 return ChunkyCheck.run(16384, -16384, axis).thenCompose(chunky -> write(count, dhNanos, chunky));
             });
         }).whenComplete((ignored, error) -> {
+            if (dhThreads > 0 || checkLiveConfig) com.seibel.distanthorizons.core.config.Config.Common.MultiThreading.numberOfThreads.set(originalDhThreads);
             if (checkLiveConfig) {
                 try { LodgenConfig.apply(originalSettings); }
                 catch (Exception failure) { throw new java.util.concurrent.CompletionException(failure); }
@@ -136,7 +141,7 @@ public final class BenchmarkCheck {
             monitor.shutdownNow();
             LodgenConfig.LOGGER.info("BENCHMARK AREA: {} chunks in {} seconds; layout {}; requests {}; pipeline {}",
                     completed.get(), (System.nanoTime() - start) / 1e9, System.getProperty("lodgen.test.layout", "row"),
-                    workers.length, LodgenConfig.INSTANCE.pipelineBatches());
+                    workers.length, dev.lodgen.GenerationSettings.current().batches());
         });
     }
 
@@ -172,12 +177,12 @@ public final class BenchmarkCheck {
             }
             data += String.format(Locale.ROOT, ",\"layout\":\"%s\",\"requests\":%d,\"pipelineBatches\":%d,\"dhExecutor\":%s,\"storeLods\":%s",
                     System.getProperty("lodgen.test.layout", "row"), Boolean.getBoolean("lodgen.test.dhQueue")
-                            ? com.seibel.distanthorizons.core.config.Config.Common.MultiThreading.numberOfThreads.get() + 1
+                            ? dev.lodgen.GenerationSettings.current().batches()
                             : Integer.getInteger("lodgen.test.workers", 8),
-                    LodgenConfig.INSTANCE.pipelineBatches(), Boolean.getBoolean("lodgen.test.dhExecutor"), Boolean.getBoolean("lodgen.test.storeLods"));
+                    dev.lodgen.GenerationSettings.current().batches(), Boolean.getBoolean("lodgen.test.dhExecutor"), Boolean.getBoolean("lodgen.test.storeLods"));
             data += ",\"dhQueue\":" + Boolean.getBoolean("lodgen.test.dhQueue");
             data += ",\"frontierRadius\":" + Integer.getInteger("lodgen.test.frontierRadius", 0);
-            data += ",\"spatialBatching\":" + LodgenConfig.INSTANCE.spatialBatching();
+            data += ",\"spatialBatching\":" + true;
             Files.writeString(Path.of("benchmark-result.json"), data + "}\n");
             LodgenConfig.LOGGER.info("BENCHMARK RESULT: {}", data + "}");
             return CompletableFuture.completedFuture(null);

@@ -24,7 +24,11 @@ public final class TaskCheck {
     public static void run(MinecraftServer server) {
         try {
             started = System.nanoTime();
-            LodgenConfig.apply(new LodgenConfig(true, 1, 0, true, 0, false, 1000, GenerationCenter.CURRENT, 0, 0, 0));
+            LodgenConfig.apply(new LodgenConfig(true, 1, 0, false, 1000, GenerationCenter.CURRENT, 0, 0, 0));
+            // DH owns the budget when installed. Keep this tiny task's admission
+            // window at one batch so pausing can leave undispatched work.
+            com.seibel.distanthorizons.core.config.Config.Common.MultiThreading.numberOfThreads.set(1);
+            require(dev.lodgen.GenerationSettings.current().batches() == 1, "Task regression needs one active batch");
             if (Boolean.getBoolean("lodgen.test.reload")) {
                 var checkpoint = TaskStore.read(server.getWorldPath(LevelResource.ROOT).resolve("lodgen/task.toml"));
                 require(checkpoint != null && checkpoint.progress().state() == TaskProgress.State.RUNNING, "Running task must survive shutdown");
@@ -79,7 +83,7 @@ public final class TaskCheck {
                 var checkpoint = record(server);
                 require(checkpoint.progress().state() == TaskProgress.State.COMPLETE, "Completion was not checkpointed");
                 com.seibel.distanthorizons.core.config.Config.Common.WorldGenerator.chunkGeneratorMode.set(com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiDistantGeneratorMode.FEATURES);
-                LodgenConfig.apply(new LodgenConfig(true, 1, 0, true, 1, false, 1000, GenerationCenter.CUSTOM, 131072, -131072, 0));
+                LodgenConfig.apply(new LodgenConfig(true, 1, 1, false, 1000, GenerationCenter.CUSTOM, 131072, -131072, 0));
                 stage = 3;
             }
         } catch (Throwable error) { fail(server, error); }
