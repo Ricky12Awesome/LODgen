@@ -59,6 +59,7 @@ public final class TaskCheck {
             require(System.nanoTime() - started < TimeUnit.SECONDS.toNanos(60), "Task regression timed out");
             String status = GenerationTasks.get(server).status();
             require(!status.contains("error="), status);
+            require(status.contains("radius=5c") && status.contains("ETA="), "Task status omitted radius or ETA: " + status);
             if (stage == 0) {
                 if (status.contains("progress=0/")) return;
                 require(!status.contains("COMPLETE"), "Test finished before exercising pause/restart");
@@ -67,6 +68,7 @@ public final class TaskCheck {
             } else if (stage == 1) {
                 if (!status.contains("active=0")) return;
                 require(status.contains("PAUSED"), "Pause did not stop dispatch: " + status);
+                require(status.contains("ETA=—"), "Paused task showed a running estimate: " + status);
                 command(server, "lodgen continue");
                 command(server, "lodgen status");
                 Files.writeString(REPORT, "PASS: origin, optional saved radius, block rounding, status, pause, continue and stop commands; closed with an incomplete RUNNING 5c task at 65536,-65536.\n");
@@ -75,10 +77,13 @@ public final class TaskCheck {
                 var auto = TaskStore.read(server.getWorldPath(LevelResource.ROOT).resolve("lodgen/automatic-minecraft_overworld.toml"));
                 if (auto == null || auto.progress().state() != TaskProgress.State.COMPLETE) return;
                 require(auto.area().blockX() == 131072 && auto.area().blockZ() == -131072 && auto.area().radius() == 1 && auto.area().savedRadius() == 0, "Automatic custom center ignored");
+                var rendererProgress = dev.lodgen.minecraft.RendererSinks.progress(server.overworld(), 1);
+                require(rendererProgress != null && rendererProgress.radius() == 1, "DH generation estimate unavailable in a live level");
                 Files.writeString(REPORT, "PASS: restart automatically resumed the 100-chunk 5c task with saved radius 1c; custom-center automatic DH generated four additional LOD-only chunks. Native file headers audited after shutdown.\n");
                 finish(server);
             } else if (status.contains("COMPLETE")) {
                 require(status.contains("progress=100/100"), status);
+                require(status.contains("ETA=0s"), "Completed task retained an unfinished estimate: " + status);
                 command(server, "lodgen status");
                 var checkpoint = record(server);
                 require(checkpoint.progress().state() == TaskProgress.State.COMPLETE, "Completion was not checkpointed");

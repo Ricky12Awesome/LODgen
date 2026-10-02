@@ -3,6 +3,7 @@ package dev.lodgen.minecraft;
 import dev.lodgen.LodgenConfig;
 import dev.lodgen.generation.GenerationArea;
 import dev.lodgen.generation.GenerationCenter;
+import dev.lodgen.generation.GenerationProgress;
 import dev.lodgen.task.SquarePlan;
 import dev.lodgen.task.TaskProgress;
 import dev.lodgen.task.TaskRecord;
@@ -24,7 +25,7 @@ public final class GenerationTasks {
     private final MinecraftServer server;
     private final Path directory;
     private final ExecutorService workers;
-    private final Map<String, Job> automatic = new HashMap<>();
+    private final Map<String, Job> automatic = new java.util.concurrent.ConcurrentHashMap<>();
     // Voxy and DH consult this from their client/queue threads.
     private volatile Job command;
     private boolean closed;
@@ -73,30 +74,68 @@ public final class GenerationTasks {
     public void pause() {
         requireTask();
         if (command.progress.state() != TaskProgress.State.RUNNING) throw new IllegalStateException("Task is not running");
-        command.progress.pause(); command.checkpoint();
+        command.progress.pause(); command.publishProgress(); command.checkpoint();
     }
     public void resume() {
-        requireTask(); command.progress.resume(); command.checkpoint();
+        requireTask(); command.progress.resume(); command.publishProgress(); command.checkpoint();
     }
     public void stop() {
-        requireTask(); command.progress.stop(); command.close(); command.checkpoint();
+        requireTask(); command.progress.stop(); command.close(); command.publishProgress(); command.checkpoint();
     }
     private void requireTask() { if (command == null) throw new IllegalStateException("No LODgen task"); }
     public String status() {
         if (command == null) {
-            for (var job : automatic.values()) return "Automatic " + job.status();
             ServerLevel level = server.overworld();
             for (var candidate : server.getAllLevels()) if (!candidate.players().isEmpty()) { level = candidate; break; }
+            var job = automatic.get(dimension(level));
             var settings = LodgenConfig.INSTANCE;
+            if (job != null && settings.enabled() && settings.generationCenter() != GenerationCenter.CURRENT
+                    && RendererSinks.dhAvailable() && DhTaskSink.featuresActive()) return "Automatic " + job.status();
             int radius = settings.generationDistance() > 0 ? settings.generationDistance()
                     : RendererSinks.dhAvailable() ? RendererSinks.dhRadius() : RendererSinks.voxyRadius(level);
             var area = GenerationCenters.automatic(level, radius);
             var throughput = PersistenceRegistry.throughput(level);
-            return String.format(java.util.Locale.ROOT, "No command task. Automatic generation %s: dim=%s; center X=%d Z=%d blocks (%s); radius=%dc; saved-radius=%dc; progress=%d chunks completed this session; %.1f chunks/s",
-                    settings.enabled() ? "enabled" : "disabled", dimension(level), area.blockX(), area.blockZ(), settings.generationCenter().name().toLowerCase(java.util.Locale.ROOT),
-                    radius, area.savedRadius(), throughput.totalCompleted(), throughput.chunksPerSecond());
+            var display = displaySource(level).progress();
+            return String.format(java.util.Locale.ROOT, "No command task. Automatic generation %s (%s): dim=%s; center X=%d Z=%d blocks (%s); radius=%dc; saved-radius=%dc; progress=%d chunks completed this session; %.1f chunks/s; ETA=%s",
+                    settings.enabled() ? "enabled" : "disabled", display.state(), dimension(level), area.blockX(), area.blockZ(), settings.generationCenter().name().toLowerCase(java.util.Locale.ROOT),
+                    radius, area.savedRadius(), throughput.totalCompleted(), throughput.chunksPerSecond(), GenerationProgress.duration(display.estimatedSeconds(throughput.chunksPerSecond())));
         }
         return command.status();
+    }
+
+    public record DisplaySource(ServerLevel level, java.util.function.Supplier<GenerationProgress> readProgress) {
+        public GenerationProgress progress() { return readProgress.get(); }
+    }
+
+    /** Client reads immutable job snapshots, never a live completion tree. A
+     * command in another dimension supplies both its own progress and its rate.
+     */
+    public static DisplaySource displaySource(ServerLevel level) {
+        GenerationTasks tasks;
+        synchronized (GenerationTasks.class) { tasks = SERVERS.get(level.getServer()); }
+        if (tasks != null) {
+            var command = tasks.command;
+            if (command != null && (command.displayProgress.state() == GenerationProgress.State.RUNNING
+                    || command.displayProgress.state() == GenerationProgress.State.WAITING_FOR_RENDERER
+                    || command.displayProgress.state() == GenerationProgress.State.PAUSED
+                    || System.nanoTime() - command.terminalAt < 5_000_000_000L))
+                return new DisplaySource(command.level, () -> command.displayProgress);
+        }
+        var settings = LodgenConfig.INSTANCE;
+        int radius = settings.generationDistance() > 0 ? settings.generationDistance()
+                : RendererSinks.dhAvailable() ? RendererSinks.dhRadius() : RendererSinks.voxyRadius(level);
+        if (!settings.enabled()) return new DisplaySource(level, () -> new GenerationProgress(radius, -1, GenerationProgress.State.DISABLED));
+        if (tasks != null) {
+            var job = tasks.automatic.get(dimension(level));
+            boolean fixedDh = RendererSinks.dhAvailable() && settings.generationCenter() != GenerationCenter.CURRENT && DhTaskSink.featuresActive();
+            if (job != null && (fixedDh && job.record.area().radius() == radius
+                    || !fixedDh && settings.savedChunkRadius() > radius && job.record.area().radius() == settings.savedChunkRadius()))
+                return new DisplaySource(level, () -> job.displayProgress);
+        }
+        return new DisplaySource(level, () -> {
+            var renderer = RendererSinks.progress(level, radius);
+            return renderer != null ? renderer : new GenerationProgress(radius, -1, GenerationProgress.State.WAITING_FOR_RENDERER);
+        });
     }
     public static boolean overridesAutomatic(Object level) {
         if (!(level instanceof ServerLevel serverLevel)) return false;
@@ -169,21 +208,24 @@ public final class GenerationTasks {
         final Map<Long, CompletableFuture<Void>> active = new HashMap<>();
         final ChunkGenerationPipeline pipeline;
         boolean stopped, waiting;
+        volatile GenerationProgress displayProgress;
+        volatile long terminalAt = Long.MIN_VALUE / 2;
         long lastCheckpoint;
         Job(ServerLevel level, TaskRecord record, Path path) {
             this.level = level; this.record = record; this.path = path;
             plan = new SquarePlan(record.area()); progress = new TaskProgress(plan, record.progress());
             pipeline = new ChunkGenerationPipeline(level);
+            publishProgress();
         }
         void tick() {
             if (stopped || progress.state() != TaskProgress.State.RUNNING) return;
             try { waiting = !RendererSinks.ready(level, record.dh(), record.voxy()); }
             catch (RuntimeException | LinkageError error) {
-                progress.fail(rootCause(error)); checkpoint();
+                progress.fail(rootCause(error)); publishProgress(); checkpoint();
                 LodgenConfig.LOGGER.error("Cannot initialize LODgen task output", error);
                 return;
             }
-            if (waiting) return;
+            if (waiting) { publishProgress(); return; }
             int limit = dev.lodgen.GenerationSettings.current().batches();
             for (int budget = 0; budget < 256 && active.size() < limit; budget++) {
                 long index = progress.next();
@@ -203,21 +245,31 @@ public final class GenerationTasks {
                         progress.fail(rootCause(error));
                         LodgenConfig.LOGGER.error("LODgen task paused at {},{}", batch.x(), batch.z(), error);
                     }
+                    publishProgress();
                     if (progress.state() != TaskProgress.State.RUNNING || System.nanoTime() - lastCheckpoint >= 5_000_000_000L) checkpoint();
                     // Refill as soon as native generation and conversion drain,
                     // rather than leaving the window empty until the next tick.
                     tick();
                 }));
             }
+            publishProgress();
+        }
+        void publishProgress() {
+            var state = waiting && progress.state() == TaskProgress.State.RUNNING ? GenerationProgress.State.WAITING_FOR_RENDERER
+                    : GenerationProgress.State.valueOf(progress.state().name());
+            if ((state == GenerationProgress.State.COMPLETE || state == GenerationProgress.State.STOPPED)
+                    && (displayProgress == null || displayProgress.state() != state)) terminalAt = System.nanoTime();
+            displayProgress = new GenerationProgress(record.area().radius(), plan.chunks() - progress.completedChunks(), state);
         }
         String status() {
             String state = waiting && progress.state() == TaskProgress.State.RUNNING ? "WAITING_FOR_RENDERER" : progress.state().name();
             long done = progress.completedChunks();
             return String.format(java.util.Locale.ROOT,
-                    "LODgen %s: dim=%s; center X=%d Z=%d blocks; radius=%dc (%d blocks); saved-radius=%dc (%d blocks); progress=%d/%d chunks (%.2f%%); active=%d; %.1f chunks/s%s",
+                    "LODgen %s: dim=%s; center X=%d Z=%d blocks; radius=%dc (%d blocks); saved-radius=%dc (%d blocks); progress=%d/%d chunks (%.2f%%); active=%d; %.1f chunks/s; ETA=%s%s",
                     state, record.dimension(), record.area().blockX(), record.area().blockZ(), record.area().radius(), (long) record.area().radius() * 16,
                     record.area().savedRadius(), (long) record.area().savedRadius() * 16, done, plan.chunks(), done * 100.0 / plan.chunks(), active.size(),
-                    PersistenceRegistry.throughput(level).chunksPerSecond(), progress.error().isEmpty() ? "" : "; error=" + progress.error());
+                    PersistenceRegistry.throughput(level).chunksPerSecond(), GenerationProgress.duration(displayProgress.estimatedSeconds(PersistenceRegistry.throughput(level).chunksPerSecond())),
+                    progress.error().isEmpty() ? "" : "; error=" + progress.error());
         }
         void checkpoint() {
             if (this != command && automatic.get(record.dimension()) != this) return;

@@ -82,6 +82,10 @@ public final class VoxyWorldCheck {
                 var centerField = session.getClass().getDeclaredField("centerX"); centerField.setAccessible(true);
                 if (centerField.getInt(session) != 1024) throw new AssertionError("Custom generation center ignored");
                 if (frontier == null || !frontier.exhausted() || !((Set<?>) active.get(session)).isEmpty()) return;
+                var generationProgress = dev.lodgen.minecraft.RendererSinks.progress(serverLevel, 1);
+                if (generationProgress == null || generationProgress.radius() != 1 || generationProgress.remainingChunks() != 0
+                        || generationProgress.estimatedSeconds(1) != 0)
+                    throw new AssertionError("Automatic Voxy ETA did not account for completed coverage");
                 completedTiles = (int) ((Set<?>) completed.get(session)).stream().filter(key -> dev.lodgen.generation.GenerationFrontier.contains(
                         dev.lodgen.generation.GenerationFrontier.Tile.fromKey((Long) key), 1024, -1024, 1)).count();
                 if (completedTiles < 1 || completedTiles > 4) throw new AssertionError("Unexpected small-radius tile count: " + completedTiles);
@@ -137,6 +141,7 @@ public final class VoxyWorldCheck {
             far.join();
             String status = taskStatus.join();
             if (status.contains("error=")) throw new AssertionError(status);
+            if (!status.contains("ETA=")) throw new AssertionError("Command status omitted ETA: " + status);
             if (!status.contains("COMPLETE")) {
                 var server = client.getSingleplayerServer();
                 taskStatus = server.submit(() -> dev.lodgen.minecraft.GenerationTasks.get(server).status());
@@ -169,7 +174,12 @@ public final class VoxyWorldCheck {
             checkStoredFarSection(bridge.context(client.getSingleplayerServer().getLevel(net.minecraft.world.level.Level.NETHER)).engine());
             far.join();
             if (!dev.lodgen.client.GenerationOverlay.visible()) throw new AssertionError("Voxy-only HUD hidden");
-            if (PersistenceRegistry.throughput(client.getSingleplayerServer().getLevel(client.level.dimension())).chunksPerSecond() <= 0)
+            var display = dev.lodgen.minecraft.GenerationTasks.displaySource(serverLevel);
+            if (!display.level().dimension().equals(net.minecraft.world.level.Level.NETHER) || display.progress().radius() != 1
+                    || display.progress().state() != dev.lodgen.generation.GenerationProgress.State.COMPLETE
+                    || display.progress().estimatedSeconds(1) != 0)
+                throw new AssertionError("Cross-dimension command overlay used another generation area");
+            if (PersistenceRegistry.throughput(display.level()).chunksPerSecond() <= 0)
                 throw new AssertionError("Successful far batch missing from throughput counter");
             OverlayCheck.checkMessageOwnership(client);
             idleStarted = System.nanoTime();

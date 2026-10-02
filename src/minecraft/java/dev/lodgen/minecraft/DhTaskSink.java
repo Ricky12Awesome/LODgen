@@ -29,6 +29,24 @@ final class DhTaskSink {
                 && com.seibel.distanthorizons.core.config.Config.Common.WorldGenerator.generatorPlan.get().chunkGenEnabled;
     }
     static int radius() { return com.seibel.distanthorizons.core.config.Config.Client.Advanced.Graphics.Quality.lodChunkRenderDistanceRadius.get(); }
+    static dev.lodgen.generation.GenerationProgress progress(ServerLevel level, int radius) {
+        var wrapper = wrapper(level);
+        if (wrapper != null && wrapper.getDhLevel().getFullDataProvider()
+                instanceof com.seibel.distanthorizons.core.file.fullDatafile.GeneratedFullDataSourceProvider provider) {
+            var queue = provider.worldGenQueueRef.get();
+            if (queue != null) {
+                long remaining = Math.max(0, queue.getRetrievalEstimatedRemainingChunkCount());
+                // The queued-chunk getter scans the whole waiting map. Read
+                // DH's maintained estimate and constant-time counts instead.
+                if (remaining == 0 && (queue.getWaitingTaskCount() > 0 || queue.getInProgressTaskCount() > 0)) remaining = -1;
+                if (radius > 0) remaining = Math.min(remaining, 4L * radius * radius);
+                var state = remaining == 0 ? dev.lodgen.generation.GenerationProgress.State.COMPLETE
+                        : dev.lodgen.generation.GenerationProgress.State.RUNNING;
+                return new dev.lodgen.generation.GenerationProgress(radius, remaining, state);
+            }
+        }
+        return new dev.lodgen.generation.GenerationProgress(radius, -1, dev.lodgen.generation.GenerationProgress.State.WAITING_FOR_RENDERER);
+    }
     static CompletableFuture<Void> convert(ServerLevel level, List<ChunkAccess> chunks, Executor executor) {
         var wrapper = wrapper(level);
         if (wrapper == null) return CompletableFuture.failedFuture(new IllegalStateException("Waiting for DH to open " + level.dimension()));

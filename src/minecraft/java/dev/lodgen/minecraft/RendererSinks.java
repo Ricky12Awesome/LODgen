@@ -14,6 +14,7 @@ public final class RendererSinks {
     public interface VoxySink {
         boolean ready(ServerLevel level);
         default int radius(ServerLevel level) { return 0; }
+        default dev.lodgen.generation.GenerationProgress progress(ServerLevel level) { return null; }
         CompletableFuture<Void> convert(ServerLevel level, List<ChunkAccess> chunks);
     }
     private static volatile VoxySink voxy;
@@ -35,4 +36,9 @@ public final class RendererSinks {
     }
     public static int voxyRadius(ServerLevel level) { var sink = voxy; return sink == null ? 0 : sink.radius(level); }
     public static int dhRadius() { return dhAvailable() ? DhTaskSink.radius() : 0; }
+    public static dev.lodgen.generation.GenerationProgress progress(ServerLevel level, int radius) {
+        if (dhAvailable()) return DhTaskSink.progress(level, radius);
+        var sink = voxy;
+        return sink == null ? null : sink.progress(level);
+    }
 }

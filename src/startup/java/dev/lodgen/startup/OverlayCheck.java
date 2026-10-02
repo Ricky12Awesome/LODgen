@@ -30,6 +30,10 @@ public final class OverlayCheck {
     }
 
     public static void check() throws Exception {
+        var text = net.minecraft.network.chat.Component.translatable("lodgen.overlay.throughput", "123.4", 64, "2m 3s",
+                net.minecraft.network.chat.Component.translatable("lodgen.overlay.status.running")).getString();
+        if (!text.contains("123.4 chunks/s") || !text.contains("Radius: 64c") || !text.contains("ETA: 2m 3s") || !text.endsWith("Running"))
+            throw new AssertionError("Overlay translations did not render progress: " + text);
         var original = LodgenConfig.INSTANCE;
         Object entry = null;
         Object oldLocation = null;

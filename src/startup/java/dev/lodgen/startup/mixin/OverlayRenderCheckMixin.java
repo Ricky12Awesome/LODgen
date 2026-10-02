@@ -21,6 +21,11 @@ public abstract class OverlayRenderCheckMixin {
         var access = (ActionBarAccess) client.gui;
         // #endif
         var message = access.lodgen$actionBarMessage();
-        if (message != null && message.getString().startsWith("LODgen:")) OverlayCheck.rendered = true;
+        if (message != null && message.getString().startsWith("LODgen:")) {
+            String text = message.getString();
+            if (!text.contains("chunks/s | Radius: ") || !text.contains("c | ETA: "))
+                throw new AssertionError("Vanilla action bar omitted generation details: " + text);
+            OverlayCheck.rendered = true;
+        }
     }
 }

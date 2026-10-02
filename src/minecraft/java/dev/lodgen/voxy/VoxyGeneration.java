@@ -46,6 +46,16 @@ public final class VoxyGeneration {
                         try { var target = session(level); return target == null ? 0 : target.context.radius(); }
                         catch (ReflectiveOperationException error) { return 0; }
                     }
+                    @Override public dev.lodgen.generation.GenerationProgress progress(ServerLevel level) {
+                        try {
+                            var context = bridge == null ? null : bridge.context(level);
+                            if (context == null) return null;
+                            synchronized (SESSIONS) {
+                                var target = SESSIONS.get(context.engine());
+                                return target == null ? null : target.progress();
+                            }
+                        } catch (ReflectiveOperationException error) { return null; }
+                    }
                     @Override public CompletableFuture<Void> convert(ServerLevel level, java.util.List<net.minecraft.world.level.chunk.ChunkAccess> chunks) {
                         try {
                             var target = session(level);
@@ -133,6 +143,7 @@ public final class VoxyGeneration {
         final VoxyBridge.Context context;
         final ChunkGenerationPipeline pipeline;
         final Set<Long> completed = ConcurrentHashMap.newKeySet();
+        final dev.lodgen.generation.TileProgress coverageProgress = new dev.lodgen.generation.TileProgress();
         final Set<Long> active = ConcurrentHashMap.newKeySet();
         final Map<Long, Long> retry = new ConcurrentHashMap<>();
         final ExecutorService workers;
@@ -140,12 +151,14 @@ public final class VoxyGeneration {
         volatile boolean closed;
         volatile int centerX, centerZ, radius;
         volatile GenerationFrontier frontier;
+        volatile dev.lodgen.generation.GenerationArea area;
 
         Session(ServerLevel level, VoxyBridge.Context context, Set<Long> previous) {
             this.level = level; this.context = context;
             try { completed.addAll(TileCoverage.read(context.coverageFile())); }
             catch (Exception invalid) { LodgenConfig.LOGGER.warn("Ignoring invalid Voxy generation coverage", invalid); }
             completed.addAll(previous);
+            completed.forEach(key -> coverageProgress.complete(Tile.fromKey(key)));
             pipeline = new ChunkGenerationPipeline(level);
             workers = new dev.lodgen.GenerationWorkers("LODgen Voxy conversion");
             LodgenConfig.LOGGER.info("Normal chunk pipeline active for Voxy in {}", level.dimension());
@@ -156,6 +169,7 @@ public final class VoxyGeneration {
             if (frontier == null || x != centerX || z != centerZ || distance != radius) {
                 centerX = x; centerZ = z; radius = distance;
                 frontier = new GenerationFrontier(x, z, distance);
+                area = new dev.lodgen.generation.GenerationArea(x * 16, z * 16, distance, 0);
             }
             int limit = dev.lodgen.GenerationSettings.current().batches();
             for (var entry : retry.entrySet()) {
@@ -207,9 +221,21 @@ public final class VoxyGeneration {
                         var tile = new Tile(Math.floorDiv(x, 4) * 4, Math.floorDiv(z, 4) * 4);
                         masks.merge(tile.key(), 1 << ((x & 3) + (z & 3) * 4), (a, b) -> a | b);
                     }
-                    masks.forEach((key, mask) -> { if (mask == 0xffff) completed.add(key); });
+                    masks.forEach((key, mask) -> {
+                        if (mask == 0xffff && completed.add(key)) coverageProgress.complete(Tile.fromKey(key));
+                    });
                 } finally { conversionLock.readLock().unlock(); }
             }, workers);
+        }
+
+        dev.lodgen.generation.GenerationProgress progress() {
+            var currentArea = area;
+            if (currentArea == null) return null;
+            long remaining = coverageProgress.remainingChunks(currentArea.chunkX(), currentArea.chunkZ(), currentArea.radius());
+            var state = closed ? dev.lodgen.generation.GenerationProgress.State.STOPPED
+                    : remaining == 0 ? dev.lodgen.generation.GenerationProgress.State.COMPLETE
+                    : dev.lodgen.generation.GenerationProgress.State.RUNNING;
+            return new dev.lodgen.generation.GenerationProgress(currentArea.radius(), remaining, state);
         }
 
         @Override public void close() {

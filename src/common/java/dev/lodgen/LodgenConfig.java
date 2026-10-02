@@ -115,7 +115,7 @@ public record LodgenConfig(boolean enabled, int cpuLoad, int generationDistance,
         values.set("showChunksPerSecond", settings.showChunksPerSecond());
         values.set("chunksPerSecondUpdateIntervalMs", settings.chunksPerSecondUpdateIntervalMs());
         values.setComment("chunksPerSecondUpdateIntervalMs", " HUD refresh interval in milliseconds (1–60000). Does not change the five-second averaging window.");
-        values.setComment("showChunksPerSecond", " Show LODgen chunks/second on the HUD. Hidden when DH uses its own overlay.");
+        values.setComment("showChunksPerSecond", " Show chunks/second, radius, ETA and status above the hotbar. Hidden when DH uses its own overlay or throughput is zero.");
         values.set("cpuLoad", settings.cpuLoad());
         values.remove("pipelineBatches"); values.remove("queuedBatches"); values.remove("spatialBatching");
         values.setComment("generationDistance", " Chunk-based LOD generation radius in chunks. 0 follows DH/Voxy; positive values override it.");
