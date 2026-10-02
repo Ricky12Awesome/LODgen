@@ -132,6 +132,7 @@ def preprocess = tasks.register('preprocessMinecraft') {
     }
 }
 sourceSets.test.java.srcDirs('src/test/java')
+if (integration) sourceSets.test.java.srcDir('src/integrationTest/java')
 tasks.named('compileJava') { dependsOn(preprocess) }
 java { toolchain.languageVersion = JavaLanguageVersion.of(target.java as int) }
 tasks.withType(JavaCompile).configureEach {

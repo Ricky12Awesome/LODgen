@@ -136,8 +136,11 @@ public final class BenchmarkCheck {
                     lod == null ? -1 : lod.getQueueSize());
         }, 5, 5, TimeUnit.SECONDS);
         CompletableFuture<?>[] workers = new CompletableFuture[Integer.getInteger("lodgen.test.workers", 8)];
-        for (int i = 0; i < workers.length; i++) workers[i] = next(generator, executor, x, z, tiles, order, cursor, completed);
+        var requests = new AdmittedRequests(() -> generator instanceof dev.lodgen.generation.GenerationAdmission admission
+                && admission.lodgen$isBusy());
+        for (int i = 0; i < workers.length; i++) workers[i] = next(generator, executor, requests, x, z, tiles, order, cursor, completed);
         return CompletableFuture.allOf(workers).whenComplete((ignored, error) -> {
+            requests.close();
             monitor.shutdownNow();
             LodgenConfig.LOGGER.info("BENCHMARK AREA: {} chunks in {} seconds; layout {}; requests {}; pipeline {}",
                     completed.get(), (System.nanoTime() - start) / 1e9, System.getProperty("lodgen.test.layout", "row"),
@@ -145,7 +148,7 @@ public final class BenchmarkCheck {
         });
     }
 
-    private static CompletableFuture<Void> next(DhWorldGenerator generator, ExecutorService executor, int x, int z, int tiles,
+    private static CompletableFuture<Void> next(DhWorldGenerator generator, ExecutorService executor, AdmittedRequests requests, int x, int z, int tiles,
                                                 Integer[] order, AtomicInteger cursor, AtomicInteger completed) {
         int slot = cursor.getAndIncrement();
         if (slot >= order.length) return CompletableFuture.completedFuture(null);
@@ -153,17 +156,17 @@ public final class BenchmarkCheck {
         int cx = x + index % tiles * 4, cz = z + index / tiles * 4;
         FullDataSourceV2 data = FullDataSourceV2.createEmpty(DhSectionPos.encode((byte) 6, cx / 4, cz / 4));
         AtomicReference<CompletableFuture<Void>> saved = new AtomicReference<>(CompletableFuture.completedFuture(null));
-        return generator.generateLod(cx, cz, cx / 4, cz / 4, (byte) 0, data,
+        return requests.submit(() -> generator.generateLod(cx, cz, cx / 4, cz / 4, (byte) 0, data,
                 EDhApiDistantGeneratorMode.FEATURES, executor, output -> {
                     if (output != data) throw new AssertionError("Pooled source ownership changed");
                     if (data.getApiDataPointColumn(0, 0).isEmpty()) throw new AssertionError("Empty benchmark output");
                     if (Boolean.getBoolean("lodgen.test.storeLods")) {
                         saved.set(generator.serverLevelWrapper.getDhLevel().updateDataSourcesAsync(data));
                     }
-                }).thenCompose(ignored -> saved.get()).whenComplete((ignored, error) -> data.close())
+                })).thenCompose(ignored -> saved.get()).whenComplete((ignored, error) -> data.close())
                 .thenComposeAsync(ignored -> {
                     completed.addAndGet(16);
-                    return next(generator, executor, x, z, tiles, order, cursor, completed);
+                    return next(generator, executor, requests, x, z, tiles, order, cursor, completed);
                 }, executor);
     }
 

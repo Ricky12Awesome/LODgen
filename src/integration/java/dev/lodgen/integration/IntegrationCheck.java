@@ -59,25 +59,29 @@ public final class IntegrationCheck {
                 reload(server, level, generator, executor);
                 return;
             }
+            var requests = new AdmittedRequests(() -> generator instanceof dev.lodgen.generation.GenerationAdmission admission
+                    && admission.lodgen$isBusy());
+            LodgenConfig.LOGGER.info("INTEGRATION SETTINGS: {} processors; {} native batches; direct requests honor live DH admission",
+                    Runtime.getRuntime().availableProcessors(), dev.lodgen.GenerationSettings.current().batches());
             FullDataSourceV2 data = FullDataSourceV2.createEmpty(DhSectionPos.encode((byte) 6, LOD_X / 4, LOD_Z / 4));
             FullDataSourceV2 overlapData = FullDataSourceV2.createEmpty(DhSectionPos.encode((byte) 6, 2048, -2048));
             FullDataSourceV2 sharedData = FullDataSourceV2.createEmpty(DhSectionPos.encode((byte) 6, LOD_X / 4, LOD_Z / 4));
             AtomicInteger callbacks = new AtomicInteger();
             long start = System.nanoTime();
-            CompletableFuture<Void> isolated = generator.generateLod(LOD_X, LOD_Z, LOD_X / 4, LOD_Z / 4, (byte) 0,
+            CompletableFuture<Void> isolated = requests.submit(() -> generator.generateLod(LOD_X, LOD_Z, LOD_X / 4, LOD_Z / 4, (byte) 0,
                     data, EDhApiDistantGeneratorMode.FEATURES, executor, output -> {
                         require(output == data, "DH must retain pooled data ownership");
                         callbacks.incrementAndGet();
-                    });
-            CompletableFuture<Void> overlapping = generator.generateLod(8192, -8192, 2048, -2048, (byte) 0,
+                    }));
+            CompletableFuture<Void> overlapping = requests.submit(() -> generator.generateLod(8192, -8192, 2048, -2048, (byte) 0,
                     overlapData, EDhApiDistantGeneratorMode.FEATURES, executor, output -> {
                         require(output == overlapData, "DH must retain overlapping pooled data ownership");
                         callbacks.incrementAndGet();
-                    });
-            CompletableFuture<Void> shared = generator.generateLod(LOD_X, LOD_Z, LOD_X / 4, LOD_Z / 4, (byte) 0,
+                    }));
+            CompletableFuture<Void> shared = requests.submit(() -> generator.generateLod(LOD_X, LOD_Z, LOD_X / 4, LOD_Z / 4, (byte) 0,
                     sharedData, EDhApiDistantGeneratorMode.FEATURES, executor, output -> {
                         require(output == sharedData, "Shared chunk request changed pooled ownership"); callbacks.incrementAndGet();
-                    });
+                    }));
             CompletableFuture<Void> lighting = lighting(level, executor);
             CompletableFuture<?> chunky = Boolean.getBoolean("lodgen.test.chunky")
                     ? ChunkyCheck.run(8192, -8192, 8) : CompletableFuture.completedFuture(null);
@@ -123,6 +127,7 @@ public final class IntegrationCheck {
                 } catch (Throwable failure) {
                     fail(failure);
                 } finally {
+                    requests.close();
                     generator.close();
                     data.close();
                     overlapData.close();

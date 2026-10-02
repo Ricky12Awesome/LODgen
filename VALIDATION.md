@@ -1,6 +1,31 @@
 # LODgen development validation — 0.0.0
 
-This update makes native chunk jobs start at the selected center and expand through compact patches. It follows Distant Horizons’ live generator plan and prevents completion callbacks from refilling automatic jobs after generation is disabled or their area changes. The version remains **0.0.0**, the config still has nine settings, and the GitHub workflow is unchanged.
+This update fixes integration and direct benchmark callers that submitted more FEATURES requests than the live native batch limit permits. Runtime code and production jars are unchanged. The version remains **0.0.0**, and the GitHub workflow is unchanged.
+
+## CI admission regression
+
+A fresh 26.1.2 Fabric server with two CPUs exposed reproduced the reported failure: three direct test requests hit a two-batch gate, causing `RejectedExecutionException: LOD generation queue full`. Cached DH thread settings on a larger machine masked the failure. The test caller now waits for capacity using the same live admission check as DH's normal queue. It preserves concurrent requests when capacity permits and propagates native failures.
+
+The existing workflow build and integration commands passed locally for all eight targets with fresh DH configuration and `JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=2`. JDK 21 runs 1.21.1 servers; JDK 25 runs 26.x servers. No integration options, workload checks or production limits were disabled or raised for this matrix.
+
+| Minecraft | Loader | Production build / tests | Integration build / tests | World check | Reopen check |
+| --- | --- | --- | --- | --- | --- |
+| 1.21.1 | Fabric | PASS / 59 | PASS / 62 | PASS | PASS |
+| 1.21.1 | NeoForge | PASS / 59 | PASS / 62 | PASS | PASS |
+| 26.1.2 | Fabric | PASS / 59 | PASS / 62 | PASS | PASS |
+| 26.1.2 | NeoForge | PASS / 59 | PASS / 62 | PASS | PASS |
+| 26.2 | Fabric | PASS / 59 | PASS / 62 | PASS | PASS |
+| 26.2 | NeoForge | PASS / 59 | PASS / 62 | PASS | PASS |
+| 26.3 | Fabric | PASS / 59 | PASS / 62 | PASS | PASS |
+| 26.3 | NeoForge | PASS / 59 | PASS / 62 | PASS | PASS |
+
+Each world check still produces 12,288 LOD columns, checks lighting and shared output ownership, verifies distant LOD-only chunks create no native chunk/POI/entity files, and confirms overlapping normal FULL generation preserves a player edit and saves normally. Reopening verifies persisted edits and byte-for-byte preservation of an existing region loaded through FEATURES.
+
+The integration builds execute **496 unit tests**, including three new regressions per target for one-slot/two-slot admission, a lowered live limit, failure propagation and close/cancellation ownership. The production builds execute the existing **472 tests**. All have zero failures, errors or skips. Production class bytes match the integration fixtures, and production jar hashes match the previous runtime validation.
+
+A separate 26.1.2 Fabric direct benchmark smoke check passed with eight requested workers, a two-batch limit and 64 target chunks, including real DH storage updates and reopening. This tiny check makes no performance claim. Evidence is in `dist/validation-lodgen-0.0.0/ci-admission/`.
+
+The runtime behavior and previously completed startup, DH plan and Voxy checks below remain applicable to the unchanged production jars.
 
 ## Generation behavior
 
@@ -36,7 +61,7 @@ All **16 packaged client/server startup checks** load DH and C2ME without openin
 
 The **26.1.2 Fabric DH plan check** generates **156 native LOD targets** with at most a **5c** automatic radius. It exercises the actual DH rough generator and native dispatch queue, both chunk-enabled plans with the addon automatic toggle off, center-before-edge selection, Surface Only opt-in chunks, mid-task disable/drain/re-enable, disabled saved-radius generation, commands with DH disabled and fixed-area surface-before-chunk sequencing. No native, POI or entity region files appear in its distant test areas after shutdown. Its worker limit is explicitly pinned through DH’s config API so the live-disable check observes one batch at a time.
 
-The existing small command/restart regression uses **5c / 100 targets**, a **1c saved radius / four native saves**, plus four automatic fixed-center targets. It checks command controls, unfinished-task resume with the new traversal, status/ETA, rough-first fixed generation and exact region-header persistence boundaries. The Voxy world/reload check uses at most **88 targets** and retains snapshot/light/mip parity, saved-radius, action-bar and command-dimension checks. Large performance runs and other-version worlds are not repeated.
+The existing small command/restart regression uses **5c / 100 targets**, a **1c saved radius / four native saves**, plus four automatic fixed-center targets. It checks command controls, unfinished-task resume with the new traversal, status/ETA, rough-first fixed generation and exact region-header persistence boundaries. The Voxy world/reload check uses at most **88 targets** and retains snapshot/light/mip parity, saved-radius, action-bar and command-dimension checks. These earlier checks did not repeat large performance runs or other-version worlds; the CI admission matrix above now covers the default world fixture on all targets.
 
 The baseline integration runner now disables DH hooks through a test-only mixin plugin. Turning off the production automatic toggle intentionally keeps DH chunk-phase interception active, so it no longer represents a builtin-DH benchmark.
 
@@ -50,6 +75,6 @@ xvfb-run -a python3 scripts/voxy-test.py --mc 26.1.2 --world --reload
 xvfb-run -a python3 scripts/voxy-test.py --mc 26.2
 ```
 
-Evidence, artifact hashes and byte audits are collected in `dist/validation-lodgen-0.0.0/`. All checks use disposable directories. The stopped testing instance receives its matching 26.1.2 Fabric production jar with a backup outside `mods/`, preserving its configuration.
+Evidence, artifact hashes and byte audits are collected in `dist/validation-lodgen-0.0.0/`. All checks use disposable directories. The stopped testing instance received its matching 26.1.2 Fabric production jar during the previous runtime update, with a backup outside `mods/`, preserving its configuration.
 
 Previous display validation is retained in [docs/VALIDATION-progress-0.0.0.md](docs/VALIDATION-progress-0.0.0.md); prior sustained-generation measurements remain in [docs/VALIDATION-sustained-0.0.0.md](docs/VALIDATION-sustained-0.0.0.md). No new performance claim is made for this update.

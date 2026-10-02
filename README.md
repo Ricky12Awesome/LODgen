@@ -185,6 +185,13 @@ xvfb-run -a python3 scripts/startup-test.py
 
 The Linux startup runner uses JDK 21 for 1.21.1 and JDK 25 for 26.x. It accepts `--mc`, `--loader`, `--java`, and `--skip-build` to check a single target or reuse its startup fixture. Xvfb and Mesa allow CI to render menus without a physical display. Official client assets and loader installations are cached under `build/`; first runs download them. Reports/logs stay under `build/<minecraft>/<loader>/startup/`. Production class files must match the packaged fixture byte-for-byte, and test probes must be absent from the regular jar. These startup checks are available locally; the GitHub workflow keeps its existing build and packaged-server integration steps.
 
+Direct integration and benchmark requests honor DH's live admission limit, including when fewer native batches are available than requested workers. Integration builds include regressions for one-slot and two-slot limits, a lowered live limit, failures and draining during close. To exercise the existing CI check on a larger machine, expose two CPUs and use a fresh run directory so cached DH thread settings cannot mask the small budget:
+
+```sh
+JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=2 python3 scripts/integration-test.py \
+  --mc 26.1.2 --loader fabric --java /path/to/jdk-25/bin/java --run-name ci-two-cpu
+```
+
 The focused suite covers TOML parsing, live admission limits, the 512-to-128 boundary, negative/world-border coordinates, shared ownership, cancellation, feature scopes, radius rounding and restart progress. The command check uses only a 5c task (100 targets), a 1c saved radius (four native saves), and four extra fixed-center DH targets:
 
 ```sh
