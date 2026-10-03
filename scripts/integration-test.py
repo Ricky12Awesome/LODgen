@@ -43,6 +43,9 @@ parser.add_argument("--extra-mod", type=Path, action="append", default=[], help=
 parser.add_argument("--original-predicates", action="store_true", help="Benchmark vanilla disk predicates with the same LODgen pipeline")
 parser.add_argument("--original-ore-allocations", action="store_true", help="Benchmark vanilla ore readers/iterators with the same LODgen pipeline")
 parser.add_argument("--verify-terrain", action="store_true", help="Hash all benchmark LOD columns, including blocks, biomes and lighting")
+parser.add_argument("--cave-mode", choices=("generate", "fill", "empty"), default="generate", help="LOD-only cave mode in the disposable test")
+parser.add_argument("--cave-check", action="store_true", help="Compare surface layers, deep interior and saved chunk isolation across all three cave modes")
+parser.add_argument("--cave-center", nargs=2, type=int, metavar=("CHUNK_X", "CHUNK_Z"), help="Choose another terrain area for --cave-check")
 parser.add_argument("--verify-predicates", action="store_true", help="Compare every optimized disk test against vanilla on the same live terrain")
 parser.add_argument("--heap", default="8G", help="Maximum heap for world tests")
 parser.add_argument("--optimized", action="store_true", help="26.2 Fabric optimization stack, ZGC and compact object headers")
@@ -51,6 +54,10 @@ parser.add_argument("--trace-ownership", action="store_true", help="Log the call
 parser.add_argument("--vanilla", action="store_true", help="Test without C2ME")
 parser.add_argument("--baseline", action="store_true", help="Run the same check with DH's original FEATURES generator")
 args = parser.parse_args()
+if args.cave_check and (args.startup_only or args.task_check or args.dh_plan_check or args.distance_check or args.benchmark or args.baseline):
+    parser.error("--cave-check runs all three modes and cannot be combined with other check modes")
+if args.cave_center and not args.cave_check:
+    parser.error("--cave-center requires --cave-check")
 if args.instance_optimizations and not args.worldgen_instance:
     parser.error("--instance-optimizations requires --worldgen-instance")
 if args.run_name and not re.fullmatch(r"[A-Za-z0-9_-]+", args.run_name):
@@ -107,10 +114,15 @@ def download(url, path, expected=None):
 
 
 def modrinth(version, name):
+    cached = ROOT / "build" / "test-mod-cache" / f"{version}.jar"
+    # Version IDs are immutable; downloads are checksum-verified below. Reuse
+    # them without making every repeat depend on Modrinth being reachable.
+    if cached.exists():
+        shutil.copyfile(cached, run / "mods" / f"{name}.jar")
+        return
     with urllib.request.urlopen(f"https://api.modrinth.com/v2/version/{version}", timeout=60) as response:
         metadata = json.load(response)
     artifact = next(f for f in metadata["files"] if f["primary"])
-    cached = ROOT / "build" / "test-mod-cache" / f"{version}.jar"
     download(artifact["url"], cached, artifact["hashes"]["sha512"])
     shutil.copyfile(cached, run / "mods" / f"{name}.jar")
 
@@ -170,7 +182,7 @@ if args.native_workers:
     c2me_config = run / "config" / "c2me.toml"
     current = c2me_config.read_text() if c2me_config.exists() else "version = 3\nglobalExecutorParallelism = \"default\"\n"
     c2me_config.write_text(re.sub(r"(?m)^globalExecutorParallelism\s*=.*$", f"globalExecutorParallelism = {args.native_workers}", current))
-(run / "config" / "lodgen.toml").write_text(f"enabled={'false' if args.baseline else 'true'}\ncpuLoad=3\n")
+(run / "config" / "lodgen.toml").write_text(f"enabled={'false' if args.baseline else 'true'}\ncpuLoad=3\ncaveMode=\"{args.cave_mode}\"\n")
 (run / "server.properties").write_text("online-mode=false\nserver-port=0\nlevel-seed=123456789\n"
                                        "view-distance=2\nsimulation-distance=2\nmax-tick-time=180000\n")
 heap = "-Xmx2G" if args.startup_only else "-Xmx" + args.heap
@@ -188,7 +200,7 @@ else:
              installer)
     argument_file = run / "libraries" / "net" / "neoforged" / "neoforge" / nf / "unix_args.txt"
     cached_libraries = ROOT / "build" / args.mc / args.loader / "selftest/packaged-server/libraries"
-    if (args.startup_only or args.task_check) and not argument_file.exists() and (cached_libraries / "net" / "neoforged" / "neoforge" / nf / "unix_args.txt").exists():
+    if (args.startup_only or args.task_check or args.cave_check) and not argument_file.exists() and (cached_libraries / "net" / "neoforged" / "neoforge" / nf / "unix_args.txt").exists():
         shutil.copytree(cached_libraries, run / "libraries", dirs_exist_ok=True)
     if not argument_file.exists():
         subprocess.run([args.java, "-jar", str(installer), "--installServer"], cwd=run, check=True)
@@ -213,11 +225,14 @@ benchmark_options = [f"-Dlodgen.test.warmupAxis={args.warmup_axis}", f"-Dlodgen.
                      f"-Dlodgen.test.frontierRadius={args.frontier_radius}",
                      f"-Dlodgen.test.storeLods={str(args.store_lods).lower()}"]
 benchmark_options += [f"-Dlodgen.test.originalPredicates={str(args.original_predicates).lower()}",
+                      f"-Dlodgen.test.caves={str(args.cave_check).lower()}",
                       f"-Dlodgen.test.originalOreAllocations={str(args.original_ore_allocations).lower()}",
                       f"-Dlodgen.test.verifyPredicates={str(args.verify_predicates).lower()}",
                       f"-Dlodgen.test.verifyTerrain={str(args.verify_terrain).lower()}"]
 if args.trace_ownership:
     benchmark_options.append("-Dlodgen.test.traceOwnership=true")
+if args.cave_center:
+    benchmark_options += [f"-Dlodgen.test.caveX={args.cave_center[0]}", f"-Dlodgen.test.caveZ={args.cave_center[1]}"]
 if args.chunky_working_count:
     benchmark_options.append(f"-Dchunky.maxWorkingCount={args.chunky_working_count}")
 if args.optimized or args.instance_optimizations:
@@ -236,6 +251,23 @@ if args.startup_only:
     if any(world.rglob("*.mca")):
         raise SystemExit("Startup-only check generated chunks")
     print(report.read_text().strip())
+    raise SystemExit(0)
+if args.cave_check:
+    saved_targets = {(x, z) for x in (8191, 8192) for z in (-8193, -8192)}
+    for region in world.rglob("r.*.*.mca"):
+        _, rx, rz, _ = region.name.split(".")
+        rx, rz = int(rx), int(rz)
+        if rx not in (255, 256) or rz not in (-257, -256):
+            continue
+        header = region.read_bytes()[:4096]
+        for index in range(1024):
+            if not int.from_bytes(header[index * 4:index * 4 + 4], "big"):
+                continue
+            chunk = (rx * 32 + index % 32, rz * 32 + index // 32)
+            if chunk not in saved_targets:
+                raise SystemExit(f"Mixed cave-mode LOD chunk was saved: {region}: {chunk}")
+    print(report.read_text().strip())
+    print("PASS: mixed cave-mode LOD targets produced no native, POI or entity saves after shutdown.")
     raise SystemExit(0)
 if args.distance_check:
     for region in world.rglob("r.*.*.mca"):

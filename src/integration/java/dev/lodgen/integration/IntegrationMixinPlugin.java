@@ -26,6 +26,47 @@ public final class IntegrationMixinPlugin implements IMixinConfigPlugin {
     @Override public void preApply(String target, ClassNode node, String mixin, IMixinInfo info) { delegate.preApply(target, node, mixin, info); }
     @Override public void postApply(String target, ClassNode node, String mixin, IMixinInfo info) {
         delegate.postApply(target, node, mixin, info);
+        if (Boolean.getBoolean("lodgen.test.caves") && mixin.endsWith("CaveFeatureMixin")) {
+            for (var method : node.methods) for (var instruction : method.instructions.toArray()) {
+                if (instruction instanceof org.objectweb.asm.tree.MethodInsnNode call && call.name.equals("skipFeature")) {
+                    int featureLocal = method.maxLocals++;
+                    boolean modern = org.objectweb.asm.Type.getArgumentTypes(method.desc).length == 6;
+                    var capture = new org.objectweb.asm.tree.InsnList();
+                    capture.add(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.DUP));
+                    capture.add(new org.objectweb.asm.tree.VarInsnNode(org.objectweb.asm.Opcodes.ASTORE, featureLocal));
+                    method.instructions.insertBefore(instruction, capture);
+                    var probe = new org.objectweb.asm.tree.InsnList();
+                    probe.add(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.DUP));
+                    probe.add(new org.objectweb.asm.tree.VarInsnNode(org.objectweb.asm.Opcodes.ALOAD, featureLocal));
+                    probe.add(new org.objectweb.asm.tree.VarInsnNode(org.objectweb.asm.Opcodes.ALOAD, modern ? 2 : 1));
+                    probe.add(new org.objectweb.asm.tree.VarInsnNode(org.objectweb.asm.Opcodes.ALOAD, modern ? 5 : 4));
+                    probe.add(new org.objectweb.asm.tree.MethodInsnNode(org.objectweb.asm.Opcodes.INVOKESTATIC,
+                            "dev/lodgen/integration/CaveModeCheck", "feature", "(ZLjava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V", false));
+                    method.instructions.insert(instruction, probe);
+                    method.maxStack = Math.max(method.maxStack, 5);
+                }
+            }
+        }
+        if (Boolean.getBoolean("lodgen.test.caves") && mixin.endsWith("CaveNoiseMixin")) {
+            for (var method : node.methods) {
+                int chunkLocal = -1;
+                for (var instruction : method.instructions.toArray()) {
+                    if (instruction instanceof org.objectweb.asm.tree.MethodInsnNode call && call.name.contains("lodgen$water"))
+                        chunkLocal = org.objectweb.asm.Type.getArgumentTypes(call.desc).length == 7 ? 1 : 4;
+                }
+                if (chunkLocal < 0) continue;
+                for (var instruction : method.instructions.toArray()) {
+                    if (instruction.getOpcode() != org.objectweb.asm.Opcodes.RETURN) continue;
+                    var probe = new org.objectweb.asm.tree.InsnList();
+                    probe.add(new org.objectweb.asm.tree.VarInsnNode(org.objectweb.asm.Opcodes.ALOAD, 0));
+                    probe.add(new org.objectweb.asm.tree.VarInsnNode(org.objectweb.asm.Opcodes.ALOAD, chunkLocal));
+                    probe.add(new org.objectweb.asm.tree.MethodInsnNode(org.objectweb.asm.Opcodes.INVOKESTATIC,
+                            "dev/lodgen/integration/CaveModeCheck", "surface", "(Ljava/lang/Object;Ljava/lang/Object;)V", false));
+                    method.instructions.insertBefore(instruction, probe);
+                }
+                method.maxStack = Math.max(method.maxStack, 2);
+            }
+        }
         if (!Boolean.getBoolean("lodgen.test.verifyPredicates") || !mixin.endsWith("DiskFeatureMixin")) return;
         // Instrument only the packaged test fixture. Production has no verifier
         // branch or extra predicate evaluation in its hot path.

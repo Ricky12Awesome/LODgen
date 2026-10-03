@@ -15,6 +15,9 @@ public final class RendererSinks {
         default int radius(ServerLevel level) { return 0; }
         default dev.lodgen.generation.GenerationProgress progress(ServerLevel level) { return null; }
         CompletableFuture<Void> convert(ServerLevel level, List<ChunkAccess> chunks);
+        default CompletableFuture<Void> convert(ServerLevel level, ServerLevel source, List<ChunkAccess> chunks) {
+            return convert(level, chunks);
+        }
     }
     private static volatile VoxySink voxy;
     public static void voxy(VoxySink sink) { voxy = sink; }
@@ -25,12 +28,15 @@ public final class RendererSinks {
                 && (!useVoxy || voxy != null && voxy.ready(level));
     }
     public static CompletableFuture<Void> convert(ServerLevel level, List<ChunkAccess> chunks, Executor workers, boolean useDh, boolean useVoxy) {
+        return convert(level, level, chunks, workers, useDh, useVoxy);
+    }
+    public static CompletableFuture<Void> convert(ServerLevel level, ServerLevel source, List<ChunkAccess> chunks, Executor workers, boolean useDh, boolean useVoxy) {
         if (chunks.isEmpty()) return CompletableFuture.completedFuture(null);
-        var dh = useDh ? DhTaskSink.convert(level, chunks, workers) : CompletableFuture.<Void>completedFuture(null);
+        var dh = useDh ? DhTaskSink.convert(level, source, chunks, workers) : CompletableFuture.<Void>completedFuture(null);
         var sink = voxy;
         var vx = !useVoxy ? CompletableFuture.<Void>completedFuture(null)
                 : sink == null ? CompletableFuture.<Void>failedFuture(new java.util.concurrent.CancellationException("Voxy is shutting down"))
-                : sink.convert(level, chunks);
+                : sink.convert(level, source, chunks);
         return CompletableFuture.allOf(dh, vx);
     }
     public static int voxyRadius(ServerLevel level) { var sink = voxy; return sink == null ? 0 : sink.radius(level); }

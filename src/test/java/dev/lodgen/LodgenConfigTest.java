@@ -14,11 +14,30 @@ class LodgenConfigTest {
     @Test void createsTomlAndRoundTripsAllSettings() throws Exception {
         Path file = directory.resolve("lodgen.toml");
         assertEquals(LodgenConfig.DEFAULTS, LodgenConfig.load(file));
-        var edited = new LodgenConfig(false, 5, 64, true, 250, dev.lodgen.generation.GenerationCenter.CUSTOM, 1234, -5678, 2);
+        var edited = new LodgenConfig(false, 5, 64, true, 250, dev.lodgen.generation.GenerationCenter.CUSTOM, 1234, -5678, 2, dev.lodgen.generation.CaveMode.EMPTY);
         LodgenConfig.write(file, edited);
         assertEquals(edited, LodgenConfig.read(file));
         assertTrue(Files.readString(file).contains("cpuLoad = 5"));
         try (var paths = Files.list(directory)) { assertEquals(1, paths.count(), "No temporary file remains"); }
+    }
+
+    @Test void caveModesAreOptionalCaseInsensitiveAndRoundTrip() throws Exception {
+        Path file = directory.resolve("lodgen.toml");
+        Files.writeString(file, "enabled=true\n");
+        assertEquals(dev.lodgen.generation.CaveMode.GENERATE, LodgenConfig.read(file).caveMode());
+        for (var mode : dev.lodgen.generation.CaveMode.values()) {
+            Files.writeString(file, "caveMode='" + mode.name() + "'\n");
+            var config = LodgenConfig.read(file);
+            assertEquals(mode, config.caveMode());
+            LodgenConfig.write(file, config);
+            assertEquals(config, LodgenConfig.read(file));
+        }
+        assertEquals(dev.lodgen.generation.CaveMode.GENERATE, dev.lodgen.generation.CaveMode.EMPTY.next());
+        for (String value : new String[]{"caveMode='invalid'", "caveMode=true"}) {
+            Files.writeString(file, value);
+            assertFalse(LodgenConfig.load(file).enabled());
+            assertEquals(value, Files.readString(file));
+        }
     }
 
     @Test void parsesRealTomlAndPreservesUnrelatedTables() throws Exception {

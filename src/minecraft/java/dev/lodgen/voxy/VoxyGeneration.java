@@ -40,9 +40,12 @@ public final class VoxyGeneration {
                         catch (ReflectiveOperationException error) { return 0; }
                     }
                     @Override public CompletableFuture<Void> convert(ServerLevel level, java.util.List<net.minecraft.world.level.chunk.ChunkAccess> chunks) {
+                        return convert(level, level, chunks);
+                    }
+                    @Override public CompletableFuture<Void> convert(ServerLevel level, ServerLevel source, java.util.List<net.minecraft.world.level.chunk.ChunkAccess> chunks) {
                         try {
                             var target = session(level);
-                            return target == null ? CompletableFuture.failedFuture(new CancellationException("Voxy is not ready")) : target.convert(chunks);
+                            return target == null ? CompletableFuture.failedFuture(new CancellationException("Voxy is not ready")) : target.convert(source, chunks);
                         } catch (ReflectiveOperationException error) { return CompletableFuture.failedFuture(error); }
                     }
                 });
@@ -114,10 +117,10 @@ public final class VoxyGeneration {
             workers = new dev.lodgen.GenerationWorkers("LODgen Voxy conversion");
         }
 
-        CompletableFuture<Void> convert(java.util.List<net.minecraft.world.level.chunk.ChunkAccess> chunks) {
+        CompletableFuture<Void> convert(ServerLevel source, java.util.List<net.minecraft.world.level.chunk.ChunkAccess> chunks) {
             return CompletableFuture.supplyAsync(() -> {
                 if (closed) throw new CancellationException("Voxy session closed");
-                return VoxyBridge.snapshot(level, chunks);
+                return VoxyBridge.snapshot(source, chunks);
             }, level.getServer()).thenAcceptAsync(sections -> {
                 conversionLock.readLock().lock();
                 try {

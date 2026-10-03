@@ -54,6 +54,18 @@ class TaskTest {
         }
     }
     @TempDir Path directory;
+    @Test void caveModeSurvivesRestartAndOldCheckpointsUseGenerate() throws Exception {
+        var area = new GenerationArea(0, 0, 4, 0);
+        var progress = new TaskProgress(new SquarePlan(area));
+        Path path = directory.resolve("caves/task.toml");
+        for (var mode : dev.lodgen.generation.CaveMode.values()) {
+            var record = new TaskRecord("minecraft:overworld", area, true, false, true, progress.snapshot(), mode);
+            TaskStore.write(path, record);
+            assertEquals(record, TaskStore.read(path));
+        }
+        java.nio.file.Files.writeString(path, java.nio.file.Files.readString(path).replaceAll("(?m)^caveMode.*\\R", ""));
+        assertEquals(dev.lodgen.generation.CaveMode.GENERATE, TaskStore.read(path).caveMode());
+    }
     @Test void commandExamplesAndRoundUpUseTheSameChunkRadii() {
         assertEquals(512, RadiusParser.chunks("512c"));
         assertEquals(512, RadiusParser.chunks("8192"));

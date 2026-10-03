@@ -29,6 +29,7 @@ generationCenter = "current"
 centerX = 0
 centerZ = 0
 savedChunkRadius = 0
+caveMode = "generate"
 showChunksPerSecond = false
 chunksPerSecondUpdateIntervalMs = 1000
 ```
@@ -54,6 +55,20 @@ For maximum OpenCL throughput, use Java 25+ with a sufficiently large heap, `-XX
 Chunk jobs begin at the selected center and expand through nearby compact 32×32 patches. DH's native chunk queue uses the same center-relative priority, rather than an absolute coordinate ordering that could favor the outer corner. Lowering a radius, moving the center or disabling generation stops completion callbacks from refilling the old area; admitted work finishes safely.
 
 `savedChunkRadius` is a radius in **chunks**, default **0**. Targets inside it save as ordinary terrain; targets outside it remain LOD-only. If the saved radius exceeds the LOD radius, generation extends to the saved radius and only converts LODs inside the LOD radius. The saved area is also generated when its LODs already exist. Previously saved chunks stay saved after lowering this setting. Ordinary player and Chunky requests can still adopt terrain outside the saved radius.
+
+**LOD caves** (`caveMode`) has three choices:
+
+| Mode | New LOD-only terrain |
+| --- | --- |
+| `generate` (default) | Normal caves, carvers and underground decoration. |
+| `fill` | Remove cave noise from the terrain formula before generation; skip carvers, underground structures and deep feature placements. The interior stays stone/deepslate. |
+| `empty` | Also generate a hollow terrain shell directly, retaining surface layers, ocean floors, water and the terrain supporting trees and surface structures. The deeper interior starts as air. |
+
+Fill/Empty generate in temporary native worlds with their own chunks and lighting. They do not generate caves and remove them afterward. Surface decoration remains enabled; feature placements can differ when their surrounding terrain changes. Shell thickness follows terrain density so slopes, overhangs and ocean floors remain supported. The modes currently support Overworld-style noise terrain, including vanilla, WWOO and large-biome/amplified formulas; other dimensions and unrecognized formulas retain Generate.
+
+WWOO uses the bottom eight layers as palette markers to select surface trees and terrain. Fill retains those selectors. Empty handles their reads/writes in a separate metadata array, so those markers never become physical blocks or renderer data. Surface features are classified against the terrain floor before decoration; tall trees cannot make later surface placements look underground.
+
+Saved-radius targets, normal player/Chunky requests and existing saved regions always use the original world and normal generation. Visiting an area whose LODs used Fill/Empty creates ordinary chunks with caves; temporary chunks cannot be adopted into the save. Changing the mode restarts active/completed automatic areas. Explicit tasks retain their selected mode across pause and restart; start a new task to change their mode. Existing LODs outside newly requested areas are not automatically cleared.
 
 ## Command tasks
 
@@ -233,6 +248,8 @@ See [VALIDATION.md](VALIDATION.md) for current checks. The 26.2 vanilla/OpenCL m
 WWOO's disk targets now share repeated neighbor reads, check native palettes for impossible placements, and avoid unnecessary neighbor tests. Custom DH generators such as SeedGen obey fixed-task ownership of the chunk phase. The [WWOO validation](docs/VALIDATION-wwoo-0.0.0.md) records 499–567 cps versus 455–467 cps for the original disk evaluation, plus live predicate and all-target compatibility checks.
 
 Native ore placements also reuse block readers and immutable target cursors. The [WWOO variability follow-up](docs/VALIDATION-wwoo-jitter-0.0.0.md) explains the five-second CPS window, feature workload and concurrent GC work, with allocation measurements and comparison limits.
+
+The [LOD cave-mode validation](docs/VALIDATION-caves-0.0.0.md) records the controlled WWOO comparison: **579 CPS Generate, 668 Fill (+15%), and 729 Empty (+26%)**, with surface decoration preserved, saved chunks unchanged, and native cave checks on all eight targets.
 
 Upstream: [Distant Horizons](https://gitlab.com/distant-horizons-team/distant-horizons), [C2ME](https://github.com/RelativityMC/C2ME-fabric), [Chunky](https://github.com/pop4959/Chunky).
 

@@ -26,9 +26,9 @@ public final class TaskCheck {
     public static void run(MinecraftServer server) {
         try {
             started = System.nanoTime();
-            LodgenConfig.apply(new LodgenConfig(true, 1, 0, false, 1000, GenerationCenter.CURRENT, 0, 0, 0));
+            LodgenConfig.apply(new LodgenConfig(true, 1, 0, false, 1000, GenerationCenter.CURRENT, 0, 0, 0, LodgenConfig.INSTANCE.caveMode()));
             if (AUTOMATIC) {
-                LodgenConfig.apply(new LodgenConfig(true, 1, 5, false, 1000, GenerationCenter.CUSTOM, 65536, -65536, 1));
+                LodgenConfig.apply(new LodgenConfig(true, 1, 5, false, 1000, GenerationCenter.CUSTOM, 65536, -65536, 1, LodgenConfig.INSTANCE.caveMode()));
                 com.seibel.distanthorizons.core.config.Config.Common.WorldGenerator.chunkGeneratorMode.set(com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiDistantGeneratorMode.FEATURES);
             }
             // DH owns the budget when installed. Keep this tiny task's admission
@@ -101,7 +101,7 @@ public final class TaskCheck {
                 if (AUTOMATIC) {
                     command(server, "lodgen cancel");
                     require(record(server).automatic() && record(server).progress().state() == TaskProgress.State.STOPPED, "Cancel did not checkpoint automatic STOPPED");
-                    LodgenConfig.apply(new LodgenConfig(true, 1, 1, false, 1000, GenerationCenter.CUSTOM, 196608, -196608, 0));
+                    LodgenConfig.apply(new LodgenConfig(true, 1, 1, false, 1000, GenerationCenter.CUSTOM, 196608, -196608, 0, LodgenConfig.INSTANCE.caveMode()));
                     stoppedAt = System.nanoTime(); stoppedCount = dev.lodgen.minecraft.PersistenceRegistry.throughput(server.overworld()).totalCompleted();
                     stage = 4; return;
                 }
@@ -124,7 +124,7 @@ public final class TaskCheck {
                 if (record(server).area().radius() != 1) return;
                 require(record(server).progress().state() == TaskProgress.State.COMPLETE, "Completed larger radius was regenerated on shrink");
                 require(dev.lodgen.minecraft.PersistenceRegistry.throughput(server.overworld()).totalCompleted() == stoppedCount, "Shrink generated already completed chunks");
-                LodgenConfig.apply(new LodgenConfig(true, 1, 1, false, 1000, GenerationCenter.CUSTOM, 131072, -131072, 0)); stage = 3;
+                LodgenConfig.apply(new LodgenConfig(true, 1, 1, false, 1000, GenerationCenter.CUSTOM, 131072, -131072, 0, LodgenConfig.INSTANCE.caveMode())); stage = 3;
             } else if (status.contains("COMPLETE")) {
                 require(status.contains("progress=100/100"), status);
                 require(status.contains("ETA=0s"), "Completed task retained an unfinished estimate: " + status);
@@ -134,9 +134,9 @@ public final class TaskCheck {
                 com.seibel.distanthorizons.core.config.Config.Common.WorldGenerator.chunkGeneratorMode.set(com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiDistantGeneratorMode.FEATURES);
                 if (AUTOMATIC) {
                     stoppedCount = dev.lodgen.minecraft.PersistenceRegistry.throughput(server.overworld()).totalCompleted();
-                    LodgenConfig.apply(new LodgenConfig(true, 1, 1, false, 1000, GenerationCenter.CUSTOM, 65536, -65536, 0)); stage = 6;
+                    LodgenConfig.apply(new LodgenConfig(true, 1, 1, false, 1000, GenerationCenter.CUSTOM, 65536, -65536, 0, LodgenConfig.INSTANCE.caveMode())); stage = 6;
                 } else {
-                    LodgenConfig.apply(new LodgenConfig(true, 1, 1, false, 1000, GenerationCenter.CUSTOM, 131072, -131072, 0)); stage = 3;
+                    LodgenConfig.apply(new LodgenConfig(true, 1, 1, false, 1000, GenerationCenter.CUSTOM, 131072, -131072, 0, LodgenConfig.INSTANCE.caveMode())); stage = 3;
                 }
             }
         } catch (Throwable error) { fail(server, error); }

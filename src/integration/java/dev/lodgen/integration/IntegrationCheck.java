@@ -28,6 +28,7 @@ public final class IntegrationCheck {
     private static final Path REPORT = Path.of(Boolean.getBoolean("lodgen.test.reload") ? "integration-reload-result.txt" : "integration-result.txt");
 
     public static void run(MinecraftServer server) {
+        if (Boolean.getBoolean("lodgen.test.caves")) { CaveModeCheck.run(server); return; }
         if (Boolean.getBoolean("lodgen.test.tasks")) { TaskCheck.run(server); return; }
         ExecutorService executor = Executors.newFixedThreadPool(8);
         try {
@@ -118,7 +119,8 @@ public final class IntegrationCheck {
                             require(overlappingColumn != null && !overlappingColumn.isEmpty(), "Missing overlapping LOD column " + x + "," + z);
                         }
                     }
-                    if (LodgenConfig.INSTANCE.enabled()) require(dev.lodgen.minecraft.PersistenceRegistry.get(level).suppress(LOD_X, LOD_Z), "DH-only chunk lost save protection");
+                    if (LodgenConfig.INSTANCE.enabled()) require(dev.lodgen.minecraft.PersistenceRegistry.get(
+                            dev.lodgen.minecraft.LodGenerationWorld.get(level, LodgenConfig.INSTANCE.caveMode())).suppress(LOD_X, LOD_Z), "DH-only chunk lost save protection");
                     level.getChunkSource().save(true);
                     Path world = Path.of("world");
                     try (var paths = Files.walk(world)) {

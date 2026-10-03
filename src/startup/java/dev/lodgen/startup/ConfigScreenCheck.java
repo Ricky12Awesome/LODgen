@@ -25,7 +25,7 @@ public final class ConfigScreenCheck {
         var lists = screen.children().stream().filter(child -> child instanceof ContainerObjectSelectionList<?>).toList();
         if (lists.size() != 1 || screen.children().size() != 4) throw new AssertionError("Expected one settings list and three footer buttons");
         var list = (ContainerObjectSelectionList<?>) lists.getFirst();
-        if (list.children().size() != 9) throw new AssertionError("All nine settings must be on the same page");
+        if (list.children().size() != 10) throw new AssertionError("All ten settings must be on the same page");
         return list;
     }
     private static AbstractWidget control(ContainerObjectSelectionList<?> list, int index) {
@@ -74,7 +74,11 @@ public final class ConfigScreenCheck {
         boolean custom = original.generationCenter() == dev.lodgen.generation.GenerationCenter.CUSTOM;
         if (input(list, "centerX").active != custom || input(list, "centerZ").active != custom) throw new AssertionError("Custom coordinate activation differs from configured center");
         var center = (Button) control(list, 1);
-        var cpu = (Button) control(list, 6);
+        var caves = (Button) control(list, 6);
+        var caveLabel = caves.getMessage();
+        for (int i = 0; i < 3; i++) press(caves);
+        if (!caveLabel.equals(caves.getMessage())) throw new AssertionError("Cave mode did not cycle through all three choices");
+        var cpu = (Button) control(list, 7);
         if (dev.lodgen.ModSupport.loaded("distanthorizons")) {
             if (cpu.active || !cpu.getMessage().getString().contains("DH")) throw new AssertionError("DH CPU load must control the disabled Voxy setting");
         } else {

@@ -42,7 +42,7 @@ public final class FeatureGenerationService implements AutoCloseable {
                         if (closed) throw new CancellationException("Level closed");
                         var wrapped = factory.createChunkWrapper(new Object[]{nativeChunk, level.getWrappedMcObject()});
                         wrapped.createDhHeightMaps();
-                        var lit = new LitChunkWrapper(wrapped, nativeChunk, level.getWrappedMcObject());
+                        var lit = new LitChunkWrapper(wrapped, nativeChunk, batch.sourceLevel());
                         try (FullDataSourceV2 source = FullDataSourceV2.createFromChunk(level, lit)) {
                             if (source == null) throw new IllegalStateException("DH rejected generated chunk at " + nativeChunk.getPos());
                             destination.updateFromDataSource(source);

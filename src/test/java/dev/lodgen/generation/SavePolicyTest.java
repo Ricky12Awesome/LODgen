@@ -4,6 +4,15 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SavePolicyTest {
+    @org.junit.jupiter.api.Test void isolatedTerrainCannotBePromotedOrSaved() {
+        var policy = new SavePolicy(true);
+        policy.claim(1, 2, true);
+        policy.claimArea(-64, -64, 128, 128, key -> true);
+        policy.promote(1, 2); policy.promoteArea(1, 2, 20); policy.normalRequest(1, 2, 20);
+        assertTrue(policy.suppress(1, 2)); assertTrue(policy.suppress(9000, -9000));
+        assertTrue(policy.generated(1, 2)); assertFalse(policy.permanent(1, 2));
+        assertThrows(IllegalStateException.class, () -> policy.saveGenerated(1, 2));
+    }
     @Test void rectangleClaimsReuseDependenciesAndKeepNormalOwnership() {
         var policy = new SavePolicy();
         java.util.concurrent.atomic.AtomicInteger lookups = new java.util.concurrent.atomic.AtomicInteger();

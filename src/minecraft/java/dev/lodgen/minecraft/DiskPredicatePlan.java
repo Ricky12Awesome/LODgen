@@ -75,6 +75,7 @@ public final class DiskPredicatePlan {
             for (int cz = from.getZ() >> 4; cz <= to.getZ() >> 4; cz++) {
                 position.set(cx << 4, from.getY(), cz << 4);
                 var chunk = reads.chunk(position);
+                if (CaveMarkers.at(chunk, lowY) != null || CaveMarkers.at(chunk, highY) != null) return false;
                 // A live LevelChunk may be edited by a player while its
                 // neighboring feature runs. Only generation-owned chunks qualify.
                 if (chunk.getClass() != ProtoChunk.class) return false;

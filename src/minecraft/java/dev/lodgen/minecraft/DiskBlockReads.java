@@ -29,7 +29,9 @@ public final class DiskBlockReads {
     boolean matchesLevel(WorldGenLevel level) { return this.level == level; }
 
     public BlockState get(BlockPos pos) {
-        return chunk(pos).getBlockState(pos);
+        var chunk = chunk(pos);
+        var markers = CaveMarkers.at(chunk, pos.getY());
+        return markers == null ? chunk.getBlockState(pos) : markers.get(pos);
     }
 
     public ChunkAccess chunk(BlockPos pos) {

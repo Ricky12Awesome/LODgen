@@ -72,11 +72,12 @@ public final class GenerationTasks {
         if (command != null) command.close();
         var progress = new TaskProgress(new SquarePlan(area));
         // A completed enclosing area needs no regeneration when distance shrinks.
-        if (automatic && command != null && command.level == level && command.record.automatic() && command.progress.completedArea(area)) {
+        if (automatic && command != null && command.level == level && command.record.automatic()
+                && command.record.caveMode() == LodgenConfig.INSTANCE.caveMode() && command.progress.completedArea(area)) {
             var plan = new SquarePlan(area);
             progress = new TaskProgress(plan, new TaskProgress.Snapshot(TaskProgress.State.COMPLETE, plan.batches(), java.util.List.of(), ""));
         }
-        var record = new TaskRecord(dimension(level), area, dh, voxy, automatic, progress.snapshot());
+        var record = new TaskRecord(dimension(level), area, dh, voxy, automatic, progress.snapshot(), LodgenConfig.INSTANCE.caveMode());
         command = new Job(level, record, directory.resolve("task.toml"));
         command.checkpoint();
         LodgenConfig.LOGGER.info("Started {}", command.status());
@@ -200,7 +201,7 @@ public final class GenerationTasks {
             return;
         }
     }
-    private record AutoSettings(GenerationCenter center, int x, int z, int radius, int savedRadius) {
+    private record AutoSettings(GenerationCenter center, int x, int z, int radius, int savedRadius, dev.lodgen.generation.CaveMode caveMode) {
         static AutoSettings current(ServerLevel level) {
             var config = LodgenConfig.INSTANCE;
             var center = GenerationCenters.resolve(level, 0, 0);
@@ -208,7 +209,7 @@ public final class GenerationTasks {
                     || RendererSinks.voxyAvailable() && !level.getServer().isDedicatedServer();
             int radius = !lods ? config.savedChunkRadius() : config.generationDistance() > 0 ? config.generationDistance()
                     : RendererSinks.dhAvailable() ? RendererSinks.dhRadius() : RendererSinks.voxyRadius(level);
-            return new AutoSettings(config.generationCenter(), center.getX(), center.getZ(), radius, config.savedChunkRadius());
+            return new AutoSettings(config.generationCenter(), center.getX(), center.getZ(), radius, config.savedChunkRadius(), config.caveMode());
         }
     }
     public static synchronized void beginShutdown(MinecraftServer server) {
@@ -242,9 +243,9 @@ public final class GenerationTasks {
             this.level = level; this.record = record; this.path = path;
             var live = AutoSettings.current(level);
             settings = record.automatic() ? new AutoSettings(live.center(), live.center() == GenerationCenter.CURRENT ? 0 : record.area().blockX(),
-                    live.center() == GenerationCenter.CURRENT ? 0 : record.area().blockZ(), record.area().radius(), record.area().savedRadius()) : live;
+                    live.center() == GenerationCenter.CURRENT ? 0 : record.area().blockZ(), record.area().radius(), record.area().savedRadius(), record.caveMode()) : live;
             plan = new SquarePlan(record.area()); progress = new TaskProgress(plan, record.progress());
-            pipeline = new ChunkGenerationPipeline(level);
+            pipeline = new ChunkGenerationPipeline(level, record.caveMode());
             publishProgress();
         }
         void tick() {
@@ -283,7 +284,7 @@ public final class GenerationTasks {
                 // Conversion and completion are observed on the server thread, without blocking ticks.
                 var future = pipeline.generate(batch.x(), batch.z(), batch.width(), batch.height(), record.area(), workers, nativeBatch -> {
                     var lodChunks = nativeBatch.chunks.stream().filter(chunk -> record.area().lods(PersistenceRegistry.x(chunk.getPos()), PersistenceRegistry.z(chunk.getPos()))).toList();
-                    return RendererSinks.convert(level, lodChunks, workers, record.dh(), record.voxy());
+                    return RendererSinks.convert(level, nativeBatch.sourceLevel(), lodChunks, workers, record.dh(), record.voxy());
                 });
                 active.put(index, future);
                 future.whenComplete((ignored, error) -> server.execute(() -> {
@@ -316,16 +317,16 @@ public final class GenerationTasks {
             String state = displayProgress.state().name();
             long done = progress.completedChunks();
             return String.format(java.util.Locale.ROOT,
-                    "LODgen %s%s: dim=%s; center X=%d Z=%d blocks; radius=%dc (%d blocks); saved-radius=%dc (%d blocks); progress=%d/%d chunks (%.2f%%); active=%d; %.1f chunks/s; ETA=%s%s",
+                    "LODgen %s%s: dim=%s; center X=%d Z=%d blocks; radius=%dc (%d blocks); saved-radius=%dc (%d blocks); caves=%s; progress=%d/%d chunks (%.2f%%); active=%d; %.1f chunks/s; ETA=%s%s",
                     record.automatic() ? "automatic " : "", state, record.dimension(), record.area().blockX(), record.area().blockZ(), record.area().radius(), (long) record.area().radius() * 16,
-                    record.area().savedRadius(), (long) record.area().savedRadius() * 16, done, plan.chunks(), done * 100.0 / plan.chunks(), active.size(),
+                    record.area().savedRadius(), (long) record.area().savedRadius() * 16, record.caveMode().name().toLowerCase(java.util.Locale.ROOT), done, plan.chunks(), done * 100.0 / plan.chunks(), active.size(),
                     PersistenceRegistry.throughput(level).chunksPerSecond(), GenerationProgress.duration(displayProgress.estimatedSeconds(PersistenceRegistry.throughput(level).chunksPerSecond())),
                     progress.error().isEmpty() ? "" : "; error=" + progress.error());
         }
         void checkpoint() {
             if (this != command) return;
             try {
-                TaskStore.write(path, new TaskRecord(record.dimension(), record.area(), record.dh(), record.voxy(), record.automatic(), progress.snapshot()));
+                TaskStore.write(path, new TaskRecord(record.dimension(), record.area(), record.dh(), record.voxy(), record.automatic(), progress.snapshot(), record.caveMode()));
                 lastCheckpoint = System.nanoTime();
             } catch (Exception error) { LodgenConfig.LOGGER.error("Cannot checkpoint LODgen task at {}", path, error); }
         }

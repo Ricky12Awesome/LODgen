@@ -45,8 +45,12 @@ public final class NormalChunkBackend {
         return request(x, z, width, width, GenerationCenters.automatic(level, LodgenConfig.INSTANCE.generationDistance()));
     }
     public CompletableFuture<Batch> request(int x, int z, int width, int height, dev.lodgen.generation.GenerationArea area) {
+        return request(x, z, width, height, area, (cx, cz) -> true);
+    }
+    public CompletableFuture<Batch> request(int x, int z, int width, int height, dev.lodgen.generation.GenerationArea area,
+                                           java.util.function.BiPredicate<Integer, Integer> include) {
         if (width < 1 || height < 1) throw new IllegalArgumentException("Empty native batch");
-        var request = new Request(x, z, width, height, area);
+        var request = new Request(x, z, width, height, area, include);
         pending.add(request); schedule();
         return request.result;
     }
@@ -83,6 +87,7 @@ public final class NormalChunkBackend {
                             request.width + 2 * DEPENDENCY_RADIUS, request.height + 2 * DEPENDENCY_RADIUS,
                             key -> ((ChunkMapAccess) map).lodgen$holder(key) != null);
                     for (int x = request.x; x < request.x + request.width; x++) for (int z = request.z; z < request.z + request.height; z++) {
+                        if (!request.include.test(x, z)) continue;
                         if (request.area != null && request.area.saves(x, z)) policy.saveGenerated(x, z);
                         var pos = new ChunkPos(x, z);
                         request.batch.positions.add(pos);
@@ -128,17 +133,20 @@ public final class NormalChunkBackend {
     private final class Request {
         final int x, z, width, height;
         final dev.lodgen.generation.GenerationArea area;
+        final java.util.function.BiPredicate<Integer, Integer> include;
         final Batch batch = new Batch();
         final CompletableFuture<Batch> result = new CompletableFuture<>();
         Throwable failure;
-        Request(int x, int z, int width, int height, dev.lodgen.generation.GenerationArea area) {
+        Request(int x, int z, int width, int height, dev.lodgen.generation.GenerationArea area, java.util.function.BiPredicate<Integer, Integer> include) {
             this.x = x; this.z = z; this.width = width; this.height = height; this.area = area;
+            this.include = include;
         }
         void fail(Throwable error) {
             batch.release().whenComplete((ignored, releaseError) -> result.completeExceptionally(error));
         }
     }
     public final class Batch {
+        public ServerLevel sourceLevel() { return level; }
         private final ArrayList<ChunkPos> positions = new ArrayList<>();
         public final ArrayList<ChunkAccess> chunks = new ArrayList<>();
         private CompletableFuture<Void> released;

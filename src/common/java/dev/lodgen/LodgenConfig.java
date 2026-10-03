@@ -16,15 +16,23 @@ import java.util.function.Consumer;
 
 /** Immutable snapshots let generation workers observe complete live changes. */
 public record LodgenConfig(boolean enabled, int cpuLoad, int generationDistance, boolean showChunksPerSecond, int chunksPerSecondUpdateIntervalMs, dev.lodgen.generation.GenerationCenter generationCenter,
-                           int centerX, int centerZ, int savedChunkRadius) {
+                           int centerX, int centerZ, int savedChunkRadius, dev.lodgen.generation.CaveMode caveMode) {
     public static final Logger LOGGER = LoggerFactory.getLogger("LODgen");
     public static final LodgenConfig DEFAULTS = new LodgenConfig(true, 3, 0, false, 1000, dev.lodgen.generation.GenerationCenter.CURRENT, 0, 0, 0);
     public static final Path FILE = Path.of("config", "lodgen.toml");
     private static final CopyOnWriteArrayList<Consumer<LodgenConfig>> LISTENERS = new CopyOnWriteArrayList<>();
     public static volatile LodgenConfig INSTANCE = load(FILE);
 
+    public LodgenConfig(boolean enabled, int cpuLoad, int generationDistance, boolean showChunksPerSecond,
+                        int chunksPerSecondUpdateIntervalMs, dev.lodgen.generation.GenerationCenter generationCenter,
+                        int centerX, int centerZ, int savedChunkRadius) {
+        this(enabled, cpuLoad, generationDistance, showChunksPerSecond, chunksPerSecondUpdateIntervalMs,
+                generationCenter, centerX, centerZ, savedChunkRadius, dev.lodgen.generation.CaveMode.GENERATE);
+    }
+
     public LodgenConfig {
         java.util.Objects.requireNonNull(generationCenter, "generationCenter");
+        java.util.Objects.requireNonNull(caveMode, "caveMode");
         new dev.lodgen.generation.GenerationArea(centerX, centerZ, generationDistance, savedChunkRadius);
         if (chunksPerSecondUpdateIntervalMs < 1 || chunksPerSecondUpdateIntervalMs > 60000)
             throw new IllegalArgumentException("chunksPerSecondUpdateIntervalMs must be 1–60000");
@@ -58,7 +66,7 @@ public record LodgenConfig(boolean enabled, int cpuLoad, int generationDistance,
                     integer(values.get("chunksPerSecondUpdateIntervalMs"), DEFAULTS.chunksPerSecondUpdateIntervalMs(), "chunksPerSecondUpdateIntervalMs"), center(values.get("generationCenter")),
                     integer(values.get("centerX"), DEFAULTS.centerX(), "centerX"),
                     integer(values.get("centerZ"), DEFAULTS.centerZ(), "centerZ"),
-                    integer(values.get("savedChunkRadius"), DEFAULTS.savedChunkRadius(), "savedChunkRadius"));
+                    integer(values.get("savedChunkRadius"), DEFAULTS.savedChunkRadius(), "savedChunkRadius"), caveMode(values.get("caveMode")));
         }
     }
 
@@ -66,6 +74,12 @@ public record LodgenConfig(boolean enabled, int cpuLoad, int generationDistance,
         if (value == null) return DEFAULTS.generationCenter();
         if (!(value instanceof String text)) throw new IllegalArgumentException("generationCenter must be a TOML string");
         return dev.lodgen.generation.GenerationCenter.valueOf(text.toUpperCase(java.util.Locale.ROOT));
+    }
+
+    private static dev.lodgen.generation.CaveMode caveMode(Object value) {
+        if (value == null) return DEFAULTS.caveMode();
+        if (!(value instanceof String text)) throw new IllegalArgumentException("caveMode must be a TOML string");
+        return dev.lodgen.generation.CaveMode.valueOf(text.toUpperCase(java.util.Locale.ROOT));
     }
 
     private static boolean bool(Object value, boolean fallback, String key) {
@@ -108,6 +122,8 @@ public record LodgenConfig(boolean enabled, int cpuLoad, int generationDistance,
         values.set("centerX", settings.centerX());
         values.set("centerZ", settings.centerZ());
         values.set("savedChunkRadius", settings.savedChunkRadius());
+        values.set("caveMode", settings.caveMode().name().toLowerCase(java.util.Locale.ROOT));
+        values.setComment("caveMode", " LOD-only caves: generate (normal), fill (stone/deepslate), empty (keep surface layers). Saved/player chunks always generate normally. Applies to new LOD generation.");
         values.setComment("generationCenter", " Generation center: current (player position), origin (world spawn), or custom (centerX/centerZ).");
         values.setComment("centerX", " Custom center X in blocks.");
         values.setComment("centerZ", " Custom center Z in blocks.");

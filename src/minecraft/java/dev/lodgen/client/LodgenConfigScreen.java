@@ -32,6 +32,7 @@ public final class LodgenConfigScreen extends Screen {
     private int cpuLoad = LodgenConfig.INSTANCE.cpuLoad();
     private boolean throughput = LodgenConfig.INSTANCE.showChunksPerSecond();
     private GenerationCenter center = LodgenConfig.INSTANCE.generationCenter();
+    private dev.lodgen.generation.CaveMode caveMode = LodgenConfig.INSTANCE.caveMode();
     private final Map<String, String> numbers = new HashMap<>();
     private final Map<String, EditBox> inputs = new HashMap<>();
     private SettingsList settings;
@@ -66,6 +67,10 @@ public final class LodgenConfigScreen extends Screen {
         numberInput("centerZ").active = center == GenerationCenter.CUSTOM;
         numberInput("generationDistance");
         numberInput("savedChunkRadius");
+        settings.add("caveMode", Button.builder(caveValue(), button -> {
+            caveMode = caveMode.next(); button.setMessage(caveValue());
+        }).bounds(0, 0, controlWidth, 20).tooltip(tip("caveMode"))
+                .createNarration(ignored -> label("caveMode").copy().append(": ").append(caveValue())).build());
         var load = Button.builder(cpuValue(), button -> {
             cpuLoad = cpuLoad % 5 + 1; button.setMessage(cpuValue());
         }).bounds(0, 0, controlWidth, 20).tooltip(tip("cpuLoad"))
@@ -101,6 +106,9 @@ public final class LodgenConfigScreen extends Screen {
     private Component centerValue() {
         return Component.translatable("lodgen.config.center." + center.name().toLowerCase(java.util.Locale.ROOT));
     }
+    private Component caveValue() {
+        return Component.translatable("lodgen.config.cave." + caveMode.name().toLowerCase(java.util.Locale.ROOT));
+    }
     private static Component label(String key) { return Component.translatable("lodgen.config." + key); }
     private static Tooltip tip(String key) { return Tooltip.create(Component.translatable("lodgen.config." + key + ".tooltip")); }
     private static Component onOff(boolean value) { return Component.translatable(value ? "options.on" : "options.off"); }
@@ -108,12 +116,13 @@ public final class LodgenConfigScreen extends Screen {
     private void reset() {
         var defaults = LodgenConfig.DEFAULTS;
         enabled = defaults.enabled(); cpuLoad = defaults.cpuLoad(); throughput = defaults.showChunksPerSecond(); center = defaults.generationCenter();
+        caveMode = defaults.caveMode();
         setNumbers(defaults); error = null; rebuildWidgets();
     }
     private void apply() {
         try {
             LodgenConfig.apply(new LodgenConfig(enabled, cpuLoad,
-                    number("generationDistance"), throughput, number("chunksPerSecondUpdateIntervalMs"), center, number("centerX"), number("centerZ"), number("savedChunkRadius")));
+                    number("generationDistance"), throughput, number("chunksPerSecondUpdateIntervalMs"), center, number("centerX"), number("centerZ"), number("savedChunkRadius"), caveMode));
             onClose();
         } catch (IllegalArgumentException invalid) { error = Component.translatable("lodgen.config.invalid"); }
         catch (IOException | RuntimeException failure) {

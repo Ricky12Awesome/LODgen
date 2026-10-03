@@ -38,7 +38,7 @@ public final class BenchmarkCheck {
                 && Boolean.getBoolean("lodgen.test.dhQueue") && originalSettings.enabled();
         if (checkLiveConfig) {
             try {
-                LodgenConfig.apply(new LodgenConfig(true, 1, originalSettings.generationDistance(), originalSettings.showChunksPerSecond(), originalSettings.chunksPerSecondUpdateIntervalMs(), originalSettings.generationCenter(), originalSettings.centerX(), originalSettings.centerZ(), originalSettings.savedChunkRadius()));
+                LodgenConfig.apply(new LodgenConfig(true, 1, originalSettings.generationDistance(), originalSettings.showChunksPerSecond(), originalSettings.chunksPerSecondUpdateIntervalMs(), originalSettings.generationCenter(), originalSettings.centerX(), originalSettings.centerZ(), originalSettings.savedChunkRadius(), originalSettings.caveMode()));
                 com.seibel.distanthorizons.core.config.Config.Common.MultiThreading.numberOfThreads.set(1);
                 LodgenConfig.LOGGER.info("QUICK CHECK: applied live DH CPU load of one worker");
             } catch (Exception failure) { return CompletableFuture.failedFuture(failure); }
@@ -192,6 +192,7 @@ public final class BenchmarkCheck {
             data += ",\"spatialBatching\":" + true;
             data += ",\"originalPredicates\":" + Boolean.getBoolean("lodgen.test.originalPredicates");
             data += ",\"originalOreAllocations\":" + Boolean.getBoolean("lodgen.test.originalOreAllocations");
+            data += ",\"caveMode\":\"" + LodgenConfig.INSTANCE.caveMode().name().toLowerCase(Locale.ROOT) + "\"";
             if (Boolean.getBoolean("lodgen.test.verifyPredicates")) data += ",\"predicatesCompared\":" + DiskPredicateCheck.compared()
                     + ",\"skippedDisks\":" + DiskPredicateCheck.skippedDisks();
             if (Boolean.getBoolean("lodgen.test.verifyTerrain")) {

@@ -27,7 +27,7 @@ public final class PersistenceRegistry {
     public static final int BATCH_PADDING = 4;
 
     public static synchronized void register(ServerLevel level, Object tickets) {
-        SavePolicy policy = LEVELS.computeIfAbsent(level, ignored -> new SavePolicy());
+        SavePolicy policy = LEVELS.computeIfAbsent(level, ignored -> new SavePolicy(LodGenerationWorld.constructing()));
         STORAGE.put(level.dimension(), policy);
         TICKETS.put(tickets, policy);
     }
@@ -98,4 +98,11 @@ public final class PersistenceRegistry {
         // #endif
     }
     public static long pack(ChunkPos pos) { return (x(pos) & 0xffffffffL) | (long) z(pos) << 32; }
+    public static int minY(net.minecraft.world.level.chunk.ChunkAccess chunk) {
+        // #if MC_1211
+        return chunk.getMinBuildHeight();
+        // #else
+        return chunk.getMinY();
+        // #endif
+    }
 }

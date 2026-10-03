@@ -24,7 +24,9 @@ public final class TaskStore {
             var completed = values.stream().map(value -> integer(value)).toList();
             var progress = new TaskProgress.Snapshot(TaskProgress.State.valueOf(data.get("state")), integer(data.get("completedPrefix")), completed, data.get("error"));
             new TaskProgress(new SquarePlan(area), progress); // Validate before a corrupt file can dispatch work.
-            return new TaskRecord(data.get("dimension"), area, data.get("dh"), data.get("voxy"), data.get("automatic"), progress);
+            Object caveMode = data.get("caveMode");
+            return new TaskRecord(data.get("dimension"), area, data.get("dh"), data.get("voxy"), data.get("automatic"), progress,
+                    caveMode == null ? dev.lodgen.generation.CaveMode.GENERATE : dev.lodgen.generation.CaveMode.valueOf((String) caveMode));
         } catch (RuntimeException invalid) { throw new IOException("Invalid LODgen task checkpoint", invalid); }
     }
     private static int number(Object value) { return Math.toIntExact(integer(value)); }
@@ -40,6 +42,7 @@ public final class TaskStore {
         values.set("radius", task.area().radius()); values.set("savedRadius", task.area().savedRadius());
         values.set("dh", task.dh()); values.set("voxy", task.voxy());
         values.set("automatic", task.automatic());
+        values.set("caveMode", task.caveMode().name());
         values.set("state", task.progress().state().name());
         values.set("completedPrefix", task.progress().prefix()); values.set("completedBeyond", task.progress().beyond());
         values.set("error", task.progress().error());

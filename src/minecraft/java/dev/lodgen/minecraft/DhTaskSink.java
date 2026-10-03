@@ -98,7 +98,7 @@ final class DhTaskSink {
         }
         return new dev.lodgen.generation.GenerationProgress(radius, -1, dev.lodgen.generation.GenerationProgress.State.WAITING_FOR_RENDERER);
     }
-    static CompletableFuture<Void> convert(ServerLevel level, List<ChunkAccess> chunks, Executor executor) {
+    static CompletableFuture<Void> convert(ServerLevel level, ServerLevel sourceLevel, List<ChunkAccess> chunks, Executor executor) {
         var wrapper = wrapper(level);
         if (wrapper == null) return CompletableFuture.failedFuture(new IllegalStateException("Waiting for DH to open " + level.dimension()));
         return CompletableFuture.supplyAsync(() -> {
@@ -109,7 +109,7 @@ final class DhTaskSink {
                 for (var chunk : chunks) {
                     var wrapped = factory.createChunkWrapper(new Object[]{chunk, level});
                     wrapped.createDhHeightMaps();
-                    try (var source = FullDataSourceV2.createFromChunk(wrapper, new LitChunkWrapper(wrapped, chunk, level))) {
+                    try (var source = FullDataSourceV2.createFromChunk(wrapper, new LitChunkWrapper(wrapped, chunk, sourceLevel))) {
                         if (source == null) throw new IllegalStateException("DH rejected " + chunk.getPos());
                         destinations.computeIfAbsent(source.getPos(), FullDataSourceV2::createEmpty).updateFromDataSource(source);
                     }
