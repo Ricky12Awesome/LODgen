@@ -10,8 +10,8 @@ class GenerationPolicyTest {
             var policy = new GenerationPolicy(enabled, plan, true);
             assertTrue(policy.dhChunks());
             assertTrue(policy.anyAutomatic());
-            assertEquals(enabled, policy.extraDhChunks(true));
-            assertFalse(policy.extraDhChunks(false));
+            assertEquals(enabled, policy.automaticChunks());
+            assertFalse(new GenerationPolicy(enabled, plan, false).automaticChunks(), "Only FEATURES autostarts LOD chunks through a task");
             assertFalse(new GenerationPolicy(enabled, plan, false).dhChunks(), "Respect non-FEATURES chunk modes");
         }
     }
@@ -20,16 +20,16 @@ class GenerationPolicyTest {
             var policy = new GenerationPolicy(enabled, SURFACE_ONLY, true);
             assertTrue(policy.surfaceFirst());
             assertFalse(policy.dhChunks(), "Surface requests must retain the rough generator");
-            assertEquals(enabled, policy.extraDhChunks(false));
-            assertEquals(enabled, policy.extraDhChunks(true));
+            assertEquals(enabled, policy.automaticChunks());
         }
     }
     @Test void disabledBlocksAllAutomaticGenerationIncludingVoxyAndSaving() {
         for (boolean enabled : new boolean[]{false, true}) {
             var policy = new GenerationPolicy(enabled, DISABLED, true);
             assertFalse(policy.anyAutomatic()); assertFalse(policy.automatic());
-            assertFalse(policy.dhChunks()); assertFalse(policy.extraDhChunks(true));
+            assertFalse(policy.dhChunks()); assertFalse(policy.automaticChunks());
             assertEquals(enabled, new GenerationPolicy(enabled, NO_DH, false).automatic());
+            assertEquals(enabled, new GenerationPolicy(enabled, NO_DH, false).automaticChunks());
         }
     }
 }

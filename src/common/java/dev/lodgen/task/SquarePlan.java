@@ -10,7 +10,9 @@ public final class SquarePlan {
     private static final int EDGE = GenerationArea.WORLD_EDGE_BLOCKS / 16;
     private final int minX, minZ, width, height, columns, rows, centerColumn, centerRow;
     private final CenterOutGrid patches;
+    private final GenerationArea area;
     public SquarePlan(GenerationArea area) {
+        this.area = area;
         if (area.totalRadius() < 1) throw new IllegalArgumentException("Generation radius must be positive");
         minX = (int) Math.max(-EDGE, (long) area.chunkX() - area.totalRadius());
         minZ = (int) Math.max(-EDGE, (long) area.chunkZ() - area.totalRadius());
@@ -24,6 +26,27 @@ public final class SquarePlan {
     }
     public long batches() { return (long) columns * rows; }
     public long chunks() { return (long) width * height; }
+    /** Every patch ring before the first unfinished batch is complete. This
+     * recognizes a completed inner radius without enumerating its chunks.
+     */
+    public boolean completedArea(long prefix, GenerationArea next) {
+        if (prefix < 0 || prefix > batches()) throw new IllegalArgumentException("Invalid completed prefix");
+        long dx = Math.abs((long) next.chunkX() - area.chunkX()), dz = Math.abs((long) next.chunkZ() - area.chunkZ());
+        if (next.radius() > 0 && (dx + next.radius() > area.radius() || dz + next.radius() > area.radius())) return false;
+        if (next.savedRadius() > 0 && (dx + next.savedRadius() > area.savedRadius() || dz + next.savedRadius() > area.savedRadius())) return false;
+        int x1 = (int) Math.max(-EDGE, (long) next.chunkX() - next.totalRadius());
+        int z1 = (int) Math.max(-EDGE, (long) next.chunkZ() - next.totalRadius());
+        int x2 = (int) Math.min(EDGE, (long) next.chunkX() + next.totalRadius()) - 1;
+        int z2 = (int) Math.min(EDGE, (long) next.chunkZ() + next.totalRadius()) - 1;
+        if (x1 < minX || z1 < minZ || x2 >= minX + width || z2 >= minZ + height) return false;
+        if (prefix == batches()) return true;
+        var unfinished = patches.locate(prefix);
+        int cx = centerColumn / 8, cz = centerRow / 8;
+        int incompleteRing = Math.max(Math.abs(unfinished.x - cx), Math.abs(unfinished.z - cz));
+        int neededRing = Math.max(Math.max(Math.abs((x1 - minX) / 32 - cx), Math.abs((x2 - minX) / 32 - cx)),
+                Math.max(Math.abs((z1 - minZ) / 32 - cz), Math.abs((z2 - minZ) / 32 - cz)));
+        return neededRing < incompleteRing;
+    }
     public Batch batch(long ordinal) {
         if (ordinal < 0 || ordinal >= batches()) throw new IllegalArgumentException("Invalid batch ordinal");
         var patch = patches.locate(ordinal);

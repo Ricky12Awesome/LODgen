@@ -14,7 +14,6 @@ import java.lang.invoke.LambdaMetafactory;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -38,7 +37,7 @@ public final class VoxyBridge {
     private final java.lang.reflect.Field nonAir = field(voxel, "lvl0NonAirCount");
     private final long airSky = air(15), airDark = air(0);
 
-    public record Context(Object engine, Path coverageFile, int radius) {}
+    public record Context(Object engine, int radius) {}
     public record Section(int x, int y, int z, LevelChunkSection data, DataLayer block, DataLayer sky, int[] inheritedSky) {}
 
     public Context context(ClientLevel level) throws ReflectiveOperationException {
@@ -64,14 +63,12 @@ public final class VoxyBridge {
         if (!config.getField("enabled").getBoolean(cfg) || !config.getField("ingestEnabled").getBoolean(cfg)) return null;
         Object instance = method(common, "getInstance", 0).invoke(null);
         if (instance == null) return null;
-                if (id == null || !(Boolean) method(instance.getClass(), "isIngestEnabled", 1).invoke(instance, id)) return null;
+        if (id == null || !(Boolean) method(instance.getClass(), "isIngestEnabled", 1).invoke(instance, id)) return null;
         Object engine = method(identifier, "getOrCreateEngine", 0).invoke(id);
         if (engine == null) return null;
         method(engine.getClass(), "markActive", 0).invoke(engine);
-        Path base = (Path) method(instance.getClass(), "getStorageBasePath", 0).invoke(instance);
-        String worldId = (String) method(identifier, "getWorldId", 0).invoke(id);
         int radius = Math.max(1, Math.round(config.getField("sectionRenderDistance").getFloat(cfg) * 32));
-        return new Context(engine, base.resolve("lodgen").resolve(worldId + ".tiles"), radius);
+        return new Context(engine, radius);
     }
 
     /** Snapshot on the server thread. Voxy workers must never read mutable

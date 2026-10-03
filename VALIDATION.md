@@ -1,80 +1,42 @@
 # LODgen development validation — 0.0.0
 
-This update fixes integration and direct benchmark callers that submitted more FEATURES requests than the live native batch limit permits. Runtime code and production jars are unchanged. The version remains **0.0.0**, and the GitHub workflow is unchanged.
+Autostart now creates a real generation task through the same job, square plan, native pipeline and checkpoint used by `/lodgen start`. DH and Voxy no longer have separate LODgen automatic schedulers. The version remains **0.0.0**, and the GitHub workflow is unchanged.
 
-## CI admission regression
+## Task behavior
 
-A fresh 26.1.2 Fabric server with two CPUs exposed reproduced the reported failure: three direct test requests hit a two-batch gate, causing `RejectedExecutionException: LOD generation queue full`. Cached DH thread settings on a larger machine masked the failure. The test caller now waits for capacity using the same live admission check as DH's normal queue. It preserves concurrent requests when capacity permits and propagates native failures.
+Automatic tasks capture the occupied dimension and configured center, generation radius and saved radius. Current position is captured on start. `/lodgen status`, `pause`, `continue`, `stop` and `cancel` control the actual job; `cancel` aliases `stop`. Pausing lets active native batches drain and retains PAUSED even if they finish the area. A stopped task cannot restart from login, settings changes or completion callbacks.
 
-The existing workflow build and integration commands passed locally for all eight targets with fresh DH configuration and `JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=2`. JDK 21 runs 1.21.1 servers; JDK 25 runs 26.x servers. No integration options, workload checks or production limits were disabled or raised for this matrix.
+Both origins persist in `<world>/lodgen/task.toml`, using checkpoint layout **3**. Earlier development task/area/tile checkpoints are not imported. Running tasks resume, paused tasks remain paused, and stopped/completed tasks retain their state. An explicit start can replace an automatic task and still runs with automatic generation or DH generation disabled.
 
-| Minecraft | Loader | Production build / tests | Integration build / tests | World check | Reopen check |
-| --- | --- | --- | --- | --- | --- |
-| 1.21.1 | Fabric | PASS / 59 | PASS / 62 | PASS | PASS |
-| 1.21.1 | NeoForge | PASS / 59 | PASS / 62 | PASS | PASS |
-| 26.1.2 | Fabric | PASS / 59 | PASS / 62 | PASS | PASS |
-| 26.1.2 | NeoForge | PASS / 59 | PASS / 62 | PASS | PASS |
-| 26.2 | Fabric | PASS / 59 | PASS / 62 | PASS | PASS |
-| 26.2 | NeoForge | PASS / 59 | PASS / 62 | PASS | PASS |
-| 26.3 | Fabric | PASS / 59 | PASS / 62 | PASS | PASS |
-| 26.3 | NeoForge | PASS / 59 | PASS / 62 | PASS | PASS |
+Automatic tasks obey the addon toggle and DH's generator plan/mode. Surface plans complete DH's rough pass before native chunks. DH's normal rough viewport remains available while an automatic task owns the native chunk phase. A paused/stopped task blocks DH's automatic queue too; normal player and Chunky chunk generation retain their own path. Turning the addon toggle off releases DH's normal chunk phase as before.
 
-Each world check still produces 12,288 LOD columns, checks lighting and shared output ownership, verifies distant LOD-only chunks create no native chunk/POI/entity files, and confirms overlapping normal FULL generation preserves a player edit and saves normally. Reopening verifies persisted edits and byte-for-byte preservation of an existing region loaded through FEATURES.
-
-The integration builds execute **496 unit tests**, including three new regressions per target for one-slot/two-slot admission, a lowered live limit, failure propagation and close/cancellation ownership. The production builds execute the existing **472 tests**. All have zero failures, errors or skips. Production class bytes match the integration fixtures, and production jar hashes match the previous runtime validation.
-
-A separate 26.1.2 Fabric direct benchmark smoke check passed with eight requested workers, a two-batch limit and 64 target chunks, including real DH storage updates and reopening. This tiny check makes no performance claim. Evidence is in `dist/validation-lodgen-0.0.0/ci-admission/`.
-
-The runtime behavior and previously completed startup, DH plan and Voxy checks below remain applicable to the unchanged production jars.
-
-## Generation behavior
-
-| DH plan | Behavior |
-| --- | --- |
-| Surface Then Chunks | DH’s rough surface path remains active. Its FEATURES chunk phase uses LODgen even with the addon automatic toggle off. Fixed-area jobs complete a normal DH rough pass before native chunk generation. |
-| Surface Only | DH uses its rough generator. LODgen adds FEATURES chunks only with its automatic toggle on, for current or fixed centers. |
-| Chunks Only | DH FEATURES requests use LODgen, including when the addon automatic toggle is off. |
-| Disabled | All automatic LODgen generation stops, including saved-radius pregen and Voxy when DH is present. Commands, including resumed command tasks, remain available. |
-
-DH’s other chunk generator modes and API generator overrides retain their normal behavior. Disabling or changing automatic work allows already-admitted native batches to finish conversion and release tickets. Commands are exempt from the automatic policy.
-
-The native queue ranks patches relative to the selected center, rather than absolute world coordinates. Rough tasks keep DH’s distance/detail ordering and thread-count admission limit, ahead of chunk tasks. Rough surfaces can extend to DH’s render distance beyond a custom native generation radius. Fixed-area jobs suppress duplicate native viewport work without blocking DH’s rough requests; constant-time pending/active counters avoid repeated map scans when only those suppressed requests remain.
-
-Square jobs use center-out patch rings and center-out batches within each patch. Exact clipped edges, partial batches, prefix/out-of-order progress and saved subsets are preserved. Grid ordinals and chunk-prefix counts are computed without enumerating or allocating the entire area, including at the maximum world-sized radius. The changed traversal uses checkpoint layout **2**; older development checkpoints are not imported.
+The shared plan preserves completed inner patch rings when the distance shrinks, without enumerating chunk data or allocating a world-sized plan. Increasing the saved area or moving its center requires work. Voxy now supplies renderer conversion and shutdown handling; generation progress and resume state come from the task checkpoint.
 
 ## Verification
 
-| Minecraft | Loader | Build / unit tests | Packaged client | Packaged server |
-| --- | --- | --- | --- | --- |
-| 1.21.1 | Fabric | PASS / 59 | PASS | PASS |
-| 1.21.1 | NeoForge | PASS / 59 | PASS | PASS |
-| 26.1.2 | Fabric | PASS / 59 | PASS | PASS |
-| 26.1.2 | NeoForge | PASS / 59 | PASS | PASS |
-| 26.2 | Fabric | PASS / 59 | PASS | PASS |
-| 26.2 | NeoForge | PASS / 59 | PASS | PASS |
-| 26.3 | Fabric | PASS / 59 | PASS | PASS |
-| 26.3 | NeoForge | PASS / 59 | PASS | PASS |
+All eight production targets build and pass **54 unit tests each** (432 executions): Fabric and NeoForge for 1.21.1, 26.1.2, 26.2 and 26.3. There are no failed, erroneous or skipped cases. New coverage checks automatic task origin/checkpoint intent, a pause retained during active completion, and completed inner-radius reuse while the outer job is unfinished. Tests for the removed Voxy frontier/tile checkpoint were removed with that code.
 
-The eight targets execute **472 unit tests**, with zero failures, errors or skipped cases. New coverage checks the plan/toggle truth table, non-FEATURES eligibility, disabled Voxy policy, first-batch center coverage, outward patch rings, exact weighted progress across clipped/partial edges and random access at the maximum radius. Queue-priority tests cover negative coordinates, center-relative patches and opposite world borders.
+The existing packaged server integration and reopen commands also passed on all eight targets with fresh DH settings and two CPUs exposed during this change. They check actual LOD output, lighting, no-save behavior, normal FULL saves/player edits and persistence after reopening. Final focused world checks below run on 26.2 Fabric using the current source.
 
-All **16 packaged client/server startup checks** load DH and C2ME without opening a world. Clients check the config screen, vanilla action bar and Fabric Mod Menu factory. Production classes match packaged fixture classes byte-for-byte; installable jars exclude test probes. Voxy-only client startup covers all three supported targets; only 26.1.2 Fabric opens a small world and reopens it.
+| Headless check | Workload | Result |
+| --- | --- | --- |
+| Autostart / reopen | 5c, 100 targets; 1c saved radius; four additional LOD targets | PASS: real task creation, pause/drain, restored pause with no dispatch, continue, completed-radius shrink, cancel and DH queue blocking |
+| Command / reopen | 5c, 100 targets; 1c saved radius; four additional LOD targets | PASS: command controls, radius rounding, running-task resume, saved-radius persistence and automatic task creation after settings changes |
+| DH plans | At most 5c; 156 native LOD targets | PASS: rough/chunk phases, addon toggle, center-first selection, disabled drain/re-enable, commands with DH disabled and fixed rough-before-chunk generation |
 
-The **26.1.2 Fabric DH plan check** generates **156 native LOD targets** with at most a **5c** automatic radius. It exercises the actual DH rough generator and native dispatch queue, both chunk-enabled plans with the addon automatic toggle off, center-before-edge selection, Surface Only opt-in chunks, mid-task disable/drain/re-enable, disabled saved-radius generation, commands with DH disabled and fixed-area surface-before-chunk sequencing. No native, POI or entity region files appear in its distant test areas after shutdown. Its worker limit is explicitly pinned through DH’s config API so the live-disable check observes one batch at a time.
-
-The existing small command/restart regression uses **5c / 100 targets**, a **1c saved radius / four native saves**, plus four automatic fixed-center targets. It checks command controls, unfinished-task resume with the new traversal, status/ETA, rough-first fixed generation and exact region-header persistence boundaries. The Voxy world/reload check uses at most **88 targets** and retains snapshot/light/mip parity, saved-radius, action-bar and command-dimension checks. These earlier checks did not repeat large performance runs or other-version worlds; the CI admission matrix above now covers the default world fixture on all targets.
-
-The baseline integration runner now disables DH hooks through a test-only mixin plugin. Turning off the production automatic toggle intentionally keeps DH chunk-phase interception active, so it no longer represents a builtin-DH benchmark.
+Both task checks save exactly **four native chunks**, with no native, POI or entity entries outside their saved area. Client test helpers compile for 1.21.1 NeoForge and 26.2 Fabric. No test launches a window; actual Voxy client rendering and large performance runs were not repeated.
 
 ```sh
 python3 scripts/build-all.py
-xvfb-run -a python3 scripts/startup-test.py --modmenu
-python3 scripts/integration-test.py --mc 26.1.2 --loader fabric --quick --dh-plan-check
-python3 scripts/integration-test.py --mc 26.1.2 --loader fabric --quick --task-check
-xvfb-run -a python3 scripts/voxy-test.py --mc 1.21.1
-xvfb-run -a python3 scripts/voxy-test.py --mc 26.1.2 --world --reload
-xvfb-run -a python3 scripts/voxy-test.py --mc 26.2
+python3 scripts/integration-test.py --mc 26.2 --loader fabric --quick --autostart-check
+python3 scripts/integration-test.py --mc 26.2 --loader fabric --quick --task-check
+python3 scripts/integration-test.py --mc 26.2 --loader fabric --quick --dh-plan-check
 ```
 
-Evidence, artifact hashes and byte audits are collected in `dist/validation-lodgen-0.0.0/`. All checks use disposable directories. The stopped testing instance received its matching 26.1.2 Fabric production jar during the previous runtime update, with a backup outside `mods/`, preserving its configuration.
+Evidence and artifact hashes are collected in `dist/validation-autostart-0.0.0/`. All worlds are disposable and small. Previous checks are retained in [docs/VALIDATION-ci-admission-0.0.0.md](docs/VALIDATION-ci-admission-0.0.0.md); prior sustained-generation measurements remain in [docs/VALIDATION-sustained-0.0.0.md](docs/VALIDATION-sustained-0.0.0.md). This update makes no new performance claim.
 
-Previous display validation is retained in [docs/VALIDATION-progress-0.0.0.md](docs/VALIDATION-progress-0.0.0.md); prior sustained-generation measurements remain in [docs/VALIDATION-sustained-0.0.0.md](docs/VALIDATION-sustained-0.0.0.md). No new performance claim is made for this update.
+## WWOO performance — 2026-10-02
+
+Disk target compilation, native palette rejection and API-generator task ownership are covered in [docs/VALIDATION-wwoo-0.0.0.md](docs/VALIDATION-wwoo-0.0.0.md). Repeated 16,384-chunk WWOO/OpenCL runs measure **499–567 cps**, versus **455–467 cps** with original disk evaluation; the arithmetic means improve about **15%**. The rate remains below the reported Terralith/Tectonic 800–1,200 cps.
+
+All eight production builds pass 54 unit tests each, and all eight headless packaged generation/reopen checks pass with live predicate probes. The final WWOO check verifies **189,427,022** target results, including all positions in **75,234** skipped disks. DH API-generator plan tests pass both alone and with the instance's actual SeedGen 0.8.0 jar. Evidence and artifact hashes are in `dist/validation-wwoo-0.0.0/`.

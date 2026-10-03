@@ -39,16 +39,17 @@ public final class TaskProgress {
             prefix++;
             while (beyond.remove(prefix)) prefix++;
         } else beyond.add(index);
-        if (prefix == plan.batches() && state != State.STOPPED) state = State.COMPLETE;
+        if (prefix == plan.batches() && state == State.RUNNING) state = State.COMPLETE;
     }
     public void pause() { if (state == State.RUNNING) state = State.PAUSED; }
     public void fail(String message) { pause(); error = message; }
     public void stop() { state = State.STOPPED; }
     public void resume() {
         if (state != State.PAUSED) throw new IllegalStateException("Task is not paused");
-        state = State.RUNNING; error = ""; cursor = prefix;
+        state = prefix == plan.batches() ? State.COMPLETE : State.RUNNING; error = ""; cursor = prefix;
     }
     public State state() { return state; }
+    public boolean completedArea(dev.lodgen.generation.GenerationArea area) { return plan.completedArea(prefix, area); }
     public String error() { return error; }
     public long completedChunks() {
         long result = plan.chunksBefore(prefix);

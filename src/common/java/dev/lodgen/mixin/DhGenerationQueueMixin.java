@@ -57,18 +57,26 @@ public abstract class DhGenerationQueueMixin {
 
     @Inject(method = "isGeneratorBusy", at = @At("HEAD"), cancellable = true)
     private void lodgen$backpressure(CallbackInfoReturnable<Boolean> callback) {
+        Object nativeLevel = level.getServerLevelWrapper().getWrappedMcObject();
+        if (!Config.Common.WorldGenerator.generatorPlan.get().generationEnabled
+                || dev.lodgen.minecraft.GenerationTasks.automaticBlocked(nativeLevel)) {
+            callback.setReturnValue(true);
+            return;
+        }
+        if (!dev.lodgen.GenerationSettings.policy().dhChunks()) return;
+        boolean extraChunks = dev.lodgen.minecraft.GenerationTasks.overridesAutomatic(nativeLevel);
+        // API generators (e.g. SeedGen) can also generate full-detail features.
+        // The fixed-area task already supplies that chunk phase. Apply the same
+        // task ownership to overrides so WWOO isn't generated twice in parallel.
+        if (dev.lodgen.minecraft.GenerationTasks.commandOverrides(nativeLevel)
+                || extraChunks && (!Config.Common.WorldGenerator.generatorPlan.get().surfaceGenEnabled || lodgen$roughPending.get() == 0)) {
+            callback.setReturnValue(true);
+            return;
+        }
         if (generator instanceof GenerationAdmission admission) {
-            if (!Config.Common.WorldGenerator.generatorPlan.get().generationEnabled) {
-                callback.setReturnValue(true);
-                return;
-            }
-            if (!dev.lodgen.GenerationSettings.policy().dhChunks()) return;
-            boolean extraChunks = dev.lodgen.minecraft.GenerationTasks.overridesAutomatic(level.getServerLevelWrapper().getWrappedMcObject());
             callback.setReturnValue(com.seibel.distanthorizons.core.util.threading.ThreadPoolUtil.getWorldGenExecutor() == null
                     || admission.lodgen$isBusy()
-                    || lodgen$roughActive.get() > Math.max(1, Config.Common.MultiThreading.numberOfThreads.get())
-                    || dev.lodgen.minecraft.GenerationTasks.commandOverrides(level.getServerLevelWrapper().getWrappedMcObject())
-                    || extraChunks && (!Config.Common.WorldGenerator.generatorPlan.get().surfaceGenEnabled || lodgen$roughPending.get() == 0));
+                    || lodgen$roughActive.get() > Math.max(1, Config.Common.MultiThreading.numberOfThreads.get()));
         }
     }
 

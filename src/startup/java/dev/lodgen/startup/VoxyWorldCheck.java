@@ -4,7 +4,6 @@ import dev.lodgen.LodgenConfig;
 import dev.lodgen.minecraft.ChunkGenerationPipeline;
 import dev.lodgen.minecraft.PersistenceRegistry;
 import dev.lodgen.voxy.VoxyBridge;
-import dev.lodgen.voxy.VoxyGeneration;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.core.registries.Registries;
@@ -15,7 +14,6 @@ import net.minecraft.world.level.WorldDataConfiguration;
 import net.minecraft.world.level.levelgen.WorldOptions;
 import net.minecraft.world.level.levelgen.presets.WorldPresets;
 
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -24,7 +22,7 @@ public final class VoxyWorldCheck {
     private static long started;
     private static long idleStarted;
     private static int stage;
-    private static int completedTiles;
+    private static long completedChunks;
     private static CompletableFuture<Void> far;
     private static CompletableFuture<String> taskStatus;
     private static boolean netherTaskStarted;
@@ -71,32 +69,24 @@ public final class VoxyWorldCheck {
                 stage = 1; return;
             }
             if (stage == 1) {
-                var field = VoxyGeneration.class.getDeclaredField("current"); field.setAccessible(true);
-                Object session = field.get(null);
-                if (session == null) return;
-                var active = session.getClass().getDeclaredField("active"); active.setAccessible(true);
-                var completed = session.getClass().getDeclaredField("completed"); completed.setAccessible(true);
-                var frontierField = session.getClass().getDeclaredField("frontier"); frontierField.setAccessible(true);
-                var frontier = (dev.lodgen.generation.GenerationFrontier) frontierField.get(session);
-                if (frontier == null) return;
-                var centerField = session.getClass().getDeclaredField("centerX"); centerField.setAccessible(true);
-                if (centerField.getInt(session) != 1024) throw new AssertionError("Custom generation center ignored");
-                if (frontier == null || !frontier.exhausted() || !((Set<?>) active.get(session)).isEmpty()) return;
-                var generationProgress = dev.lodgen.minecraft.RendererSinks.progress(serverLevel, 1);
-                if (generationProgress == null || generationProgress.radius() != 1 || generationProgress.remainingChunks() != 0
-                        || generationProgress.estimatedSeconds(1) != 0)
-                    throw new AssertionError("Automatic Voxy ETA did not account for completed coverage");
-                completedTiles = (int) ((Set<?>) completed.get(session)).stream().filter(key -> dev.lodgen.generation.GenerationFrontier.contains(
-                        dev.lodgen.generation.GenerationFrontier.Tile.fromKey((Long) key), 1024, -1024, 1)).count();
-                if (completedTiles < 1 || completedTiles > 4) throw new AssertionError("Unexpected small-radius tile count: " + completedTiles);
                 if (Boolean.getBoolean("lodgen.test.voxyReload")) {
-                    var saved = dev.lodgen.generation.TileCoverage.read(context.coverageFile());
-                    if (!saved.equals(completed.get(session))) throw new AssertionError("Coverage did not prevent regeneration after reopening");
                     checkStoredFarSection(context.engine());
                     checkStoredFarSection(bridge.context(client.getSingleplayerServer().getLevel(net.minecraft.world.level.Level.NETHER)).engine());
-                    StartupCheck.report("PASS: Voxy reopened without DH; completed generation coverage restored and nonempty far LOD data survived restart.");
+                    var record = dev.lodgen.task.TaskStore.read(client.getSingleplayerServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("lodgen/task.toml"));
+                    if (record == null || record.progress().state() != dev.lodgen.task.TaskProgress.State.COMPLETE)
+                        throw new AssertionError("Finished task was not restored on reopening");
+                    StartupCheck.report("PASS: Voxy reopened without DH; completed task restored and nonempty far LOD data survived restart.");
                     stage = 4; client.stop(); return;
                 }
+                var generationProgress = dev.lodgen.minecraft.GenerationTasks.displaySource(serverLevel).progress();
+                if (generationProgress.state() != dev.lodgen.generation.GenerationProgress.State.COMPLETE) return;
+                var record = dev.lodgen.task.TaskStore.read(client.getSingleplayerServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("lodgen/task.toml"));
+                if (record == null || record.progress().state() != dev.lodgen.task.TaskProgress.State.COMPLETE) return;
+                if (!record.automatic() || record.area().blockX() != 16384 || generationProgress.radius() != 1
+                        || generationProgress.remainingChunks() != 0 || generationProgress.estimatedSeconds(1) != 0)
+                    throw new AssertionError("Automatic Voxy task ignored its center or completed progress");
+                completedChunks = new dev.lodgen.task.SquarePlan(record.area()).chunks();
+                if (completedChunks != 4) throw new AssertionError("Unexpected small-radius chunk count: " + completedChunks);
                 LodgenConfig.apply(new LodgenConfig(false, 1, 1, true, 1000, dev.lodgen.generation.GenerationCenter.CUSTOM, 16384, -16384, 1));
                 var server = client.getSingleplayerServer();
                 far = CompletableFuture.runAsync(() -> {
@@ -133,8 +123,8 @@ public final class VoxyWorldCheck {
                 // #endif
                 var message = actionBar.lodgen$actionBarMessage();
                 if (message != null && !message.getString().isEmpty()) throw new AssertionError("Zero throughput left action-bar text behind");
-                StartupCheck.report("PASS: Voxy without DH generated " + completedTiles
-                        + " custom-center tiles (radius 1, saved radius 1) and 20 far command chunks across overworld/nether without a dimension visit; current/origin/start/pause/continue/stop commands passed; vanilla action-bar throughput appeared, cleared at zero, and preserved another message. Total target chunks <= 88.");
+                StartupCheck.report("PASS: Voxy without DH generated " + completedChunks
+                        + " custom-center task chunks (radius 1, saved radius 1) and 20 far command chunks across overworld/nether without a dimension visit; current/origin/start/pause/continue/stop commands passed; vanilla action-bar throughput appeared, cleared at zero, and preserved another message. Total target chunks <= 88.");
                 stage = 4; client.stop(); return;
             }
             if (!far.isDone() || !taskStatus.isDone() || !OverlayCheck.rendered) return;

@@ -20,6 +20,7 @@ parser.add_argument("--run-name", help="Separate disposable benchmark directory 
 parser.add_argument("--skip-build", action="store_true")
 parser.add_argument("--startup-only", action="store_true", help="Load the packaged startup fixture and stop before opening a world")
 parser.add_argument("--task-check", action="store_true", help="Commands, mixed saved/LOD radius, and orderly auto-resume using only a 5c radius")
+parser.add_argument("--autostart-check", action="store_true", help="Automatic task pause/reload, cancel and distance shrink using only a 5c radius")
 parser.add_argument("--dh-plan-check", action="store_true", help="DH generator plans, center-first ordering, live disable and commands; maximum 5c radius")
 parser.add_argument("--distance-check", action="store_true", help="Check custom 64 versus DH 128 using only two 4x4 LOD sections")
 parser.add_argument("--quick", action="store_true", help="Skip benchmark warmup and cap server checks at 120/60 seconds")
@@ -37,6 +38,11 @@ parser.add_argument("--dh-queue", action="store_true", help="Use DH's actual req
 parser.add_argument("--frontier-radius", type=int, default=0, help="Start DH queue requests on a distant square frontier, in chunks")
 parser.add_argument("--store-lods", action="store_true", help="Include DH's actual asynchronous database updates")
 parser.add_argument("--worldgen-instance", type=Path, help="Copy WWOO, Continents, their libraries and DH/C2ME settings from a Prism Minecraft directory")
+parser.add_argument("--instance-optimizations", action="store_true", help="Copy the instance's server-safe optimization mods and use ZGC/compact headers")
+parser.add_argument("--extra-mod", type=Path, action="append", default=[], help="Copy an additional server-compatible mod into the disposable test")
+parser.add_argument("--original-predicates", action="store_true", help="Benchmark vanilla disk predicates with the same LODgen pipeline")
+parser.add_argument("--verify-terrain", action="store_true", help="Hash all benchmark LOD columns, including blocks, biomes and lighting")
+parser.add_argument("--verify-predicates", action="store_true", help="Compare every optimized disk test against vanilla on the same live terrain")
 parser.add_argument("--heap", default="8G", help="Maximum heap for world tests")
 parser.add_argument("--optimized", action="store_true", help="26.2 Fabric optimization stack, ZGC and compact object headers")
 parser.add_argument("--jfr", action="store_true", help="Record the disposable server with Java Flight Recorder")
@@ -44,10 +50,14 @@ parser.add_argument("--trace-ownership", action="store_true", help="Log the call
 parser.add_argument("--vanilla", action="store_true", help="Test without C2ME")
 parser.add_argument("--baseline", action="store_true", help="Run the same check with DH's original FEATURES generator")
 args = parser.parse_args()
+if args.instance_optimizations and not args.worldgen_instance:
+    parser.error("--instance-optimizations requires --worldgen-instance")
 if args.run_name and not re.fullmatch(r"[A-Za-z0-9_-]+", args.run_name):
     parser.error("--run-name must be a simple directory name")
 if args.optimized and (args.mc != "26.2" or args.loader != "fabric"):
     parser.error("--optimized currently pins the 26.2 Fabric benchmark stack")
+if args.autostart_check:
+    args.task_check = True
 if args.task_check and (args.startup_only or args.distance_check or args.benchmark or args.baseline):
     parser.error("--task-check cannot be combined with startup-only, distance-check, benchmark or baseline")
 if args.dh_plan_check and (args.startup_only or args.task_check or args.distance_check or args.benchmark or args.baseline):
@@ -138,6 +148,23 @@ if args.worldgen_instance:
     lithostitched_config = args.worldgen_instance / "config" / "lithostitched.json"
     if lithostitched_config.exists():
         shutil.copyfile(lithostitched_config, run / "config" / lithostitched_config.name)
+    for name in ("wwoo", "cristellib"):
+        source = args.worldgen_instance / "config" / name
+        if source.exists():
+            shutil.copytree(source, run / "config" / name, dirs_exist_ok=True)
+    if args.instance_optimizations:
+        for pattern in ("lithium-*.jar", "ferritecore-*.jar", "structure_layout_optimizer-*.jar",
+                        "ResourcefulConfig-*.jar", "zfastnoise-*.jar", "zconfig-*.jar"):
+            for artifact in (args.worldgen_instance / "mods").glob(pattern):
+                shutil.copyfile(artifact, run / "mods" / artifact.name)
+        for name in ("zfastnoise.mixin.toml", "lithium.properties", "ferritecore.mixin.properties"):
+            source = args.worldgen_instance / "config" / name
+            if source.exists():
+                shutil.copyfile(source, run / "config" / name)
+for artifact in args.extra_mod:
+    if not artifact.is_file() or artifact.suffix != ".jar":
+        parser.error(f"--extra-mod needs an existing .jar: {artifact}")
+    shutil.copyfile(artifact, run / "mods" / artifact.name)
 if args.native_workers:
     c2me_config = run / "config" / "c2me.toml"
     current = c2me_config.read_text() if c2me_config.exists() else "version = 3\nglobalExecutorParallelism = \"default\"\n"
@@ -176,6 +203,7 @@ benchmark_options = [f"-Dlodgen.test.warmupAxis={args.warmup_axis}", f"-Dlodgen.
                      f"-Dlodgen.test.baseline={str(args.baseline).lower()}",
                      f"-Dlodgen.test.distance={str(args.distance_check).lower()}",
                      f"-Dlodgen.test.tasks={str(args.task_check).lower()}",
+                     f"-Dlodgen.test.autostart={str(args.autostart_check).lower()}",
                      f"-Dlodgen.test.dhPlans={str(args.dh_plan_check).lower()}",
                      f"-Dlodgen.test.skipWarmup={str(args.quick).lower()}",
                      f"-Dlodgen.test.nativeWorkers={args.native_workers}",
@@ -183,11 +211,14 @@ benchmark_options = [f"-Dlodgen.test.warmupAxis={args.warmup_axis}", f"-Dlodgen.
                      f"-Dlodgen.test.dhQueue={str(args.dh_queue).lower()}",
                      f"-Dlodgen.test.frontierRadius={args.frontier_radius}",
                      f"-Dlodgen.test.storeLods={str(args.store_lods).lower()}"]
+benchmark_options += [f"-Dlodgen.test.originalPredicates={str(args.original_predicates).lower()}",
+                      f"-Dlodgen.test.verifyPredicates={str(args.verify_predicates).lower()}",
+                      f"-Dlodgen.test.verifyTerrain={str(args.verify_terrain).lower()}"]
 if args.trace_ownership:
     benchmark_options.append("-Dlodgen.test.traceOwnership=true")
 if args.chunky_working_count:
     benchmark_options.append(f"-Dchunky.maxWorkingCount={args.chunky_working_count}")
-if args.optimized:
+if args.optimized or args.instance_optimizations:
     benchmark_options += ["-XX:+UseZGC", "-XX:+UseCompactObjectHeaders"]
 if args.jfr:
     benchmark_options.append("-XX:StartFlightRecording=filename=benchmark.jfr,settings=profile,dumponexit=true")

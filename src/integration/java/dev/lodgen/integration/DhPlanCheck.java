@@ -58,12 +58,30 @@ public final class DhPlanCheck {
                         require(automaticProgress(server).completedChunks() == completed && completed < 100, "Disabled automatic callback kept refilling");
                         require(GenerationTasks.displaySource(level).progress().state() == dev.lodgen.generation.GenerationProgress.State.DISABLED,
                                 "Disabled automatic status did not follow DH");
-                        require(server.getCommands().getDispatcher().execute("lodgen start overworld 131072 -131072 1c", server.createCommandSourceStack()) == 1,
-                                "Commands must run with DH disabled");
+                        Config.Common.WorldGenerator.generatorPlan.set(EDhApiGeneratorPlan.SURFACE_ONLY);
                     }));
-                }).thenCompose(ignored -> until(server, () -> GenerationTasks.get(server).status().contains("progress=4/4")))
-                .thenCompose(ignored -> onServer(server, () -> Config.Common.WorldGenerator.generatorPlan.set(EDhApiGeneratorPlan.SURFACE_ONLY)))
+                })
                 .thenCompose(ignored -> until(server, () -> automaticProgress(server).state() == TaskProgress.State.COMPLETE))
+                .thenCompose(ignored -> onServer(server, () -> {
+                    require(automaticArea(server).blockX() == 7000 * 16 && automaticProgress(server).completedChunks() == 100,
+                            "Re-enabling did not resume the incomplete automatic task");
+                    Config.Common.WorldGenerator.generatorPlan.set(EDhApiGeneratorPlan.CHUNKS_ONLY);
+                    requireOverrideBusy(generator, true, "API generator duplicated the automatic chunk phase");
+                    LodgenConfig.apply(new LodgenConfig(false, 1, 5, false, 1000, GenerationCenter.CUSTOM, 7000 * 16, -7000 * 16, 0));
+                    Config.Common.WorldGenerator.generatorPlan.set(EDhApiGeneratorPlan.CHUNKS_ONLY);
+                    require(!GenerationTasks.overridesAutomatic(level), "Addon toggle off left the old automatic task blocking DH's chunk phase");
+                    requireOverrideBusy(generator, false, "API generator did not resume when automatic generation was turned off");
+                    var dhLevel = (IDhServerLevel) generator.serverLevelWrapper.getDhLevel();
+                    var queue = new WorldGenerationQueue(new DhWorldGenerator(dhLevel), dhLevel);
+                    try {
+                        var busy = queue.getClass().getDeclaredMethod("isGeneratorBusy"); busy.setAccessible(true);
+                        require(Boolean.FALSE.equals(busy.invoke(queue)), "DH chunk admission must resume when addon automatic generation is off");
+                    } finally { queue.close(); }
+                    Config.Common.WorldGenerator.generatorPlan.set(EDhApiGeneratorPlan.DISABLED);
+                    requireOverrideBusy(generator, true, "API generator ignored DH Disabled");
+                    require(server.getCommands().getDispatcher().execute("lodgen start overworld 131072 -131072 1c", server.createCommandSourceStack()) == 1,
+                            "Commands must run with DH disabled");
+                })).thenCompose(ignored -> until(server, () -> GenerationTasks.get(server).status().contains("progress=4/4")))
                 .thenCompose(ignored -> onServer(server, () -> configure(true, EDhApiGeneratorPlan.SURFACE_THEN_CHUNKS, GenerationCenter.CUSTOM, 1, 9000 * 16)))
                 .thenCompose(ignored -> until(server, () -> automaticProgress(server).state() == TaskProgress.State.COMPLETE
                         && automaticArea(server).blockX() == 9000 * 16))
@@ -71,6 +89,7 @@ public final class DhPlanCheck {
                     var surface = (CompletableFuture<?>) field(automaticJob(server), "surface");
                     require(surface != null && surface.isDone() && !surface.isCompletedExceptionally(), "Fixed-area job skipped DH's rough surface phase");
                 })).thenCompose(ignored -> roughQueue(server, generator, 9000))
+                .thenCompose(ignored -> roughQueue(server, generator, 9000, true))
                 .thenCompose(ignored -> onServer(server, () -> {
                     configure(true, EDhApiGeneratorPlan.DISABLED, GenerationCenter.CUSTOM, 1, 10000 * 16);
                     LodgenConfig.apply(new LodgenConfig(true, 1, 1, false, 1000, GenerationCenter.CUSTOM, 160000, -160000, 2));
@@ -79,7 +98,7 @@ public final class DhPlanCheck {
                     return delay(server, 300).thenCompose(done -> onServer(server, () -> {
                         require(PersistenceRegistry.throughput(level).totalCompleted() == completed, "DH Disabled allowed saved-radius automatic pregen");
                         require(automaticArea(server).blockX() == 9000 * 16, "Disabled created another automatic job");
-                        Files.writeString(Path.of("integration-result.txt"), "PASS: DH Surface Then Chunks retains rough surfaces beyond the native radius and uses native chunks with auto off; Chunks Only with auto off selects the center before the outer section; Surface Only respects opt-in chunks; live Disabled drains without refilling, blocks saved-radius auto jobs, and permits commands; re-enabling resumes; fixed-area rough phase completes before chunks and permits viewport rough requests. Generated 156 native LOD targets, using at most 5c radius.\n");
+                        Files.writeString(Path.of("integration-result.txt"), "PASS: DH Surface Then Chunks retains rough surfaces beyond the native radius and uses native chunks with auto off; Chunks Only with auto off selects the center before the outer section; Surface Only respects opt-in chunks; live Disabled drains without refilling, blocks saved-radius auto jobs, and permits commands; re-enabling resumes; fixed-area rough phase completes before chunks and permits viewport rough requests. API generator overrides pause duplicate chunk work, retain rough surfaces, resume with automatic generation off and obey Disabled. Generated 156 native LOD targets, using at most 5c radius.\n");
                     }));
                 }).orTimeout(60, TimeUnit.SECONDS).whenComplete((ignored, failure) -> server.execute(() -> {
                     if (failure != null) {
@@ -116,8 +135,11 @@ public final class DhPlanCheck {
                 .whenComplete((ignored, failure) -> queue.close());
     }
     private static CompletableFuture<Void> roughQueue(MinecraftServer server, DhWorldGenerator generator, int center) {
+        return roughQueue(server, generator, center, false);
+    }
+    private static CompletableFuture<Void> roughQueue(MinecraftServer server, DhWorldGenerator generator, int center, boolean override) {
         var dhLevel = (IDhServerLevel) generator.serverLevelWrapper.getDhLevel();
-        var queue = new WorldGenerationQueue(new DhWorldGenerator(dhLevel), dhLevel);
+        var queue = new WorldGenerationQueue(override ? apiOverride(generator) : new DhWorldGenerator(dhLevel), dhLevel);
         var surface = queue.submitRetrievalTask(DhSectionPos.encode((byte) 7, (center + 128) / 8, -center / 8), (byte) 1);
         require(((java.util.concurrent.atomic.AtomicInteger) field(queue, "lodgen$roughPending")).get() == 1, "Missing pending rough counter");
         queue.startAndSetTargetPos(new DhBlockPos2D(center * 16, -center * 16));
@@ -128,11 +150,28 @@ public final class DhPlanCheck {
             require(((java.util.concurrent.atomic.AtomicInteger) field(queue, "lodgen$roughActive")).get() == 0, "Rough active counter did not drain");
         })).whenComplete((ignored, failure) -> queue.close());
     }
+    private static com.seibel.distanthorizons.api.interfaces.override.worldGenerator.IDhApiWorldGenerator apiOverride(DhWorldGenerator delegate) {
+        var type = com.seibel.distanthorizons.api.interfaces.override.worldGenerator.IDhApiWorldGenerator.class;
+        return (com.seibel.distanthorizons.api.interfaces.override.worldGenerator.IDhApiWorldGenerator)
+                java.lang.reflect.Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, (proxy, method, args) -> {
+                    if (method.getName().equals("close")) return null;
+                    try { return method.invoke(delegate, args); }
+                    catch (java.lang.reflect.InvocationTargetException error) { throw error.getCause(); }
+                });
+    }
+    private static void requireOverrideBusy(DhWorldGenerator generator, boolean expected, String message) throws Exception {
+        var level = (IDhServerLevel) generator.serverLevelWrapper.getDhLevel();
+        var queue = new WorldGenerationQueue(apiOverride(generator), level);
+        try {
+            var busy = queue.getClass().getDeclaredMethod("isGeneratorBusy"); busy.setAccessible(true);
+            require(Boolean.valueOf(expected).equals(busy.invoke(queue)), message);
+        } finally { queue.close(); }
+    }
     private static Object field(Object object, String name) {
         try { var field = object.getClass().getDeclaredField(name); field.setAccessible(true); return field.get(object); }
         catch (Exception error) { throw new RuntimeException(error); }
     }
-    private static Object automaticJob(MinecraftServer server) { return ((Map<?, ?>) field(GenerationTasks.get(server), "automatic")).get("minecraft:overworld"); }
+    private static Object automaticJob(MinecraftServer server) { return field(GenerationTasks.get(server), "command"); }
     private static TaskProgress automaticProgress(MinecraftServer server) {
         var job = automaticJob(server);
         return job == null ? new TaskProgress(new dev.lodgen.task.SquarePlan(new dev.lodgen.generation.GenerationArea(0, 0, 1, 0))) : (TaskProgress) field(job, "progress");

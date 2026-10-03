@@ -25,6 +25,7 @@ import com.seibel.distanthorizons.core.level.IDhServerLevel;
 import com.seibel.distanthorizons.core.pos.blockPos.DhBlockPos2D;
 
 public final class BenchmarkCheck {
+    private static final java.util.concurrent.ConcurrentSkipListMap<Long, String> TERRAIN = new java.util.concurrent.ConcurrentSkipListMap<>();
     public static CompletableFuture<Void> run(DhWorldGenerator generator, ExecutorService executor) {
         int axis = Integer.getInteger("lodgen.test.benchmark", 0);
         if (axis == 0) return CompletableFuture.completedFuture(null);
@@ -47,6 +48,7 @@ public final class BenchmarkCheck {
         CompletableFuture<Void> warmup = Boolean.getBoolean("lodgen.test.skipWarmup")
                 ? CompletableFuture.completedFuture(null) : area(generator, benchmarkExecutor, 12000, -12000, Integer.getInteger("lodgen.test.warmupAxis", 16));
         return warmup.thenCompose(ignored -> {
+            TERRAIN.clear();
             long start = System.nanoTime();
             return (Boolean.getBoolean("lodgen.test.dhQueue") ? queuedArea(generator, 10240, -10240, axis)
                     : area(generator, benchmarkExecutor, 10240, -10240, axis)).thenCompose(done -> {
@@ -97,6 +99,7 @@ public final class BenchmarkCheck {
                         if (data == null || data.getApiDataPointColumn(0, 0).isEmpty()) {
                             return CompletableFuture.failedFuture(new AssertionError("Empty queue result"));
                         }
+                        fingerprint(data);
                         CompletableFuture<Void> saved = Boolean.getBoolean("lodgen.test.storeLods")
                                 ? generator.serverLevelWrapper.getDhLevel().updateDataSourcesAsync(data)
                                 : CompletableFuture.completedFuture(null);
@@ -160,6 +163,7 @@ public final class BenchmarkCheck {
                 EDhApiDistantGeneratorMode.FEATURES, executor, output -> {
                     if (output != data) throw new AssertionError("Pooled source ownership changed");
                     if (data.getApiDataPointColumn(0, 0).isEmpty()) throw new AssertionError("Empty benchmark output");
+                    fingerprint(data);
                     if (Boolean.getBoolean("lodgen.test.storeLods")) {
                         saved.set(generator.serverLevelWrapper.getDhLevel().updateDataSourcesAsync(data));
                     }
@@ -186,9 +190,55 @@ public final class BenchmarkCheck {
             data += ",\"dhQueue\":" + Boolean.getBoolean("lodgen.test.dhQueue");
             data += ",\"frontierRadius\":" + Integer.getInteger("lodgen.test.frontierRadius", 0);
             data += ",\"spatialBatching\":" + true;
+            data += ",\"originalPredicates\":" + Boolean.getBoolean("lodgen.test.originalPredicates");
+            if (Boolean.getBoolean("lodgen.test.verifyPredicates")) data += ",\"predicatesCompared\":" + DiskPredicateCheck.compared()
+                    + ",\"skippedDisks\":" + DiskPredicateCheck.skippedDisks();
+            if (Boolean.getBoolean("lodgen.test.verifyTerrain")) {
+                if (TERRAIN.size() != count / 16) throw new AssertionError("Missing benchmark terrain fingerprints");
+                var digest = java.security.MessageDigest.getInstance("SHA-256");
+                for (String tile : TERRAIN.values()) digest.update(tile.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                data += ",\"terrainSha256\":\"" + java.util.HexFormat.of().formatHex(digest.digest()) + "\"";
+                data += ",\"fingerprintedTiles\":" + TERRAIN.size();
+            }
             Files.writeString(Path.of("benchmark-result.json"), data + "}\n");
             LodgenConfig.LOGGER.info("BENCHMARK RESULT: {}", data + "}");
             return CompletableFuture.completedFuture(null);
         } catch (Exception error) { return CompletableFuture.failedFuture(error); }
+    }
+
+    /** Canonicalize DH's insertion-order palette before hashing terrain/light. */
+    private static void fingerprint(FullDataSourceV2 source) {
+        if (!Boolean.getBoolean("lodgen.test.verifyTerrain")) return;
+        try {
+            var digest = java.security.MessageDigest.getInstance("SHA-256");
+            var word = java.nio.ByteBuffer.allocate(Long.BYTES);
+            String[] names = new String[source.mapping.size()];
+            Integer[] order = new Integer[names.length];
+            for (int id = 0; id < names.length; id++) {
+                names[id] = source.mapping.getBlockStateWrapper(id).getSerialString() + "\0"
+                        + source.mapping.getBiomeWrapper(id).getSerialString();
+                order[id] = id;
+            }
+            Arrays.sort(order, Comparator.comparing(id -> names[id]));
+            int[] remap = new int[names.length];
+            for (int id = 0; id < names.length; id++) {
+                remap[order[id]] = id;
+                byte[] name = names[order[id]].getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                digest.update(word.clear().putLong(name.length).array());
+                digest.update(name);
+            }
+            digest.update(word.clear().putLong(source.getPos()).array());
+            for (var column : source.dataPoints) {
+                digest.update(word.clear().putLong(column == null ? -1 : column.size()).array());
+                if (column == null) continue;
+                for (int i = 0; i < column.size(); i++) {
+                    long point = column.getLong(i);
+                    long canonical = com.seibel.distanthorizons.core.util.FullDataPointUtil.setId(point,
+                            remap[com.seibel.distanthorizons.core.util.FullDataPointUtil.getId(point)]);
+                    digest.update(word.clear().putLong(canonical).array());
+                }
+            }
+            TERRAIN.put(source.getPos(), java.util.HexFormat.of().formatHex(digest.digest()));
+        } catch (java.security.NoSuchAlgorithmException error) { throw new AssertionError(error); }
     }
 }

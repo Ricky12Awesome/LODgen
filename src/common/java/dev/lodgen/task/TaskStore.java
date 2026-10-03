@@ -18,13 +18,13 @@ public final class TaskStore {
         if (!Files.exists(path)) return null;
         try (var reader = Files.newBufferedReader(path)) {
             var data = new TomlParser().parse(reader);
-            if (number(data.get("layoutVersion")) != 2) throw new IllegalArgumentException("Unsupported task layout");
+            if (number(data.get("layoutVersion")) != 3) throw new IllegalArgumentException("Unsupported task layout");
             var area = new GenerationArea(number(data.get("x")), number(data.get("z")), number(data.get("radius")), number(data.get("savedRadius")));
             List<?> values = data.get("completedBeyond");
             var completed = values.stream().map(value -> integer(value)).toList();
             var progress = new TaskProgress.Snapshot(TaskProgress.State.valueOf(data.get("state")), integer(data.get("completedPrefix")), completed, data.get("error"));
             new TaskProgress(new SquarePlan(area), progress); // Validate before a corrupt file can dispatch work.
-            return new TaskRecord(data.get("dimension"), area, data.get("dh"), data.get("voxy"), progress);
+            return new TaskRecord(data.get("dimension"), area, data.get("dh"), data.get("voxy"), data.get("automatic"), progress);
         } catch (RuntimeException invalid) { throw new IOException("Invalid LODgen task checkpoint", invalid); }
     }
     private static int number(Object value) { return Math.toIntExact(integer(value)); }
@@ -34,11 +34,12 @@ public final class TaskStore {
     }
     public static void write(Path path, TaskRecord task) throws IOException {
         var values = CommentedConfig.inMemory();
-        values.set("layoutVersion", 2);
+        values.set("layoutVersion", 3);
         values.set("dimension", task.dimension());
         values.set("x", task.area().blockX()); values.set("z", task.area().blockZ());
         values.set("radius", task.area().radius()); values.set("savedRadius", task.area().savedRadius());
         values.set("dh", task.dh()); values.set("voxy", task.voxy());
+        values.set("automatic", task.automatic());
         values.set("state", task.progress().state().name());
         values.set("completedPrefix", task.progress().prefix()); values.set("completedBeyond", task.progress().beyond());
         values.set("error", task.progress().error());

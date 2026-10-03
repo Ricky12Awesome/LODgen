@@ -23,6 +23,16 @@ public final class StartupCheck {
                 // #endif
                 net.minecraft.world.level.chunk.ChunkAccess.class,
                 net.minecraft.world.level.chunk.ChunkGenerator.class,
+                net.minecraft.world.level.levelgen.blockpredicates.StateTestingPredicate.class,
+                // #if MC_263
+                // Disk configuration is part of the feature record in 26.3.
+                // #else
+                net.minecraft.world.level.levelgen.feature.configurations.DiskConfiguration.class,
+                // #endif
+                net.minecraft.world.level.levelgen.feature.DiskFeature.class,
+                net.minecraft.world.level.levelgen.blockpredicates.BlockPredicate.allOf(java.util.List.of()).getClass(),
+                net.minecraft.world.level.levelgen.blockpredicates.BlockPredicate.not(
+                        net.minecraft.world.level.levelgen.blockpredicates.BlockPredicate.alwaysTrue()).getClass(),
                 net.minecraft.world.level.chunk.storage.IOWorker.class,
                 net.minecraft.world.level.chunk.storage.RegionFileStorage.class
         };

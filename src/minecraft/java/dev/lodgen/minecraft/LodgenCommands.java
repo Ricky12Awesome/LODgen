@@ -29,6 +29,7 @@ public final class LodgenCommands {
                 .then(Commands.literal("origin").then(radius("origin")))
                 .then(Commands.literal("current").then(radius("current")))));
         root.then(Commands.literal("stop").executes(context -> control(context, "stop")));
+        root.then(Commands.literal("cancel").executes(context -> control(context, "stop")));
         root.then(Commands.literal("pause").executes(context -> control(context, "pause")));
         root.then(Commands.literal("continue").executes(context -> control(context, "continue")));
         root.then(Commands.literal("status").executes(context -> control(context, "status")));

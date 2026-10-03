@@ -1,6 +1,6 @@
 {
   "lodgen.config.title": "LODgen",
-  "lodgen.config.enabled.tooltip": "Run extra automatic chunk generation for DH FEATURES and Voxy. DH’s Disabled plan blocks it. DH chunk phases still use LODgen when this is off; Surface Only adds chunks only when on. Commands run independently.",
+  "lodgen.config.enabled.tooltip": "Start a generation task on world load using the configured area. Pause, continue or stop it with /lodgen commands. DH’s Disabled plan blocks autostart. DH chunk phases still use LODgen when this is off; Surface Only adds chunks only when on. Explicit starts run independently.",
   "lodgen.config.defaults": "Defaults",
   "lodgen.config.apply": "Apply",
   "lodgen.config.invalid": "Invalid value. Check each setting’s tooltip.",

@@ -97,6 +97,7 @@ def generated = layout.buildDirectory.dir('generated/sources/minecraft')
 def preprocess = tasks.register('preprocessMinecraft') {
     inputs.dir('src/minecraft/java')
     inputs.property('mc', mc)
+    inputs.property('loader', platform)
     inputs.property('startup', startup)
     if (startup) inputs.dir('src/startup/java')
     outputs.dir(generated)
@@ -112,7 +113,7 @@ def preprocess = tasks.register('preprocessMinecraft') {
                     def directive = line.trim()
                     if (directive.startsWith('// #if ')) {
                         def flag = directive.substring(7)
-                        def enabled = [MC_1211: mc == '1.21.1', MC_263: mc == '26.3', MC_26: mc != '1.21.1', MC_262_PLUS: mc in ['26.2', '26.3']][flag]
+                        def enabled = [MC_1211: mc == '1.21.1', MC_1211_FABRIC: mc == '1.21.1' && platform == 'fabric', MC_263: mc == '26.3', MC_26: mc != '1.21.1', MC_262_PLUS: mc in ['26.2', '26.3']][flag]
                         if (enabled == null) throw new GradleException("Unknown preprocessor flag ${flag}")
                         active.add(active.last() && enabled)
                     } else if (directive == '// #else') {

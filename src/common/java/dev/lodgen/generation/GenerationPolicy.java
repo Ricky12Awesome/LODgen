@@ -7,10 +7,7 @@ public record GenerationPolicy(boolean enabled, Plan plan, boolean features) {
     public boolean dhChunks() {
         return features && (plan == Plan.SURFACE_THEN_CHUNKS || plan == Plan.CHUNKS_ONLY);
     }
-    public boolean extraDhChunks(boolean fixedCenter) {
-        return automatic() && features && plan != Plan.NO_DH
-                && (fixedCenter || plan == Plan.SURFACE_ONLY);
-    }
+    public boolean automaticChunks() { return automatic() && (features || plan == Plan.NO_DH); }
     public boolean surfaceFirst() { return plan == Plan.SURFACE_THEN_CHUNKS || plan == Plan.SURFACE_ONLY; }
     public boolean anyAutomatic() { return automatic() || plan != Plan.DISABLED && plan != Plan.NO_DH; }
 }

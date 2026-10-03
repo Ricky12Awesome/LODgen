@@ -43,13 +43,13 @@ chunksPerSecondUpdateIntervalMs = 1000
 | 4 | Aggressive | 75% | 100% |
 | 5 | Full power | 100% | 100% |
 
-Native concurrency and memory use adjust automatically; there are no batch, waiting-queue or spatial-grouping controls. Full power on a 32-thread CPU with a 32 GB heap permits 256 concurrent 4×4 requests (4,096 target chunks plus dependencies). Smaller heaps reduce that window. Automatic Voxy generation completes compact 32×32 patches before moving outward, keeping native dependencies useful as the radius grows. Requests refill on completion, while conversion, ticket cleanup and normal play retain their own lifetimes. These settings control LODgen’s work; C2ME and renderer storage services retain their own worker settings. They are utilization presets, rather than strict limits on overall process CPU usage.
+Native concurrency and memory use adjust automatically; there are no batch, waiting-queue or spatial-grouping controls. Full power on a 32-thread CPU with a 32 GB heap permits 256 concurrent 4×4 requests (4,096 target chunks plus dependencies). Smaller heaps reduce that window. Automatic and command tasks complete compact 32×32 patches before moving outward, keeping native dependencies useful as the radius grows. Requests refill on completion, while conversion, ticket cleanup and normal play retain their own lifetimes. These settings control LODgen’s work; C2ME and renderer storage services retain their own worker settings. They are utilization presets, rather than strict limits on overall process CPU usage.
 
 For maximum OpenCL throughput, use Java 25+ with a sufficiently large heap, `-XX:+UseZGC -XX:+UseCompactObjectHeaders`, ScalableLux, Lithium, FerriteCore, Structure Layout Optimizer and zFastNoise. Set C2ME’s `globalExecutorParallelism` to the available thread count or slightly below; its default can be lower. LODgen does not rewrite C2ME’s configuration or alter the scheduler used by ordinary player and Chunky requests. More RAM keeps useful native dependencies alive; allocating all RAM does not necessarily improve throughput.
 
 `generationDistance` is a radius in chunks. **0 follows the active renderer's distance**; a positive value overrides the chunk-based FEATURES generation radius. For example, `generationDistance = 512` with DH set to 1024 limits new chunk-based LOD generation to 512 while retaining DH's 1024 render distance. Changing it in game drops waiting requests beyond the new limit; active batches finish. Whole sections overlapping the boundary are retained, and native supporting chunks may extend beyond it. With the default current-position center, DH still controls which LODs are requested. Dedicated-server current-position mode uses the explicit override too; 0 preserves client request ranges. Normal player and Chunky generation keep their ranges.
 
-`generationCenter` accepts `"current"`, `"origin"` or `"custom"`. Current follows the player; origin uses **world spawn**, rather than coordinate 0,0; custom uses `centerX` and `centerZ`, in **blocks**. With Automatic generation on, fixed-center DH FEATURES generation runs independently of the player's viewport, and Voxy uses the selected center for its own frontier. Surface Only also starts chunk jobs for the current position when automatic generation is on. Fixed-area surface plans run DH's normal rough generator before their native chunk jobs, while DH can continue requesting rough surfaces across its render distance.
+`generationCenter` accepts `"current"`, `"origin"` or `"custom"`. Current captures the player's position when the task starts, like `/lodgen start ... current`; origin uses **world spawn**, rather than coordinate 0,0; custom uses `centerX` and `centerZ`, in **blocks**. With Automatic generation on, joining a world starts a task using the configured center, generation radius and saved radius. DH and Voxy use the same task scheduler. Automatic DH surface plans run DH's normal rough generator before their native chunk jobs, while DH can continue requesting rough surfaces across its render distance. Changing the automatic center/radii can update a running or completed automatic job; paused and stopped jobs retain their state.
 
 Chunk jobs begin at the selected center and expand through nearby compact 32×32 patches. DH's native chunk queue uses the same center-relative priority, rather than an absolute coordinate ordering that could favor the outer corner. Lowering a radius, moving the center or disabling generation stops completion callbacks from refilling the old area; admitted work finishes safely.
 
@@ -63,6 +63,7 @@ Commands require operator permission level 2 and work on the integrated or dedic
 /lodgen start <dim> <x> <z> <radius> [saved-radius]
 /lodgen start <dim> <origin|current> <radius> [saved-radius]
 /lodgen stop
+/lodgen cancel
 /lodgen pause
 /lodgen continue
 /lodgen status
@@ -81,15 +82,15 @@ For a smaller example:
 /lodgen continue
 ```
 
-Status reports dimension, center X/Z, LOD and saved radii, completed/total chunks, percentage, active batches, throughput and any error. Pause stops new dispatch while active work finishes. Continue resumes a paused task; stop ends it and permits another start. One command task runs per server. An active or paused command takes priority over automatic generation in its dimension. Explicit commands run even when automatic generation is off or DH's generator plan is Disabled.
+Status reports dimension, center X/Z, LOD and saved radii, completed/total chunks, percentage, active batches, throughput and any error. Autostart creates a real task, effectively running `/lodgen start` with the configured area. Pause, continue, stop and status control automatic tasks exactly like command tasks; cancel is an alias for stop. Pause stops new dispatch while active work finishes. Stop ends the task and prevents autostart or DH's queue from restarting it. One task runs per server. An explicit start can replace an automatic task; commands run even when automatic generation is off or DH's generator plan is Disabled. Automatic tasks continue to obey the automatic toggle and DH's generator plan/mode.
 
-Task state and completion checkpoints are stored in `<world>/lodgen/task.toml`. A running task automatically continues on world load/server start; paused tasks stay paused and stopped/completed tasks stay finished. Orderly shutdown checkpoints outstanding work; after an abrupt crash, some uncheckpointed batches may run again. Fixed-center automatic generation and automatic saved areas have separate dimension checkpoints in the same folder.
+All task state and completion checkpoints are stored in `<world>/lodgen/task.toml`, including whether the task started automatically. A running task automatically continues on world load/server start; paused tasks stay paused and stopped/completed tasks stay finished. Orderly shutdown checkpoints outstanding work; after an abrupt crash, some uncheckpointed batches may run again. Voxy has no separate automatic frontier or tile checkpoint.
 
-The center-out traversal uses checkpoint layout 2. Earlier development checkpoints are not imported; start a new command task to replace them. Automatic area checkpoints regenerate with the new layout.
+The shared task checkpoint uses layout 3. Earlier development checkpoints are not imported; start a new task to replace them.
 
 LOD-only command work requires DH or a supported local Voxy installation. Voxy generation remains restricted to single-player/LAN hosts. Without either renderer, a saved radius at least as large as the LOD radius allows ordinary chunk pregen. All paths preserve normal player/Chunky ownership and saving.
 
-Enable **Show chunks per second** (`showChunksPerSecond = true`) to display throughput, **generation radius in chunks**, **estimated time remaining**, and **status** above the hotbar using Minecraft’s native action bar. For example: `LODgen: 1200.0 chunks/s | Radius: 64c | ETA: 12s | Running`. It counts successfully completed LODgen target chunks over the last five seconds, including its saved pregen targets and excluding supporting chunks and normal player/Chunky work. Command tasks use their own radius, remaining targets and dimension's throughput, including when the player is in another dimension. Automatic Voxy estimates use completed coverage inside the current square, including restored coverage; moving or shrinking the radius recalculates the remaining work. DH estimates use its remaining-generation counters. `/lodgen status` includes ETA too. Estimates change with throughput and show `—` while paused, waiting, stopped, or without a usable rate; completed tasks show `0s`.
+Enable **Show chunks per second** (`showChunksPerSecond = true`) to display throughput, **generation radius in chunks**, **estimated time remaining**, and **status** above the hotbar using Minecraft’s native action bar. For example: `LODgen: 1200.0 chunks/s | Radius: 64c | ETA: 12s | Running`. It counts successfully completed LODgen target chunks over the last five seconds, including its saved pregen targets and excluding supporting chunks and normal player/Chunky work. Automatic and command tasks use their own radius, remaining targets and dimension's throughput, including when the player is in another dimension. When DH manages generation without a LODgen task, estimates use its remaining-generation counters. `/lodgen status` includes ETA too. Estimates change with throughput and show `—` while paused, waiting, stopped, or without a usable rate; completed tasks show `0s`.
 
 The display works with Voxy and with DH when DH’s generation progress location is not **Overlay**. DH’s overlay takes priority regardless of this toggle; Chat, Log and Disabled allow LODgen’s display. **Overlay update interval (ms)** (`chunksPerSecondUpdateIntervalMs`) refreshes all action-bar fields from 1 to 60000 milliseconds, default 1000. It applies live and leaves the five-second averaging window unchanged. At zero chunks per second the message clears. It also clears when disabled, provided another message has not replaced it. Vanilla controls positioning and fading; long refresh intervals let the text fade between updates. The display respects the hidden HUD and only appears in worlds generated by the local integrated server.
 
@@ -198,6 +199,12 @@ The focused suite covers TOML parsing, live admission limits, the 512-to-128 bou
 python3 scripts/integration-test.py --mc 1.21.1 --loader neoforge --quick --task-check
 ```
 
+The headless autostart check uses a 5c task and a 1c saved radius. It checks actual task creation, pause across reopening, continue, cancellation, DH queue blocking and distance shrinking:
+
+```sh
+python3 scripts/integration-test.py --mc 26.2 --loader fabric --quick --autostart-check
+```
+
 The distance regression uses DH 128/custom 64 with just two 4×4 sections (32 target chunks), including a live reset to 0:
 
 ```sh
@@ -222,6 +229,8 @@ python3 scripts/integration-test.py --mc 1.21.1 --loader neoforge --quick \
 `--quick` skips benchmark warmup, caps each server run, and uses the existing versioned server installation. `--skip-build` reuses the self-test jar. The tiny workload is a correctness check, not a performance benchmark. For an enabled addon with `--dh-queue`, quick checks temporarily set DH to one worker, then restore its original CPU load to verify live backpressure. Only the selected WWOO/Continents worldgen jars and configuration are copied. The runner accepts the EULA for a disposable server and recreates only its world under `build/`.
 
 See [VALIDATION.md](VALIDATION.md) for current checks. The 26.2 vanilla/OpenCL measurements include generation and real renderer conversion; the 2,500 chunks/s expectation is not reached in every test area. Earlier performance measurements belong to the predecessor and are preserved in [docs/VALIDATION-0.2.1.md](docs/VALIDATION-0.2.1.md); they are not a new benchmark of this development build.
+
+WWOO's disk targets now share repeated neighbor reads, check native palettes for impossible placements, and avoid unnecessary neighbor tests. Custom DH generators such as SeedGen obey fixed-task ownership of the chunk phase. The [WWOO validation](docs/VALIDATION-wwoo-0.0.0.md) records 499–567 cps versus 455–467 cps for the original disk evaluation, plus live predicate and all-target compatibility checks.
 
 Upstream: [Distant Horizons](https://gitlab.com/distant-horizons-team/distant-horizons), [C2ME](https://github.com/RelativityMC/C2ME-fabric), [Chunky](https://github.com/pop4959/Chunky).
 

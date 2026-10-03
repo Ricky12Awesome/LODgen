@@ -4,7 +4,6 @@ import dev.lodgen.LodgenConfig;
 import dev.lodgen.generation.GenerationCenter;
 import dev.lodgen.minecraft.PersistenceRegistry;
 import dev.lodgen.voxy.VoxyBridge;
-import dev.lodgen.voxy.VoxyGeneration;
 import net.minecraft.client.Minecraft;
 import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
@@ -12,9 +11,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Set;
 
-/** Time the actual automatic frontier, then quit with native work still active. */
+/** Time the actual automatic task, then quit with native work still active. */
 public final class VoxyAutomaticCheck {
     private static final ArrayList<Map<String, Object>> samples = new ArrayList<>();
     private static long started, sampleTime, previous, baseline;
@@ -44,12 +42,14 @@ public final class VoxyAutomaticCheck {
                 row.put("overlayChunksPerSecond", throughput.chunksPerSecond());
                 row.put("nativeLoadedChunks", level.getChunkSource().getLoadedChunksCount());
                 row.put("heapUsedBytes", ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed());
-                var current = VoxyGeneration.class.getDeclaredField("current"); current.setAccessible(true);
-                Object session = current.get(null);
-                if (session != null) for (String key : new String[]{"active", "completed", "retry"}) {
-                    var field = session.getClass().getDeclaredField(key); field.setAccessible(true);
-                    Object collection = field.get(session);
-                    row.put(key + "Tiles", collection instanceof Set<?> set ? set.size() : ((Map<?, ?>) collection).size());
+                var current = dev.lodgen.minecraft.GenerationTasks.class.getDeclaredField("command"); current.setAccessible(true);
+                Object job = current.get(dev.lodgen.minecraft.GenerationTasks.get(level.getServer()));
+                if (job != null) {
+                    var active = job.getClass().getDeclaredField("active"); active.setAccessible(true);
+                    row.put("activeTiles", ((Map<?, ?>) active.get(job)).size());
+                    var progress = dev.lodgen.minecraft.GenerationTasks.displaySource(level).progress();
+                    row.put("remainingChunks", progress.remainingChunks());
+                    row.put("status", progress.state().name());
                 }
                 samples.add(row); previous = completed; sampleTime = now;
                 LodgenConfig.LOGGER.info("VOXY AUTOMATIC SAMPLE: {}", row);

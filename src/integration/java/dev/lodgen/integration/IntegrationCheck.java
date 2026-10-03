@@ -32,6 +32,7 @@ public final class IntegrationCheck {
         ExecutorService executor = Executors.newFixedThreadPool(8);
         try {
             Files.deleteIfExists(REPORT);
+            DiskPredicateCheck.run();
             int expectedWorkers = Integer.getInteger("lodgen.test.nativeWorkers", 0);
             if (expectedWorkers > 0) {
                 int actualWorkers = Class.forName("com.ishland.c2me.base.common.GlobalExecutors")
@@ -98,6 +99,10 @@ public final class IntegrationCheck {
                 try {
                     if (error != null) throw new IllegalStateException("FEATURES request failed", error);
                     require(callbacks.get() == 3, "One callback per DH request");
+                    if (Boolean.getBoolean("lodgen.test.verifyPredicates")) {
+                        require(DiskPredicateCheck.compared() > 0, "Live disk predicate verification did not run");
+                        LodgenConfig.LOGGER.info("PASS: {} live disk target evaluations exactly matched vanilla", DiskPredicateCheck.compared());
+                    }
                     var adopted = level.getChunk(8193, -8191);
                     require(!dev.lodgen.minecraft.PersistenceRegistry.get(level).suppress(8193, -8191), "Cache hit must adopt ephemeral chunks");
                     BlockPos lateEdit = new BlockPos(8193 * 16 + 2, 81, -8191 * 16 + 2);
