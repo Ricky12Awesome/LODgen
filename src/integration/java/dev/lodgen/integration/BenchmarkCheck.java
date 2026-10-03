@@ -191,6 +191,7 @@ public final class BenchmarkCheck {
             data += ",\"frontierRadius\":" + Integer.getInteger("lodgen.test.frontierRadius", 0);
             data += ",\"spatialBatching\":" + true;
             data += ",\"originalPredicates\":" + Boolean.getBoolean("lodgen.test.originalPredicates");
+            data += ",\"originalOreAllocations\":" + Boolean.getBoolean("lodgen.test.originalOreAllocations");
             if (Boolean.getBoolean("lodgen.test.verifyPredicates")) data += ",\"predicatesCompared\":" + DiskPredicateCheck.compared()
                     + ",\"skippedDisks\":" + DiskPredicateCheck.skippedDisks();
             if (Boolean.getBoolean("lodgen.test.verifyTerrain")) {

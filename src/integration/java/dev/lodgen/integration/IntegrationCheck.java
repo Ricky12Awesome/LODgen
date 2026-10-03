@@ -42,6 +42,7 @@ public final class IntegrationCheck {
                         Integer.getInteger("chunky.maxWorkingCount", 0));
             }
             ServerLevel level = server.overworld();
+            OreAllocationCheck.run(level);
             IServerLevelWrapper wrapper = null;
             for (var candidate : DhApi.Delayed.worldProxy.getAllLoadedLevelWrappers()) {
                 if (candidate instanceof IServerLevelWrapper serverWrapper && candidate.getWrappedMcObject() == level) {

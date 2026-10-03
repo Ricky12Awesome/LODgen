@@ -15,6 +15,7 @@
     "MatchingBlocksPredicateAccess",
     "DiskConfigurationMixin",
     "DiskFeatureMixin",
+    "OreFeatureMixin",
     "ChunkCacheAccess",
     "ChunkMapAccess",
     "ChunkCacheMixin",

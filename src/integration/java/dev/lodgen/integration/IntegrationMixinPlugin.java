@@ -15,6 +15,7 @@ public final class IntegrationMixinPlugin implements IMixinConfigPlugin {
     private final LodgenMixinPlugin delegate = new LodgenMixinPlugin();
     @Override public void onLoad(String mixinPackage) { delegate.onLoad(mixinPackage); }
     @Override public boolean shouldApplyMixin(String target, String mixin) {
+        if (Boolean.getBoolean("lodgen.test.originalOreAllocations") && mixin.endsWith("OreFeatureMixin")) return false;
         if (Boolean.getBoolean("lodgen.test.originalPredicates") && mixin.endsWith("DiskFeatureMixin")) return false;
         if (Boolean.getBoolean("lodgen.test.baseline") && mixin.substring(mixin.lastIndexOf('.') + 1).startsWith("Dh")) return false;
         return delegate.shouldApplyMixin(target, mixin);

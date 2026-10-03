@@ -16,9 +16,15 @@ import java.util.concurrent.Executor;
 /** Optional DH adapter for generation that does not originate in DH's request queue. */
 final class DhTaskSink {
     static IServerLevelWrapper wrapper(ServerLevel level) {
-        if (DhApi.Delayed.worldProxy == null) return null;
-        for (var candidate : DhApi.Delayed.worldProxy.getAllLoadedLevelWrappers()) {
-            if (candidate instanceof IServerLevelWrapper server && server.getWrappedMcObject() == level && server.getDhLevel() != null) return server;
+        var proxy = DhApi.Delayed.worldProxy;
+        if (proxy == null || !proxy.worldLoaded()) return null;
+        try {
+            for (var candidate : proxy.getAllLoadedLevelWrappers()) {
+                if (candidate instanceof IServerLevelWrapper server && server.getWrappedMcObject() == level && server.getDhLevel() != null) return server;
+            }
+        } catch (IllegalStateException error) {
+            // DH can close on the render thread between these two API calls.
+            if (proxy.worldLoaded()) throw error;
         }
         return null;
     }

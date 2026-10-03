@@ -41,6 +41,7 @@ parser.add_argument("--worldgen-instance", type=Path, help="Copy WWOO, Continent
 parser.add_argument("--instance-optimizations", action="store_true", help="Copy the instance's server-safe optimization mods and use ZGC/compact headers")
 parser.add_argument("--extra-mod", type=Path, action="append", default=[], help="Copy an additional server-compatible mod into the disposable test")
 parser.add_argument("--original-predicates", action="store_true", help="Benchmark vanilla disk predicates with the same LODgen pipeline")
+parser.add_argument("--original-ore-allocations", action="store_true", help="Benchmark vanilla ore readers/iterators with the same LODgen pipeline")
 parser.add_argument("--verify-terrain", action="store_true", help="Hash all benchmark LOD columns, including blocks, biomes and lighting")
 parser.add_argument("--verify-predicates", action="store_true", help="Compare every optimized disk test against vanilla on the same live terrain")
 parser.add_argument("--heap", default="8G", help="Maximum heap for world tests")
@@ -212,6 +213,7 @@ benchmark_options = [f"-Dlodgen.test.warmupAxis={args.warmup_axis}", f"-Dlodgen.
                      f"-Dlodgen.test.frontierRadius={args.frontier_radius}",
                      f"-Dlodgen.test.storeLods={str(args.store_lods).lower()}"]
 benchmark_options += [f"-Dlodgen.test.originalPredicates={str(args.original_predicates).lower()}",
+                      f"-Dlodgen.test.originalOreAllocations={str(args.original_ore_allocations).lower()}",
                       f"-Dlodgen.test.verifyPredicates={str(args.verify_predicates).lower()}",
                       f"-Dlodgen.test.verifyTerrain={str(args.verify_terrain).lower()}"]
 if args.trace_ownership:

@@ -232,6 +232,8 @@ See [VALIDATION.md](VALIDATION.md) for current checks. The 26.2 vanilla/OpenCL m
 
 WWOO's disk targets now share repeated neighbor reads, check native palettes for impossible placements, and avoid unnecessary neighbor tests. Custom DH generators such as SeedGen obey fixed-task ownership of the chunk phase. The [WWOO validation](docs/VALIDATION-wwoo-0.0.0.md) records 499–567 cps versus 455–467 cps for the original disk evaluation, plus live predicate and all-target compatibility checks.
 
+Native ore placements also reuse block readers and immutable target cursors. The [WWOO variability follow-up](docs/VALIDATION-wwoo-jitter-0.0.0.md) explains the five-second CPS window, feature workload and concurrent GC work, with allocation measurements and comparison limits.
+
 Upstream: [Distant Horizons](https://gitlab.com/distant-horizons-team/distant-horizons), [C2ME](https://github.com/RelativityMC/C2ME-fabric), [Chunky](https://github.com/pop4959/Chunky).
 
 LODgen bundles a relocated copy of NightConfig for TOML support without DH. Its LGPL-3.0 license is retained in `META-INF/licenses/night-config.txt`; source is available from [NightConfig](https://github.com/TheElectronWill/night-config). No renderer or generation mod is bundled.
