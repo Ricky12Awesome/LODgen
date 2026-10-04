@@ -4,3 +4,7 @@
 - Test using smaller values (like 64c)
   - only use bigger values unless specifically ask or figuring out performance issues
 - Avoid any test that needs to launch a window
+- if you need to edit `README.md`, edit `README.aislop.md` instead
+  - unless explicly ask to edit `README.md`
+- if you need to edit anyting in `docs/` edit in `docs/aislop/` instead
+  - unless explicly ask to edit `docs/`
