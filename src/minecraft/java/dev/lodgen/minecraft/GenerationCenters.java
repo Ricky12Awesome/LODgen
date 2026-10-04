@@ -15,7 +15,9 @@ public final class GenerationCenters {
         // #endif
     }
     public static BlockPos resolve(ServerLevel level, int currentX, int currentZ) {
-        var settings = LodgenConfig.INSTANCE;
+        return resolve(level, LodgenConfig.INSTANCE, currentX, currentZ);
+    }
+    static BlockPos resolve(ServerLevel level, LodgenConfig settings, int currentX, int currentZ) {
         return switch (settings.generationCenter()) {
             case CURRENT -> new BlockPos(currentX, 0, currentZ);
             case ORIGIN -> spawn(level);
@@ -23,9 +25,10 @@ public final class GenerationCenters {
         };
     }
     public static GenerationArea automatic(ServerLevel level, int radius) {
+        var settings = LodgenConfig.INSTANCE;
         var players = level.players();
         var fallback = players.isEmpty() ? spawn(level) : players.getFirst().blockPosition();
-        var center = resolve(level, fallback.getX(), fallback.getZ());
-        return new GenerationArea(center.getX(), center.getZ(), radius, LodgenConfig.INSTANCE.savedChunkRadius());
+        var center = resolve(level, settings, fallback.getX(), fallback.getZ());
+        return new GenerationArea(center.getX(), center.getZ(), radius, settings.savedChunkRadius());
     }
 }

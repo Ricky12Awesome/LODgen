@@ -2,11 +2,10 @@ package dev.lodgen;
 
 import com.seibel.distanthorizons.api.objects.data.IDhApiFullDataSource;
 import com.seibel.distanthorizons.core.dataObjects.fullData.sources.FullDataSourceV2;
-import com.seibel.distanthorizons.core.wrapperInterfaces.IWrapperFactory;
 import com.seibel.distanthorizons.core.wrapperInterfaces.world.IServerLevelWrapper;
-import com.seibel.distanthorizons.core.dependencyInjection.SingletonInjector;
 import dev.lodgen.minecraft.ChunkGenerationPipeline;
-import dev.lodgen.minecraft.LitChunkWrapper;
+import dev.lodgen.minecraft.DhChunkConversion;
+import dev.lodgen.util.Futures;
 
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -33,28 +32,18 @@ public final class FeatureGenerationService implements AutoCloseable {
             return CompletableFuture.failedFuture(new IllegalArgumentException("Expected block-detail DH chunk request"));
         }
         return pipeline.generate(minX, minZ, width, dhExecutor, batch -> {
-            CompletableFuture<Void> conversion;
-            try {
-                conversion = CompletableFuture.runAsync(() -> {
-                    IWrapperFactory factory = SingletonInjector.INSTANCE.get(IWrapperFactory.class);
-                    FullDataSourceV2 destination = (FullDataSourceV2) pooled;
-                    for (var nativeChunk : batch.chunks) {
-                        if (closed) throw new CancellationException("Level closed");
-                        var wrapped = factory.createChunkWrapper(new Object[]{nativeChunk, level.getWrappedMcObject()});
-                        wrapped.createDhHeightMaps();
-                        var lit = new LitChunkWrapper(wrapped, nativeChunk, batch.sourceLevel());
-                        try (FullDataSourceV2 source = FullDataSourceV2.createFromChunk(level, lit)) {
-                            if (source == null) throw new IllegalStateException("DH rejected generated chunk at " + nativeChunk.getPos());
-                            destination.updateFromDataSource(source);
-                        }
+            return Futures.attempt(() -> CompletableFuture.runAsync(() -> {
+                var converter = new DhChunkConversion(level, level.getWrappedMcObject());
+                var destination = (FullDataSourceV2) pooled;
+                for (var nativeChunk : batch.chunks) {
+                    if (closed) throw new CancellationException("Level closed");
+                    try (var source = converter.create(nativeChunk, batch.sourceLevel())) {
+                        destination.updateFromDataSource(source);
                     }
-                    destination.recordLastSeen();
-                    consumer.accept(destination);
-                }, dhExecutor);
-            } catch (Throwable error) {
-                conversion = CompletableFuture.failedFuture(error);
-            }
-            return conversion;
+                }
+                destination.recordLastSeen();
+                consumer.accept(destination);
+            }, dhExecutor));
         });
     }
 

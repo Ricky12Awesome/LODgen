@@ -2,9 +2,8 @@ package dev.lodgen.minecraft;
 
 import com.seibel.distanthorizons.api.DhApi;
 import com.seibel.distanthorizons.core.dataObjects.fullData.sources.FullDataSourceV2;
-import com.seibel.distanthorizons.core.dependencyInjection.SingletonInjector;
-import com.seibel.distanthorizons.core.wrapperInterfaces.IWrapperFactory;
 import com.seibel.distanthorizons.core.wrapperInterfaces.world.IServerLevelWrapper;
+import dev.lodgen.util.Futures;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.chunk.ChunkAccess;
 
@@ -101,29 +100,36 @@ final class DhTaskSink {
     static CompletableFuture<Void> convert(ServerLevel level, ServerLevel sourceLevel, List<ChunkAccess> chunks, Executor executor) {
         var wrapper = wrapper(level);
         if (wrapper == null) return CompletableFuture.failedFuture(new IllegalStateException("Waiting for DH to open " + level.dimension()));
-        return CompletableFuture.supplyAsync(() -> {
-            var pending = new ArrayList<CompletableFuture<Void>>();
-            var factory = SingletonInjector.INSTANCE.get(IWrapperFactory.class);
-            var destinations = new java.util.HashMap<Long, FullDataSourceV2>();
-            try {
-                for (var chunk : chunks) {
-                    var wrapped = factory.createChunkWrapper(new Object[]{chunk, level});
-                    wrapped.createDhHeightMaps();
-                    try (var source = FullDataSourceV2.createFromChunk(wrapper, new LitChunkWrapper(wrapped, chunk, sourceLevel))) {
-                        if (source == null) throw new IllegalStateException("DH rejected " + chunk.getPos());
-                        destinations.computeIfAbsent(source.getPos(), FullDataSourceV2::createEmpty).updateFromDataSource(source);
-                    }
+        return Futures.attempt(() -> CompletableFuture.supplyAsync(() -> convertChunks(level, sourceLevel, chunks, wrapper), executor))
+                .thenCompose(java.util.function.Function.identity());
+    }
+
+    private static CompletableFuture<Void> convertChunks(ServerLevel level, ServerLevel sourceLevel,
+            List<ChunkAccess> chunks, IServerLevelWrapper wrapper) {
+        var converter = new DhChunkConversion(wrapper, level);
+        var destinations = new java.util.HashMap<Long, FullDataSourceV2>();
+        var writes = new ArrayList<CompletableFuture<Void>>();
+        try {
+            for (var chunk : chunks) {
+                try (var source = converter.create(chunk, sourceLevel)) {
+                    destinations.computeIfAbsent(source.getPos(), FullDataSourceV2::createEmpty).updateFromDataSource(source);
                 }
-                for (var data : destinations.values()) {
-                    data.recordLastSeen();
-                    pending.add(wrapper.getDhLevel().updateDataSourcesAsync(data));
-                }
-            } catch (Throwable error) {
-                CompletableFuture.allOf(pending.toArray(CompletableFuture[]::new)).whenComplete((ignored, failure) -> destinations.values().forEach(FullDataSourceV2::close));
-                throw error;
             }
-            pending.add(CompletableFuture.allOf(pending.toArray(CompletableFuture[]::new)).whenComplete((ignored, error) -> destinations.values().forEach(FullDataSourceV2::close)));
-            return CompletableFuture.allOf(pending.toArray(CompletableFuture[]::new));
-        }, executor).thenCompose(java.util.function.Function.identity());
+            for (var data : destinations.values()) {
+                data.recordLastSeen();
+                writes.add(wrapper.getDhLevel().updateDataSourcesAsync(data));
+            }
+        } catch (Throwable error) {
+            return drainWritesAndClose(destinations, writes).handle((ignored, writeError) -> {
+                throw new java.util.concurrent.CompletionException(error);
+            });
+        }
+        return drainWritesAndClose(destinations, writes);
+    }
+
+    private static CompletableFuture<Void> drainWritesAndClose(
+            java.util.Map<Long, FullDataSourceV2> destinations, List<CompletableFuture<Void>> writes) {
+        return CompletableFuture.allOf(writes.toArray(CompletableFuture[]::new))
+                .whenComplete((ignored, error) -> destinations.values().forEach(FullDataSourceV2::close));
     }
 }

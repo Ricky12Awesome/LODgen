@@ -1,9 +1,19 @@
 package dev.lodgen.minecraft;
 
 import dev.lodgen.LodgenConfig;
+import dev.lodgen.GenerationSettings;
 import dev.lodgen.generation.BatchGate;
+import dev.lodgen.generation.CaveMode;
+import dev.lodgen.generation.ChunkThroughput;
+import dev.lodgen.generation.GenerationArea;
+import dev.lodgen.util.Futures;
+import net.minecraft.server.level.ServerLevel;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -11,21 +21,21 @@ import java.util.function.Function;
 /** Shared admission and ticket lifetime for both renderer integrations. */
 public final class ChunkGenerationPipeline implements AutoCloseable {
     private final NormalChunkBackend backend;
-    private final net.minecraft.server.level.ServerLevel level;
-    private final dev.lodgen.generation.ChunkThroughput throughput;
+    private final ServerLevel level;
+    private final ChunkThroughput throughput;
     private final BatchGate gate;
     private final Consumer<LodgenConfig> listener;
-    private final dev.lodgen.generation.CaveMode fixedMode;
+    private final CaveMode fixedMode;
 
     public ChunkGenerationPipeline(Object level) {
         this(level, null);
     }
-    public ChunkGenerationPipeline(Object level, dev.lodgen.generation.CaveMode fixedMode) {
+    public ChunkGenerationPipeline(Object level, CaveMode fixedMode) {
         this.fixedMode = fixedMode;
-        this.level = (net.minecraft.server.level.ServerLevel) level;
+        this.level = (ServerLevel) level;
         backend = PersistenceRegistry.backend(level);
         throughput = PersistenceRegistry.throughput(level);
-        gate = new BatchGate(dev.lodgen.GenerationSettings.current().batches(), 0);
+        gate = new BatchGate(GenerationSettings.current().batches(), 0);
         listener = settings -> refresh();
         LodgenConfig.listen(listener);
     }
@@ -35,15 +45,15 @@ public final class ChunkGenerationPipeline implements AutoCloseable {
         return generate(x, z, width, width, GenerationCenters.automatic(level, LodgenConfig.INSTANCE.generationDistance()), executor, convert);
     }
 
-    public CompletableFuture<Void> generate(int x, int z, int width, int height, dev.lodgen.generation.GenerationArea area, Executor executor,
+    public CompletableFuture<Void> generate(int x, int z, int width, int height, GenerationArea area, Executor executor,
                                             Function<NormalChunkBackend.Batch, CompletableFuture<Void>> convert) {
         refresh();
         var mode = fixedMode == null ? LodgenConfig.INSTANCE.caveMode() : fixedMode;
         return gate.submit(executor, () -> {
-            if (mode == dev.lodgen.generation.CaveMode.GENERATE)
+            if (mode == CaveMode.GENERATE)
                 return backend.request(x, z, width, height, area).thenCompose(batch -> convertAndRelease(batch, convert));
             return requests(x, z, width, height, area, mode).thenCompose(requests -> {
-                var conversions = new java.util.ArrayList<CompletableFuture<Void>>();
+                var conversions = new ArrayList<CompletableFuture<Void>>();
                 var turn = CompletableFuture.<Void>completedFuture(null);
                 for (var request : requests) {
                     // Mixed sources write into the same pooled renderer tile.
@@ -57,40 +67,38 @@ public final class ChunkGenerationPipeline implements AutoCloseable {
         });
     }
 
-    private CompletableFuture<java.util.List<CompletableFuture<NormalChunkBackend.Batch>>> requests(int x, int z, int width, int height,
-            dev.lodgen.generation.GenerationArea area, dev.lodgen.generation.CaveMode mode) {
+    private CompletableFuture<List<CompletableFuture<NormalChunkBackend.Batch>>> requests(int x, int z, int width, int height,
+            GenerationArea area, CaveMode mode) {
         return CompletableFuture.supplyAsync(() -> {
-            var normal = new java.util.HashSet<Long>();
+            var normal = new HashSet<Long>();
             for (int cx = x; cx < x + width; cx++) for (int cz = z; cz < z + height; cz++)
                 if (area != null && area.saves(cx, cz) || LodGenerationWorld.normalTerrain(level, cx, cz))
-                    normal.add((cx & 0xffffffffL) | (long) cz << 32);
-            if (normal.size() == width * height) return java.util.List.of(backend.request(x, z, width, height, area));
+                    normal.add(PersistenceRegistry.pack(cx, cz));
+            if (normal.size() == width * height) return List.of(backend.request(x, z, width, height, area));
             var source = LodGenerationWorld.get(level, mode);
-            if (source == level) return java.util.List.of(backend.request(x, z, width, height, area));
-            var requests = new java.util.ArrayList<CompletableFuture<NormalChunkBackend.Batch>>();
+            if (source == level) return List.of(backend.request(x, z, width, height, area));
+            var requests = new ArrayList<CompletableFuture<NormalChunkBackend.Batch>>();
             if (!normal.isEmpty()) requests.add(backend.request(x, z, width, height, area,
-                    (cx, cz) -> normal.contains((cx & 0xffffffffL) | (long) cz << 32)));
+                    (cx, cz) -> normal.contains(PersistenceRegistry.pack(cx, cz))));
             if (normal.size() < width * height) requests.add(PersistenceRegistry.backend(source).request(x, z, width, height, null,
-                    (cx, cz) -> !normal.contains((cx & 0xffffffffL) | (long) cz << 32)));
+                    (cx, cz) -> !normal.contains(PersistenceRegistry.pack(cx, cz))));
             return requests;
         }, level.getServer());
     }
 
     private CompletableFuture<Void> convertAndRelease(NormalChunkBackend.Batch batch,
             Function<NormalChunkBackend.Batch, CompletableFuture<Void>> convert) {
-        CompletableFuture<Void> conversion;
-        try { conversion = convert.apply(batch); }
-        catch (Throwable error) { conversion = CompletableFuture.failedFuture(error); }
+        var conversion = Futures.attempt(() -> convert.apply(batch));
         // Cleanup drains before the public future can return pooled data or
         // let a renderer advance its completed frontier.
         return conversion.handle((ignored, error) -> batch.release().thenApply(released -> {
-            if (error != null) throw new java.util.concurrent.CompletionException(error);
+            if (error != null) throw new CompletionException(error);
             throughput.completed(batch.chunks.size());
             return (Void) null;
         })).thenCompose(Function.identity());
     }
 
-    private void refresh() { gate.reconfigure(dev.lodgen.GenerationSettings.current().batches(), 0); }
+    private void refresh() { gate.reconfigure(GenerationSettings.current().batches(), 0); }
     public boolean isBusy() { refresh(); return gate.isBusy(); }
     @Override public void close() { LodgenConfig.stopListening(listener); gate.close(); }
 }

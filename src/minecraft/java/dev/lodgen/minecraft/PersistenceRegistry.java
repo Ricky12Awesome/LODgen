@@ -2,6 +2,7 @@ package dev.lodgen.minecraft;
 
 import dev.lodgen.generation.SavePolicy;
 import dev.lodgen.generation.GenerationScope;
+import dev.lodgen.generation.ChunkThroughput;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ChunkLevel;
 import net.minecraft.server.level.ServerLevel;
@@ -18,40 +19,51 @@ import java.util.Map;
 /** Minecraft adapters for the shared ownership policy. No C2ME generation API. */
 public final class PersistenceRegistry {
     private static final boolean TRACE_OWNERSHIP = Boolean.getBoolean("lodgen.test.traceOwnership");
-    private static final Map<ServerLevel, SavePolicy> LEVELS = new IdentityHashMap<>();
-    private static final Map<ResourceKey<Level>, SavePolicy> STORAGE = new HashMap<>();
-    private static final Map<Object, SavePolicy> TICKETS = new IdentityHashMap<>();
-    private static final Map<ServerLevel, dev.lodgen.generation.ChunkThroughput> THROUGHPUT = new IdentityHashMap<>();
-    private static final Map<ServerLevel, NormalChunkBackend> BACKENDS = new IdentityHashMap<>();
+    private static final Map<ServerLevel, State> LEVELS = new IdentityHashMap<>();
+    private static final Map<ResourceKey<Level>, State> STORAGE = new HashMap<>();
+    private static final Map<Object, State> TICKETS = new IdentityHashMap<>();
     // OpenCL batches can expand the vanilla dependency footprint by up to 3 chunks.
     public static final int BATCH_PADDING = 4;
 
     public static synchronized void register(ServerLevel level, Object tickets) {
-        SavePolicy policy = LEVELS.computeIfAbsent(level, ignored -> new SavePolicy(LodGenerationWorld.constructing()));
-        STORAGE.put(level.dimension(), policy);
-        TICKETS.put(tickets, policy);
+        State state = LEVELS.computeIfAbsent(level, ignored -> new State());
+        if (state.policy == null) state.policy = new SavePolicy(LodGenerationWorld.constructing());
+        STORAGE.put(level.dimension(), state);
+        TICKETS.put(tickets, state);
     }
 
-    public static synchronized SavePolicy get(ServerLevel level) { return LEVELS.get(level); }
+    public static synchronized SavePolicy get(ServerLevel level) {
+        State state = LEVELS.get(level);
+        return state == null ? null : state.policy;
+    }
     public static boolean isIntegratedServer(Object level) {
         return level instanceof ServerLevel serverLevel && !serverLevel.getServer().isDedicatedServer();
     }
     public static boolean suppressUpdates(Object level, int x, int z) {
         if (!(level instanceof ServerLevel serverLevel)) return false;
         SavePolicy policy = get(serverLevel);
-        return policy != null && policy.suppress(x, z);
+        return ChunkPersistence.suppress(policy, x, z);
     }
-    public static synchronized SavePolicy get(RegionStorageInfo info) { return STORAGE.get(info.dimension()); }
+    public static synchronized SavePolicy get(RegionStorageInfo info) {
+        State state = STORAGE.get(info.dimension());
+        return state == null ? null : state.policy;
+    }
     public static synchronized NormalChunkBackend backend(Object level) {
-        return BACKENDS.computeIfAbsent((ServerLevel) level, NormalChunkBackend::new);
+        State state = LEVELS.get((ServerLevel) level);
+        if (state == null || state.policy == null) throw new IllegalStateException("Chunk persistence hooks did not initialize");
+        if (state.backend == null) state.backend = new NormalChunkBackend(level);
+        return state.backend;
     }
 
-    public static synchronized dev.lodgen.generation.ChunkThroughput throughput(Object level) {
-        return THROUGHPUT.computeIfAbsent((ServerLevel) level, ignored -> new dev.lodgen.generation.ChunkThroughput());
+    public static synchronized ChunkThroughput throughput(Object level) {
+        State state = LEVELS.computeIfAbsent((ServerLevel) level, ignored -> new State());
+        if (state.throughput == null) state.throughput = new ChunkThroughput();
+        return state.throughput;
     }
 
     public static synchronized void normalTicket(Object owner, long pos, Ticket ticket) {
-        SavePolicy policy = TICKETS.get(owner);
+        State state = TICKETS.get(owner);
+        SavePolicy policy = state == null ? null : state.policy;
         if (policy != null && ticket.getType() != NormalChunkBackend.TICKET) {
             // Only a nested vanilla lookup inherits transient ownership. Explicit
             // player, portal, forced and mod tickets always retain normal saves.
@@ -73,14 +85,13 @@ public final class PersistenceRegistry {
         }
     }
 
-    public static boolean suppress(SavePolicy policy, ChunkPos pos) { return policy != null && policy.suppress(x(pos), z(pos)); }
+    public static boolean suppress(SavePolicy policy, ChunkPos pos) { return ChunkPersistence.suppress(policy, pos); }
 
     public static synchronized void close(ServerLevel level) {
-        SavePolicy policy = LEVELS.remove(level);
-        STORAGE.remove(level.dimension(), policy);
-        TICKETS.values().removeIf(value -> value == policy);
-        BACKENDS.remove(level);
-        THROUGHPUT.remove(level);
+        State state = LEVELS.remove(level);
+        if (state == null) return;
+        STORAGE.remove(level.dimension(), state);
+        TICKETS.values().removeIf(value -> value == state);
     }
 
     public static int x(ChunkPos pos) {
@@ -97,12 +108,19 @@ public final class PersistenceRegistry {
         return pos.z();
         // #endif
     }
-    public static long pack(ChunkPos pos) { return (x(pos) & 0xffffffffL) | (long) z(pos) << 32; }
+    public static long pack(ChunkPos pos) { return pack(x(pos), z(pos)); }
+    public static long pack(int x, int z) { return (x & 0xffffffffL) | (long) z << 32; }
     public static int minY(net.minecraft.world.level.chunk.ChunkAccess chunk) {
         // #if MC_1211
         return chunk.getMinBuildHeight();
         // #else
         return chunk.getMinY();
         // #endif
+    }
+
+    private static final class State {
+        SavePolicy policy;
+        NormalChunkBackend backend;
+        ChunkThroughput throughput;
     }
 }

@@ -1,58 +1,43 @@
 package dev.lodgen.voxy;
 
+import dev.lodgen.GenerationWorkers;
 import dev.lodgen.LodgenConfig;
+import dev.lodgen.minecraft.RendererSinks;
 import net.minecraft.client.Minecraft;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.chunk.ChunkAccess;
 
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /** Voxy output lifecycle and conversion. GenerationTasks owns all automatic
  * and command generation; this adapter never launches native chunk requests.
  */
 public final class VoxyGeneration {
     private static final Map<Object, Session> SESSIONS = new IdentityHashMap<>();
-    private static volatile net.minecraft.server.MinecraftServer stoppingServer;
+    private static volatile MinecraftServer stoppingServer;
     private static VoxyBridge bridge;
     private static boolean failed;
 
     public static void tick(Minecraft client) {
         if (failed) return;
-        if (client.level == null || client.player == null || client.getSingleplayerServer() == null) {
-            return;
-        }
-        if (client.getSingleplayerServer() == stoppingServer || client.getSingleplayerServer().isStopped()) {
-            return;
-        }
+        if (client.level == null || client.player == null || client.getSingleplayerServer() == null) return;
+        MinecraftServer server = client.getSingleplayerServer();
+        if (server == stoppingServer || server.isStopped()) return;
         try {
             if (bridge == null) {
                 bridge = new VoxyBridge();
-                dev.lodgen.minecraft.RendererSinks.voxy(new dev.lodgen.minecraft.RendererSinks.VoxySink() {
-                    @Override public boolean ready(ServerLevel level) {
-                        try { return session(level) != null; }
-                        catch (ReflectiveOperationException error) { throw new IllegalStateException(error); }
-                    }
-                    @Override public int radius(ServerLevel level) {
-                        try { var target = session(level); return target == null ? 0 : target.context.radius(); }
-                        catch (ReflectiveOperationException error) { return 0; }
-                    }
-                    @Override public CompletableFuture<Void> convert(ServerLevel level, java.util.List<net.minecraft.world.level.chunk.ChunkAccess> chunks) {
-                        return convert(level, level, chunks);
-                    }
-                    @Override public CompletableFuture<Void> convert(ServerLevel level, ServerLevel source, java.util.List<net.minecraft.world.level.chunk.ChunkAccess> chunks) {
-                        try {
-                            var target = session(level);
-                            return target == null ? CompletableFuture.failedFuture(new CancellationException("Voxy is not ready")) : target.convert(source, chunks);
-                        } catch (ReflectiveOperationException error) { return CompletableFuture.failedFuture(error); }
-                    }
-                });
+                RendererSinks.voxy(new Sink());
             }
             var context = bridge.context(client.level);
             if (context == null) return;
-            var level = client.getSingleplayerServer().getLevel(client.level.dimension());
+            ServerLevel level = server.getLevel(client.level.dimension());
             if (level == null) return;
         } catch (Throwable error) {
             failed = true;
@@ -60,14 +45,40 @@ public final class VoxyGeneration {
         }
     }
 
+    private static final class Sink implements RendererSinks.VoxySink {
+        @Override public boolean ready(ServerLevel level) {
+            try { return session(level) != null; }
+            catch (ReflectiveOperationException error) { throw new IllegalStateException(error); }
+        }
+
+        @Override public int radius(ServerLevel level) {
+            try {
+                Session target = session(level);
+                return target == null ? 0 : target.context.radius();
+            } catch (ReflectiveOperationException error) { return 0; }
+        }
+
+        @Override public CompletableFuture<Void> convert(ServerLevel level, List<ChunkAccess> chunks) {
+            return convert(level, level, chunks);
+        }
+
+        @Override public CompletableFuture<Void> convert(ServerLevel level, ServerLevel source, List<ChunkAccess> chunks) {
+            try {
+                Session target = session(level);
+                return target == null ? CompletableFuture.failedFuture(new CancellationException("Voxy is not ready"))
+                        : target.convert(source, chunks);
+            } catch (ReflectiveOperationException error) { return CompletableFuture.failedFuture(error); }
+        }
+    }
+
     private static Session session(ServerLevel level) throws ReflectiveOperationException {
         if (level.getServer() == stoppingServer || level.getServer().isStopped()) return null;
-        var currentBridge = bridge;
+        VoxyBridge currentBridge = bridge;
         if (currentBridge == null) return null;
-        var context = currentBridge.context(level);
+        VoxyBridge.Context context = currentBridge.context(level);
         if (context == null) return null;
         synchronized (SESSIONS) {
-            var session = SESSIONS.get(context.engine());
+            Session session = SESSIONS.get(context.engine());
             if (session == null || session.closed) {
                 session = new Session(level, context);
                 SESSIONS.put(context.engine(), session);
@@ -80,55 +91,63 @@ public final class VoxyGeneration {
      * conversion holds this lock; native chunk generation never blocks shutdown.
      */
     public static void beforeShutdown() {
-        dev.lodgen.minecraft.RendererSinks.voxy(null);
-        Session[] sessions;
-        synchronized (SESSIONS) { sessions = SESSIONS.values().toArray(Session[]::new); }
-        for (var session : sessions) session.close();
-        bridge = null; failed = false; stoppingServer = null;
+        RendererSinks.voxy(null);
+        Session[] sessions = sessions();
+        for (Session session : sessions) session.close();
+        bridge = null;
+        failed = false;
+        stoppingServer = null;
     }
 
     /** The integrated server unloads native chunks before Voxy's engine closes.
      * Close conversion sessions first; native futures may fail normally as they
      * drain. GenerationTasks stops dispatch and checkpoints completed batches.
      */
-    public static void serverStopping(net.minecraft.server.MinecraftServer server) {
+    public static void serverStopping(MinecraftServer server) {
         stoppingServer = server;
-        Session[] sessions;
-        synchronized (SESSIONS) { sessions = SESSIONS.values().toArray(Session[]::new); }
-        for (var session : sessions) if (session.level.getServer() == server) session.close();
+        for (Session session : sessions()) if (session.level.getServer() == server) session.close();
     }
 
     public static void engineClosed(Object engine) {
         Session session;
         synchronized (SESSIONS) { session = SESSIONS.remove(engine); }
-        if (session == null) return;
-        session.close();
+        if (session != null) session.close();
+    }
+
+    private static Session[] sessions() {
+        synchronized (SESSIONS) { return SESSIONS.values().toArray(Session[]::new); }
     }
 
     private static final class Session implements AutoCloseable {
         final ServerLevel level;
         final VoxyBridge.Context context;
         final ExecutorService workers;
-        final java.util.concurrent.locks.ReentrantReadWriteLock conversionLock = new java.util.concurrent.locks.ReentrantReadWriteLock();
+        final ReentrantReadWriteLock conversionLock = new ReentrantReadWriteLock();
         volatile boolean closed;
 
         Session(ServerLevel level, VoxyBridge.Context context) {
-            this.level = level; this.context = context;
-            workers = new dev.lodgen.GenerationWorkers("LODgen Voxy conversion");
+            this.level = level;
+            this.context = context;
+            workers = new GenerationWorkers("LODgen Voxy conversion");
         }
 
-        CompletableFuture<Void> convert(ServerLevel source, java.util.List<net.minecraft.world.level.chunk.ChunkAccess> chunks) {
-            return CompletableFuture.supplyAsync(() -> {
+        CompletableFuture<Void> convert(ServerLevel source, List<ChunkAccess> chunks) {
+            return CompletableFuture.supplyAsync(() -> snapshot(source, chunks), level.getServer())
+                    .thenAcceptAsync(this::ingest, workers);
+        }
+
+        private List<VoxyBridge.Section> snapshot(ServerLevel source, List<ChunkAccess> chunks) {
+            if (closed) throw new CancellationException("Voxy session closed");
+            return VoxyBridge.snapshot(source, chunks);
+        }
+
+        private void ingest(List<VoxyBridge.Section> sections) {
+            conversionLock.readLock().lock();
+            try {
                 if (closed) throw new CancellationException("Voxy session closed");
-                return VoxyBridge.snapshot(source, chunks);
-            }, level.getServer()).thenAcceptAsync(sections -> {
-                conversionLock.readLock().lock();
-                try {
-                    if (closed) throw new CancellationException("Voxy session closed");
-                    try { bridge.ingest(context.engine(), sections); }
-                    catch (ReflectiveOperationException error) { throw new java.util.concurrent.CompletionException(error); }
-                } finally { conversionLock.readLock().unlock(); }
-            }, workers);
+                try { bridge.ingest(context.engine(), sections); }
+                catch (ReflectiveOperationException error) { throw new java.util.concurrent.CompletionException(error); }
+            } finally { conversionLock.readLock().unlock(); }
         }
 
         @Override public void close() {

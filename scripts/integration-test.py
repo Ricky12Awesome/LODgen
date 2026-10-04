@@ -9,9 +9,10 @@ import shutil
 import subprocess
 import urllib.request
 
-ROOT = Path(__file__).resolve().parents[1]
-matrix = json.loads((ROOT / "versions.json").read_text())
-mod_version = next(line.split("=", 1)[1] for line in (ROOT / "gradle.properties").read_text().splitlines() if line.startswith("modVersion="))
+from script_utils import ROOT, load_json, read_mod_version
+
+matrix = load_json("versions.json")
+mod_version = read_mod_version()
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--mc", choices=matrix, required=True)
 parser.add_argument("--loader", choices=("fabric", "neoforge"), required=True)
@@ -144,7 +145,7 @@ else:
 for optional in ("c2me-ocl", "scalablelux", "chunky"):
     (run / "mods" / f"{optional}.jar").unlink(missing_ok=True)
 if args.opencl or args.chunky or args.optimized:
-    tests = json.loads((ROOT / "test-versions.json").read_text())
+    tests = load_json("test-versions.json")
     for project in ((["c2me-ocl", "scalablelux"] if args.opencl else []) + (["chunky"] if args.chunky else []) + (["lithium", "ferritecore", "structure-layout-optimizer", "resourceful-config", "zfastnoise"] if args.optimized else [])):
         version = tests[project][args.mc][args.loader]
         if not version:

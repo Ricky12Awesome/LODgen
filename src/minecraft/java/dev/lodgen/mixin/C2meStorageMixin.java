@@ -1,6 +1,7 @@
 package dev.lodgen.mixin;
 
 import dev.lodgen.generation.SavePolicy;
+import dev.lodgen.minecraft.ChunkPersistence;
 import dev.lodgen.minecraft.PersistenceRegistry;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.StreamTagVisitor;
@@ -14,7 +15,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.nio.file.Path;
-import java.nio.file.Files;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executor;
@@ -46,7 +46,7 @@ public abstract class C2meStorageMixin {
     private void lodgen$avoidCreatingRegion(long pos, CompletableFuture<CompoundTag> result, StreamTagVisitor scanner, CallbackInfo ci) {
         SavePolicy policy = lodgen$policy();
         int x = (int) pos, z = (int) (pos >> 32);
-        if (policy != null && !Files.exists(lodgen$folder.resolve("r." + (x >> 5) + "." + (z >> 5) + ".mca"))) {
+        if (policy != null && !ChunkPersistence.regionExists(lodgen$folder, x, z)) {
             result.complete(null);
             ci.cancel();
         }
@@ -55,7 +55,7 @@ public abstract class C2meStorageMixin {
     @Inject(method = "write0", at = @At("HEAD"), cancellable = true)
     private void lodgen$skipWrite(long pos, CompletionStage<?> data, CallbackInfo ci) {
         SavePolicy policy = lodgen$policy();
-        if (policy != null && policy.suppress((int) pos, (int) (pos >> 32))) ci.cancel();
+        if (ChunkPersistence.suppress(policy, (int) pos, (int) (pos >> 32))) ci.cancel();
     }
 
 }

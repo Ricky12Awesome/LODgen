@@ -2,15 +2,15 @@
 """Build and test every configured target, then collect the installable jars in dist/."""
 import hashlib
 import json
-from pathlib import Path
 import shutil
 import subprocess
 
-ROOT = Path(__file__).resolve().parents[1]
-matrix = json.loads((ROOT / "versions.json").read_text())
-optional_tests = json.loads((ROOT / "test-versions.json").read_text())
-voxy_targets = json.loads((ROOT / "voxy-versions.json").read_text())
-mod_version = next(line.split("=", 1)[1] for line in (ROOT / "gradle.properties").read_text().splitlines() if line.startswith("modVersion="))
+from script_utils import ROOT, load_json, read_mod_version
+
+matrix = load_json("versions.json")
+optional_tests = load_json("test-versions.json")
+voxy_targets = load_json("voxy-versions.json")
+mod_version = read_mod_version()
 logs = ROOT / "build" / "matrix-logs"
 logs.mkdir(parents=True, exist_ok=True)
 dist = ROOT / "dist"

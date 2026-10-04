@@ -173,6 +173,10 @@ DH's public generator override API has no public delegation to its builtin gener
 
 Sources and build setup support both loaders with shared code:
 
+See [development code](docs/development.md) for each subsystem's owner and
+[configuration code](docs/configuration.md) for adding settings through the
+shared schema and automatic screen controls.
+
 | Minecraft | Minimum Java | Loaders | Required DH |
 | --- | --- | --- | --- |
 | 1.21.1 | 21 | Fabric, NeoForge | 3.3.3 |

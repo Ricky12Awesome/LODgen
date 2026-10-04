@@ -25,16 +25,18 @@ public final class ConfigScreenCheck {
         var lists = screen.children().stream().filter(child -> child instanceof ContainerObjectSelectionList<?>).toList();
         if (lists.size() != 1 || screen.children().size() != 4) throw new AssertionError("Expected one settings list and three footer buttons");
         var list = (ContainerObjectSelectionList<?>) lists.getFirst();
-        if (list.children().size() != 10) throw new AssertionError("All ten settings must be on the same page");
+        if (list.children().size() != LodgenConfig.SCHEMA.options().size()) throw new AssertionError("All settings must be on the same page");
         return list;
     }
-    private static AbstractWidget control(ContainerObjectSelectionList<?> list, int index) {
+    private static AbstractWidget control(ContainerObjectSelectionList<?> list, String key) {
+        int index = LodgenConfig.SCHEMA.options().indexOf(LodgenConfig.SCHEMA.option(key));
         var row = list.children().get(index);
         if (row.children().size() != 1) throw new AssertionError("Settings must have one control per row");
         return (AbstractWidget) row.children().getFirst();
     }
     private static EditBox input(ContainerObjectSelectionList<?> list, String key) {
-        String label = Component.translatable("lodgen.config." + key).getString();
+        var option = LodgenConfig.SCHEMA.option(key);
+        String label = Component.translatableWithFallback(option.labelKey(), option.label()).getString();
         return list.children().stream().flatMap(row -> row.children().stream())
                 .filter(child -> child instanceof EditBox).map(child -> (EditBox) child)
                 .filter(box -> box.getMessage().getString().equals(label)).findFirst().orElseThrow();
@@ -73,12 +75,12 @@ public final class ConfigScreenCheck {
         var list = list(screen);
         boolean custom = original.generationCenter() == dev.lodgen.generation.GenerationCenter.CUSTOM;
         if (input(list, "centerX").active != custom || input(list, "centerZ").active != custom) throw new AssertionError("Custom coordinate activation differs from configured center");
-        var center = (Button) control(list, 1);
-        var caves = (Button) control(list, 6);
+        var center = (Button) control(list, "generationCenter");
+        var caves = (Button) control(list, "caveMode");
         var caveLabel = caves.getMessage();
         for (int i = 0; i < 3; i++) press(caves);
         if (!caveLabel.equals(caves.getMessage())) throw new AssertionError("Cave mode did not cycle through all three choices");
-        var cpu = (Button) control(list, 7);
+        var cpu = (Button) control(list, "cpuLoad");
         if (dev.lodgen.ModSupport.loaded("distanthorizons")) {
             if (cpu.active || !cpu.getMessage().getString().contains("DH")) throw new AssertionError("DH CPU load must control the disabled Voxy setting");
         } else {

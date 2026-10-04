@@ -38,7 +38,7 @@ public final class BenchmarkCheck {
                 && Boolean.getBoolean("lodgen.test.dhQueue") && originalSettings.enabled();
         if (checkLiveConfig) {
             try {
-                LodgenConfig.apply(new LodgenConfig(true, 1, originalSettings.generationDistance(), originalSettings.showChunksPerSecond(), originalSettings.chunksPerSecondUpdateIntervalMs(), originalSettings.generationCenter(), originalSettings.centerX(), originalSettings.centerZ(), originalSettings.savedChunkRadius(), originalSettings.caveMode()));
+                LodgenConfig.apply(LodgenConfig.SCHEMA.with(originalSettings, "cpuLoad", 1));
                 com.seibel.distanthorizons.core.config.Config.Common.MultiThreading.numberOfThreads.set(1);
                 LodgenConfig.LOGGER.info("QUICK CHECK: applied live DH CPU load of one worker");
             } catch (Exception failure) { return CompletableFuture.failedFuture(failure); }

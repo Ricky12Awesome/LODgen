@@ -5,6 +5,6 @@
   - only use bigger values unless specifically ask or figuring out performance issues
 - Avoid any test that needs to launch a window
 - if you need to edit `README.md`, edit `README.aislop.md` instead
-  - unless explicly ask to edit `README.md`
-- if you need to edit anyting in `docs/` edit in `docs/aislop/` instead
-  - unless explicly ask to edit `docs/`
+  - unless explicitly ask to edit `README.md`
+- if you need to add or change anything in `docs` do it in `docs/aislop` instead
+  - unless explicitly ask to use `docs/`

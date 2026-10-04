@@ -1,6 +1,7 @@
 package dev.lodgen.mixin;
 
 import dev.lodgen.minecraft.PersistenceRegistry;
+import dev.lodgen.minecraft.ChunkPersistence;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.ChunkPos;
@@ -23,7 +24,7 @@ public abstract class ChunkDirtyMixin {
     @Inject(method = {"isUnsaved", "tryMarkSaved"}, at = @At("HEAD"), cancellable = true)
     // #endif
     private void lodgen$skipSerialization(CallbackInfoReturnable<Boolean> ci) {
-        if (levelHeightAccessor instanceof ServerLevel level && PersistenceRegistry.suppress(PersistenceRegistry.get(level), chunkPos)) {
+        if (levelHeightAccessor instanceof ServerLevel level && ChunkPersistence.suppress(PersistenceRegistry.get(level), chunkPos)) {
             ci.setReturnValue(false);
         }
     }

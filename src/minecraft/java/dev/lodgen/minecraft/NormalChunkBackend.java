@@ -5,7 +5,9 @@ import dev.lodgen.LodgenConfig;
 import dev.lodgen.mixin.ChunkCacheAccess;
 import dev.lodgen.mixin.ChunkMapAccess;
 import net.minecraft.server.level.ChunkLevel;
+import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.TicketType;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.ChunkAccess;
@@ -63,64 +65,10 @@ public final class NormalChunkBackend {
         var released = new ArrayList<Batch>();
         var admitted = new ArrayList<Request>();
         try {
-            Batch batch;
-            while ((batch = retiring.poll()) != null) {
-                released.add(batch);
-                for (var pos : batch.positions) {
-                    long key = PersistenceRegistry.pack(pos);
-                    Integer remaining = references.computeIfPresent(key, (ignored, count) -> count == 1 ? null : count - 1);
-                    if (remaining == null) {
-                        // #if MC_1211
-                        cache.removeRegionTicket(TICKET, pos, 0, pos);
-                        // #else
-                        cache.removeTicketWithRadius(TICKET, pos, 0);
-                        // #endif
-                    }
-                }
-            }
-            Request request;
-            // Bound one drain so a large heap does not monopolize a server tick.
-            while (admitted.size() < 256 && (request = pending.poll()) != null) {
-                admitted.add(request);
-                try {
-                    policy.claimArea(request.x - DEPENDENCY_RADIUS, request.z - DEPENDENCY_RADIUS,
-                            request.width + 2 * DEPENDENCY_RADIUS, request.height + 2 * DEPENDENCY_RADIUS,
-                            key -> ((ChunkMapAccess) map).lodgen$holder(key) != null);
-                    for (int x = request.x; x < request.x + request.width; x++) for (int z = request.z; z < request.z + request.height; z++) {
-                        if (!request.include.test(x, z)) continue;
-                        if (request.area != null && request.area.saves(x, z)) policy.saveGenerated(x, z);
-                        var pos = new ChunkPos(x, z);
-                        request.batch.positions.add(pos);
-                        if (references.merge(PersistenceRegistry.pack(pos), 1, Integer::sum) == 1) {
-                            // #if MC_1211
-                            cache.addRegionTicket(TICKET, pos, 0, pos);
-                            // #else
-                            cache.addTicketWithRadius(TICKET, pos, 0);
-                            // #endif
-                        }
-                    }
-                } catch (Throwable error) { request.failure = error; }
-            }
+            releaseRetiring(cache, released);
+            admitPending(cache, map, admitted);
             ((ChunkCacheAccess) cache).lodgen$updateDistances();
-            for (var requestToStart : admitted) {
-                if (requestToStart.failure != null) { requestToStart.fail(requestToStart.failure); continue; }
-                var futures = new ArrayList<CompletableFuture<ChunkAccess>>();
-                try {
-                    for (var pos : requestToStart.batch.positions) {
-                        var holder = ((ChunkMapAccess) map).lodgen$holder(PersistenceRegistry.pack(pos));
-                        if (holder == null) throw new IllegalStateException("Missing chunk holder at " + pos);
-                        futures.add(holder.scheduleChunkGenerationTask(ChunkStatus.FULL, map)
-                                .thenApply(result -> result.orElseThrow(() -> new IllegalStateException(result.getError()))));
-                    }
-                    CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).whenComplete((ignored, error) -> {
-                        if (error != null) requestToStart.fail(error);
-                        else {
-                            futures.forEach(future -> requestToStart.batch.chunks.add(future.join()));
-                            requestToStart.result.complete(requestToStart.batch);
-                        }
-                    });
-                } catch (Throwable error) { requestToStart.fail(error); }
-            }
+            startAdmitted(map, admitted);
             for (var removed : released) removed.released.complete(null);
         } catch (Throwable error) {
             for (var request : admitted) request.fail(error);
@@ -128,6 +76,75 @@ public final class NormalChunkBackend {
         } finally {
             scheduled.set(false);
             if (!pending.isEmpty() || !retiring.isEmpty()) schedule();
+        }
+    }
+
+    /** Apply queued ticket removals before additions so every position updates once. */
+    private void releaseRetiring(ServerChunkCache cache, ArrayList<Batch> released) {
+        Batch batch;
+        while ((batch = retiring.poll()) != null) {
+            released.add(batch);
+            for (var pos : batch.positions) {
+                long key = PersistenceRegistry.pack(pos);
+                Integer remaining = references.computeIfPresent(key, (ignored, count) -> count == 1 ? null : count - 1);
+                if (remaining == null) {
+                    // #if MC_1211
+                    cache.removeRegionTicket(TICKET, pos, 0, pos);
+                    // #else
+                    cache.removeTicketWithRadius(TICKET, pos, 0);
+                    // #endif
+                }
+            }
+        }
+    }
+
+    /** Claim ownership and coalesce all added tickets before distance updates. */
+    private void admitPending(ServerChunkCache cache, ChunkMap map, ArrayList<Request> admitted) {
+        Request request;
+        // Bound one drain so a large heap does not monopolize a server tick.
+        while (admitted.size() < 256 && (request = pending.poll()) != null) {
+            admitted.add(request);
+            try {
+                policy.claimArea(request.x - DEPENDENCY_RADIUS, request.z - DEPENDENCY_RADIUS,
+                        request.width + 2 * DEPENDENCY_RADIUS, request.height + 2 * DEPENDENCY_RADIUS,
+                        key -> ((ChunkMapAccess) map).lodgen$holder(key) != null);
+                for (int x = request.x; x < request.x + request.width; x++) for (int z = request.z; z < request.z + request.height; z++) {
+                    if (!request.include.test(x, z)) continue;
+                    if (request.area != null && request.area.saves(x, z)) policy.saveGenerated(x, z);
+                    var pos = new ChunkPos(x, z);
+                    request.batch.positions.add(pos);
+                    if (references.merge(PersistenceRegistry.pack(pos), 1, Integer::sum) == 1) {
+                        // #if MC_1211
+                        cache.addRegionTicket(TICKET, pos, 0, pos);
+                        // #else
+                        cache.addTicketWithRadius(TICKET, pos, 0);
+                        // #endif
+                    }
+                }
+            } catch (Throwable error) { request.failure = error; }
+        }
+    }
+
+    /** Begin admitted FULL generation only after the caller updates distances once. */
+    private void startAdmitted(ChunkMap map, ArrayList<Request> admitted) {
+        for (var request : admitted) {
+            if (request.failure != null) { request.fail(request.failure); continue; }
+            var futures = new ArrayList<CompletableFuture<ChunkAccess>>();
+            try {
+                for (var pos : request.batch.positions) {
+                    var holder = ((ChunkMapAccess) map).lodgen$holder(PersistenceRegistry.pack(pos));
+                    if (holder == null) throw new IllegalStateException("Missing chunk holder at " + pos);
+                    futures.add(holder.scheduleChunkGenerationTask(ChunkStatus.FULL, map)
+                            .thenApply(result -> result.orElseThrow(() -> new IllegalStateException(result.getError()))));
+                }
+                CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).whenComplete((ignored, error) -> {
+                    if (error != null) request.fail(error);
+                    else {
+                        futures.forEach(future -> request.batch.chunks.add(future.join()));
+                        request.result.complete(request.batch);
+                    }
+                });
+            } catch (Throwable error) { request.fail(error); }
         }
     }
     private final class Request {

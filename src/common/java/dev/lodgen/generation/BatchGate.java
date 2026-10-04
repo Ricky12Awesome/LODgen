@@ -1,5 +1,6 @@
 package dev.lodgen.generation;
 
+import dev.lodgen.util.Futures;
 import java.util.ArrayDeque;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -15,6 +16,10 @@ public final class BatchGate implements AutoCloseable {
     private boolean closed;
 
     public BatchGate(int limit, int queueLimit) {
+        limits(limit, queueLimit);
+    }
+
+    private void limits(int limit, int queueLimit) {
         if (limit < 1 || queueLimit < 0) throw new IllegalArgumentException("Invalid limits");
         this.limit = limit;
         this.queueLimit = queueLimit;
@@ -22,9 +27,7 @@ public final class BatchGate implements AutoCloseable {
 
     /** Lower limits drain existing work; raising them starts waiting work now. */
     public synchronized void reconfigure(int limit, int queueLimit) {
-        if (limit < 1 || queueLimit < 0) throw new IllegalArgumentException("Invalid limits");
-        this.limit = limit;
-        this.queueLimit = queueLimit;
+        limits(limit, queueLimit);
         while (!closed && active < limit && !waiting.isEmpty()) {
             active++;
             launch(waiting.removeFirst());
@@ -53,15 +56,12 @@ public final class BatchGate implements AutoCloseable {
     private <T> void launch(Request<T> request) {
         try {
             request.executor.execute(() -> {
-                CompletableFuture<T> work;
-                try {
+                var work = Futures.attempt(() -> {
                     synchronized (this) {
                         if (closed) throw new CancellationException("Generator closed");
                     }
-                    work = request.start.get();
-                } catch (Throwable error) {
-                    work = CompletableFuture.failedFuture(error);
-                }
+                    return request.start.get();
+                });
                 work.whenComplete((value, error) -> {
                     // DH's completion callback immediately polls isBusy() and
                     // dispatches the next task. Free capacity before notifying it.

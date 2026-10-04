@@ -1,5 +1,6 @@
 package dev.lodgen.startup.mixin;
 
+import dev.lodgen.LodgenConfig;
 import dev.lodgen.startup.StartupCheck;
 import dev.lodgen.startup.VoxyWorldCheck;
 
@@ -105,7 +106,8 @@ public abstract class ClientStartupMixin {
             dev.lodgen.startup.ConfigScreenCheck.finish(minecraft, config);
             config.onClose();
             if (ClientScreens.current(minecraft) != lodgen$configParent) throw new AssertionError("Config did not return to its parent");
-            StartupCheck.report("PASS: client title, Options button and single-page LODgen config rendered; all 9 settings, scrolling, input focus and drafts across resizing verified; "
+            StartupCheck.report("PASS: client title, Options button and single-page LODgen config rendered; all "
+                    + LodgenConfig.SCHEMA.options().size() + " settings, scrolling, input focus and drafts across resizing verified; "
                     + (Boolean.getBoolean("lodgen.test.modmenu") ? "Mod Menu factory opened config and returned to Mods; " : "")
                     + "generation mixin targets loaded; no world opened.");
             lodgen$stage = 3;

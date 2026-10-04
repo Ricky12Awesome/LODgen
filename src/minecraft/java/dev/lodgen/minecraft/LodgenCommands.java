@@ -3,15 +3,20 @@ package dev.lodgen.minecraft;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import dev.lodgen.generation.GenerationArea;
+import dev.lodgen.generation.GenerationCenter;
 import dev.lodgen.task.RadiusParser;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.DimensionArgument;
 import net.minecraft.network.chat.Component;
+
+import java.util.function.Consumer;
 
 /** Shared Brigadier tree for both loaders; centers are horizontal block coordinates. */
 public final class LodgenCommands {
@@ -24,30 +29,36 @@ public final class LodgenCommands {
                 .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS));
                 // #endif
         root.then(Commands.literal("start").then(Commands.argument("dim", DimensionArgument.dimension())
-                .then(Commands.argument("x", IntegerArgumentType.integer(-30_000_000, 30_000_000))
-                        .then(Commands.argument("z", IntegerArgumentType.integer(-30_000_000, 30_000_000)).then(radius("custom"))))
-                .then(Commands.literal("origin").then(radius("origin")))
-                .then(Commands.literal("current").then(radius("current")))));
-        root.then(Commands.literal("stop").executes(context -> control(context, "stop")));
-        root.then(Commands.literal("cancel").executes(context -> control(context, "stop")));
-        root.then(Commands.literal("pause").executes(context -> control(context, "pause")));
-        root.then(Commands.literal("continue").executes(context -> control(context, "continue")));
-        root.then(Commands.literal("status").executes(context -> control(context, "status")));
+                .then(Commands.argument("x", coordinate())
+                        .then(Commands.argument("z", coordinate()).then(radius(GenerationCenter.CUSTOM))))
+                .then(Commands.literal("origin").then(radius(GenerationCenter.ORIGIN)))
+                .then(Commands.literal("current").then(radius(GenerationCenter.CURRENT)))));
+        root.then(control("stop", GenerationTasks::stop));
+        root.then(control("cancel", GenerationTasks::stop));
+        root.then(control("pause", GenerationTasks::pause));
+        root.then(control("continue", GenerationTasks::resume));
+        root.then(control("status", tasks -> {}));
         dispatcher.register(root);
     }
-    private static com.mojang.brigadier.builder.RequiredArgumentBuilder<CommandSourceStack, String> radius(String center) {
+    private static IntegerArgumentType coordinate() {
+        return IntegerArgumentType.integer(-GenerationArea.WORLD_EDGE_BLOCKS, GenerationArea.WORLD_EDGE_BLOCKS);
+    }
+    private static RequiredArgumentBuilder<CommandSourceStack, String> radius(GenerationCenter center) {
         return Commands.argument("radius", StringArgumentType.word())
                 .executes(context -> start(context, center, "0"))
                 .then(Commands.argument("saved-radius", StringArgumentType.word())
                         .executes(context -> start(context, center, StringArgumentType.getString(context, "saved-radius"))));
     }
-    private static int start(CommandContext<CommandSourceStack> context, String center, String saved) throws CommandSyntaxException {
+    private static LiteralArgumentBuilder<CommandSourceStack> control(String name, Consumer<GenerationTasks> action) {
+        return Commands.literal(name).executes(context -> control(context, action));
+    }
+    private static int start(CommandContext<CommandSourceStack> context, GenerationCenter center, String saved) throws CommandSyntaxException {
         var source = context.getSource();
         var level = DimensionArgument.getDimension(context, "dim");
         int x, z;
-        if (center.equals("custom")) {
+        if (center == GenerationCenter.CUSTOM) {
             x = IntegerArgumentType.getInteger(context, "x"); z = IntegerArgumentType.getInteger(context, "z");
-        } else if (center.equals("origin")) {
+        } else if (center == GenerationCenter.ORIGIN) {
             var spawn = GenerationCenters.spawn(level); x = spawn.getX(); z = spawn.getZ();
         } else {
             var player = source.getPlayerOrException();
@@ -63,11 +74,11 @@ public final class LodgenCommands {
             return 1;
         } catch (IllegalArgumentException | IllegalStateException error) { throw new SimpleCommandExceptionType(Component.literal(error.getMessage())).create(); }
     }
-    private static int control(CommandContext<CommandSourceStack> context, String action) throws CommandSyntaxException {
+    private static int control(CommandContext<CommandSourceStack> context, Consumer<GenerationTasks> action) throws CommandSyntaxException {
         var source = context.getSource();
         var tasks = GenerationTasks.get(source.getServer());
         try {
-            switch (action) { case "stop" -> tasks.stop(); case "pause" -> tasks.pause(); case "continue" -> tasks.resume(); }
+            action.accept(tasks);
             source.sendSuccess(() -> Component.literal(tasks.status()), false);
             return 1;
         } catch (IllegalStateException error) { throw new SimpleCommandExceptionType(Component.literal(error.getMessage())).create(); }

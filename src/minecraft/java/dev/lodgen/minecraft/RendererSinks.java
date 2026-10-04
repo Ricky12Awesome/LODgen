@@ -1,6 +1,7 @@
 package dev.lodgen.minecraft;
 
 import dev.lodgen.ModSupport;
+import dev.lodgen.util.Futures;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.chunk.ChunkAccess;
 
@@ -32,11 +33,11 @@ public final class RendererSinks {
     }
     public static CompletableFuture<Void> convert(ServerLevel level, ServerLevel source, List<ChunkAccess> chunks, Executor workers, boolean useDh, boolean useVoxy) {
         if (chunks.isEmpty()) return CompletableFuture.completedFuture(null);
-        var dh = useDh ? DhTaskSink.convert(level, source, chunks, workers) : CompletableFuture.<Void>completedFuture(null);
+        var dh = useDh ? Futures.attempt(() -> DhTaskSink.convert(level, source, chunks, workers)) : CompletableFuture.<Void>completedFuture(null);
         var sink = voxy;
         var vx = !useVoxy ? CompletableFuture.<Void>completedFuture(null)
                 : sink == null ? CompletableFuture.<Void>failedFuture(new java.util.concurrent.CancellationException("Voxy is shutting down"))
-                : sink.convert(level, source, chunks);
+                : Futures.attempt(() -> sink.convert(level, source, chunks));
         return CompletableFuture.allOf(dh, vx);
     }
     public static int voxyRadius(ServerLevel level) { var sink = voxy; return sink == null ? 0 : sink.radius(level); }

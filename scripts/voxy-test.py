@@ -4,20 +4,19 @@
 Requires an X display. Uses disposable directories; never changes Prism instances.
 """
 import argparse
-import importlib.util
 import json
 import os
 import re
 from pathlib import Path
 import shutil
 import time
+import tomllib
 import zipfile
 
-ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('startup_runner', ROOT / 'scripts/startup-test.py')
-runner = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(runner)
-TARGETS = {(mc, loader): mods for mc, loaders in json.loads((ROOT / 'voxy-versions.json').read_text()).items()
+from script_utils import ROOT, load_json
+
+import minecraft_launcher as runner
+TARGETS = {(mc, loader): mods for mc, loaders in load_json('voxy-versions.json').items()
            for loader, mods in loaders.items()}
 
 
@@ -60,7 +59,7 @@ def test(mc, loader, world, java_override, reload, performance=None):
                                  runner.CACHE / 'mods' / ('fabric-api-' + api + '.jar'))
         shutil.copyfile(cached, mods / 'fabric-api.jar')
     if benchmark:
-        optimization = json.loads((ROOT / 'test-versions.json').read_text())
+        optimization = load_json('test-versions.json')
         for project in ['c2me-ocl', 'scalablelux', 'chunky', 'lithium', 'ferritecore', 'structure-layout-optimizer', 'resourceful-config', 'zfastnoise']:
             runner.mod(optimization[project][mc][loader], project, mods)
     if performance and performance.instance:
@@ -172,6 +171,7 @@ def test(mc, loader, world, java_override, reload, performance=None):
         # Only the 2x2 inner saved square at custom center 1024,-1024 may persist.
         import struct
         world_root = directory / 'saves' / 'lodgen-voxy-check'
+        checkpoint = world_root / 'lodgen' / 'task.toml'
         if mc != '1.21.1':
             world_root = world_root / 'dimensions' / 'minecraft' / 'overworld'
         def present(folder, x, z):
@@ -187,8 +187,10 @@ def test(mc, loader, world, java_override, reload, performance=None):
                     raise RuntimeError(f'Voxy automatic saved-radius mismatch at {x},{z}')
                 if not expected and (present('poi', x, z) or present('entities', x, z)):
                     raise RuntimeError(f'Voxy supporting chunks were saved at {x},{z}')
-        coverage = list((directory / 'saves').rglob('*.tiles'))
-        if not coverage:
+        with checkpoint.open('rb') as stream:
+            task = tomllib.load(stream)
+        if (task.get('state') != 'COMPLETE' or task.get('completedPrefix', 0) <= 0
+                or task.get('error') or not task.get('voxy') or task.get('dh')):
             raise RuntimeError('Voxy shutdown did not checkpoint completed generation')
     elif any((directory / 'saves').rglob('level.dat')):
         raise RuntimeError('Startup check opened a world')

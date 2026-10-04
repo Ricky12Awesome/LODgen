@@ -1,6 +1,7 @@
 package dev.lodgen.mixin;
 
 import dev.lodgen.minecraft.PersistenceRegistry;
+import dev.lodgen.minecraft.ChunkPersistence;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.StreamTagVisitor;
 import net.minecraft.world.level.ChunkPos;
@@ -14,7 +15,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 @Mixin(RegionFileStorage.class)
@@ -26,7 +26,7 @@ public abstract class RegionStorageMixin {
     // to discover that a DH-only chunk has never been saved.
     private boolean lodgen$missing(ChunkPos pos) {
         return PersistenceRegistry.get(info) != null
-                && !Files.exists(folder.resolve("r." + pos.getRegionX() + "." + pos.getRegionZ() + ".mca"));
+                && !ChunkPersistence.regionExists(folder, PersistenceRegistry.x(pos), PersistenceRegistry.z(pos));
     }
 
     @Inject(method = "read", at = @At("HEAD"), cancellable = true)
