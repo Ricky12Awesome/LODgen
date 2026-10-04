@@ -1,8 +1,8 @@
 # LODgen
 
-Generate LODs for DH or Voxy wihtout saving chunks
+Generate LODs for DH or Voxy without saving chunks
 
-this mod is intened to be used with c2me + opencl (haven't tested without it)
+this mod is intended to be used with c2me + opencl (haven't tested without it)
 
 should perform about the same as chunky, in same case can be faster as this mod can skip parts of generation like caves / underground
 
@@ -12,8 +12,7 @@ Why would we want to generate chunks and NOT save them?
 chunks can eat up a large amount of storage, a 2048c radius can be over 150 gb+, when most of those are just there for LODs
 
 since c2me + opencl can generate chunks very fast
-it is reasable to just generate chunks only for lods overnight
-
+it is reasonable to just generate chunks only for lods overnight
 
 
 ## Performance (roughly)
