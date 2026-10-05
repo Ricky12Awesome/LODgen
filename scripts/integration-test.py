@@ -22,6 +22,7 @@ parser.add_argument("--skip-build", action="store_true")
 parser.add_argument("--startup-only", action="store_true", help="Load the packaged startup fixture and stop before opening a world")
 parser.add_argument("--task-check", action="store_true", help="Commands, mixed saved/LOD radius, and orderly auto-resume using only a 5c radius")
 parser.add_argument("--autostart-check", action="store_true", help="Automatic task pause/reload, cancel and distance shrink using only a 5c radius")
+parser.add_argument("--shutdown-check", action="store_true", help="Quit with 64 native Empty LOD chunks still generating")
 parser.add_argument("--dh-plan-check", action="store_true", help="DH generator plans, center-first ordering, live disable and commands; maximum 5c radius")
 parser.add_argument("--distance-check", action="store_true", help="Check custom 64 versus DH 128 using only two 4x4 LOD sections")
 parser.add_argument("--quick", action="store_true", help="Skip benchmark warmup and cap server checks at 120/60 seconds")
@@ -55,6 +56,8 @@ parser.add_argument("--trace-ownership", action="store_true", help="Log the call
 parser.add_argument("--vanilla", action="store_true", help="Test without C2ME")
 parser.add_argument("--baseline", action="store_true", help="Run the same check with DH's original FEATURES generator")
 args = parser.parse_args()
+if args.shutdown_check and (args.startup_only or args.task_check or args.autostart_check or args.dh_plan_check or args.cave_check or args.distance_check or args.benchmark or args.baseline):
+    parser.error("--shutdown-check cannot be combined with other check modes")
 if args.cave_check and (args.startup_only or args.task_check or args.dh_plan_check or args.distance_check or args.benchmark or args.baseline):
     parser.error("--cave-check runs all three modes and cannot be combined with other check modes")
 if args.cave_center and not args.cave_check:
@@ -215,6 +218,7 @@ benchmark_options = [f"-Dlodgen.test.warmupAxis={args.warmup_axis}", f"-Dlodgen.
                      f"-Dlodgen.test.baseline={str(args.baseline).lower()}",
                      f"-Dlodgen.test.distance={str(args.distance_check).lower()}",
                      f"-Dlodgen.test.tasks={str(args.task_check).lower()}",
+                     f"-Dlodgen.test.shutdown={str(args.shutdown_check).lower()}",
                      f"-Dlodgen.test.autostart={str(args.autostart_check).lower()}",
                      f"-Dlodgen.test.dhPlans={str(args.dh_plan_check).lower()}",
                      f"-Dlodgen.test.skipWarmup={str(args.quick).lower()}",
@@ -249,6 +253,13 @@ if not report.exists() or not report.read_text().startswith("PASS:"):
 if args.startup_only:
     if any(world.rglob("*.mca")):
         raise SystemExit("Startup-only check generated chunks")
+    print(report.read_text().strip())
+    raise SystemExit(0)
+if args.shutdown_check:
+    for region in world.rglob("r.*.*.mca"):
+        _, rx, rz, _ = region.name.split(".")
+        if 190 <= int(rx) <= 194 and -194 <= int(rz) <= -190:
+            raise SystemExit(f"Shutdown-check LOD area was saved: {region}")
     print(report.read_text().strip())
     raise SystemExit(0)
 if args.cave_check:

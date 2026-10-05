@@ -42,6 +42,7 @@
     "VoxyServerShutdownMixin",
     "VoxyShutdownMixin",
     "VoxyEngineCloseMixin",
+    "VoxySavingMixin",
     "GenerationOverlayMixin",
     "ActionBarAccess"
   ],
