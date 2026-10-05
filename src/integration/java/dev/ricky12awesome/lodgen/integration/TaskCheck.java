@@ -22,6 +22,8 @@ public final class TaskCheck {
     private static final boolean AUTOMATIC = Boolean.getBoolean("lodgen.test.autostart");
     private static long stoppedAt, stoppedCount;
     private static java.util.concurrent.ScheduledExecutorService timer;
+    private static AutoCloseable hiddenWorld;
+    private static String canceledProgress;
 
     public static void run(MinecraftServer server) {
         try {
@@ -37,6 +39,7 @@ public final class TaskCheck {
             com.seibel.distanthorizons.core.config.Config.Client.threadPresetSetting.set(com.seibel.distanthorizons.api.enums.config.quickOptions.EDhApiThreadPreset.CUSTOM);
             com.seibel.distanthorizons.core.config.Config.Common.MultiThreading.numberOfThreads.setApiValue(1, "LODgen task regression");
             require(dev.ricky12awesome.lodgen.GenerationSettings.current().batches() == 1, "Task regression needs one active batch");
+            dev.ricky12awesome.lodgen.minecraft.DhTaskSinkCheck.run(server.overworld());
             if (Boolean.getBoolean("lodgen.test.reload")) {
                 var checkpoint = TaskStore.read(server.getWorldPath(LevelResource.ROOT).resolve("lodgen/task.toml"));
                 require(checkpoint != null && checkpoint.progress().state() == (AUTOMATIC ? TaskProgress.State.PAUSED : TaskProgress.State.RUNNING), "Task intent must survive shutdown");
@@ -63,6 +66,10 @@ public final class TaskCheck {
                 require(record(server).area().radius() == 5 && record(server).area().savedRadius() == 1, "Command rounding failed");
                 stage = 0;
             }
+            if (!Boolean.getBoolean("lodgen.test.reload")) {
+                stage = -2;
+                beginDisconnect(server);
+            }
             timer = Executors.newSingleThreadScheduledExecutor(task -> { var t = new Thread(task, "LODgen task regression"); t.setDaemon(true); return t; });
             timer.scheduleAtFixedRate(() -> server.execute(() -> tick(server)), 0, 2, TimeUnit.MILLISECONDS);
         } catch (Throwable error) { fail(server, error); }
@@ -77,7 +84,16 @@ public final class TaskCheck {
             String status = GenerationTasks.get(server).status();
             require(!status.contains("error="), status);
             require(status.contains(stage <= 2 || stage == 5 ? "radius=5c" : "radius=1c") && status.contains("ETA="), "Task status omitted radius or ETA: " + status);
-            if (stage == 0) {
+            if (stage == -2) {
+                beginDisconnect(server);
+            } else if (stage == -1) {
+                if (!status.contains("active=0")) return;
+                require(status.contains("WAITING_FOR_RENDERER") && status.contains(canceledProgress), "Canceled output advanced or paused the task: " + status);
+                require(record(server).progress().state() == TaskProgress.State.RUNNING && record(server).progress().error().isEmpty(), "DH disconnect poisoned the saved task");
+                hiddenWorld.close(); hiddenWorld = null;
+                LodgenConfig.LOGGER.info("PASS: DH disconnect canceled an in-flight native batch, drained cleanup, and retained RUNNING retryable progress");
+                stage = 0;
+            } else if (stage == 0) {
                 if (status.contains("progress=0/")) return;
                 require(!status.contains("COMPLETE"), "Test finished before exercising pause/restart");
                 command(server, "lodgen pause");
@@ -141,6 +157,15 @@ public final class TaskCheck {
             }
         } catch (Throwable error) { fail(server, error); }
     }
+    private static void beginDisconnect(MinecraftServer server) {
+        GenerationTasks.tick(server);
+        String status = GenerationTasks.get(server).status();
+        // Automatic tasks may finish DH's rough surface pass before native work.
+        if (!status.contains("active=1")) return;
+        canceledProgress = status.substring(status.indexOf("progress="), status.indexOf("; active="));
+        hiddenWorld = dev.ricky12awesome.lodgen.minecraft.DhTaskSinkCheck.hideWorld();
+        stage = -1;
+    }
     private static void command(MinecraftServer server, String command) throws Exception {
         require(server.getCommands().getDispatcher().execute(command, server.createCommandSourceStack()) == 1, "Command failed: " + command);
     }
@@ -160,7 +185,15 @@ public final class TaskCheck {
         throw new AssertionError("Missing live DH level");
     }
     private static void require(boolean condition, String text) { if (!condition) throw new AssertionError(text); }
-    private static void finish(MinecraftServer server) { done = true; if (timer != null) timer.shutdownNow(); server.halt(false); }
+    private static void finish(MinecraftServer server) {
+        done = true;
+        if (hiddenWorld != null) {
+            try { hiddenWorld.close(); } catch (Exception error) { LodgenConfig.LOGGER.error("Cannot restore DH test world", error); }
+            hiddenWorld = null;
+        }
+        if (timer != null) timer.shutdownNow();
+        server.halt(false);
+    }
     private static void fail(MinecraftServer server, Throwable error) {
         LodgenConfig.LOGGER.error("Task regression failed", error);
         try { Files.writeString(REPORT, "FAIL: " + error + "\n"); } catch (Exception ignored) {}

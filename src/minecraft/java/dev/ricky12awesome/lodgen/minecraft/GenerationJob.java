@@ -138,6 +138,7 @@ final class GenerationJob implements AutoCloseable {
     }
 
     private CompletableFuture<Void> convert(NormalChunkBackend.Batch batch) {
+        if (interrupted()) return CompletableFuture.failedFuture(new CancellationException("LODgen task is closing"));
         var lodChunks = batch.chunks.stream().filter(chunk -> record.area().lods(
                 PersistenceRegistry.x(chunk.getPos()), PersistenceRegistry.z(chunk.getPos()))).toList();
         return RendererSinks.convert(level, batch.sourceLevel(), lodChunks, workers, record.dh(), record.voxy());
@@ -146,9 +147,13 @@ final class GenerationJob implements AutoCloseable {
     private void finishBatch(long index, SquarePlan.Batch batch, Throwable error) {
         active.remove(index);
         if (error == null) progress.complete(index);
-        else if (!interrupted() && !(Futures.rootCause(error) instanceof CancellationException)) {
-            progress.fail(Futures.rootCause(error).toString());
-            LodgenConfig.LOGGER.error("LODgen task paused at {},{}", batch.x(), batch.z(), error);
+        else {
+            progress.retry(index);
+            if (!interrupted() && progress.error().isEmpty()
+                    && !(Futures.rootCause(error) instanceof CancellationException)) {
+                progress.fail(Futures.rootCause(error).toString());
+                LodgenConfig.LOGGER.error("LODgen task paused at {},{}", batch.x(), batch.z(), error);
+            }
         }
         publishProgress();
         if (progress.state() != TaskProgress.State.RUNNING || System.nanoTime() - lastCheckpoint >= CHECKPOINT_INTERVAL) checkpoint();

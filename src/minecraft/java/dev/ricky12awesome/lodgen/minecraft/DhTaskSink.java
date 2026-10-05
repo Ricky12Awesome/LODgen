@@ -2,6 +2,7 @@ package dev.ricky12awesome.lodgen.minecraft;
 
 import com.seibel.distanthorizons.api.DhApi;
 import com.seibel.distanthorizons.core.dataObjects.fullData.sources.FullDataSourceV2;
+import com.seibel.distanthorizons.core.level.IDhLevel;
 import com.seibel.distanthorizons.core.wrapperInterfaces.world.IServerLevelWrapper;
 import dev.ricky12awesome.lodgen.util.Futures;
 import net.minecraft.server.level.ServerLevel;
@@ -10,6 +11,8 @@ import net.minecraft.world.level.chunk.ChunkAccess;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 
 /** Optional DH adapter for generation that does not originate in DH's request queue. */
@@ -99,13 +102,32 @@ final class DhTaskSink {
     }
     static CompletableFuture<Void> convert(ServerLevel level, ServerLevel sourceLevel, List<ChunkAccess> chunks, Executor executor) {
         var wrapper = wrapper(level);
-        if (wrapper == null) return CompletableFuture.failedFuture(new IllegalStateException("Waiting for DH to open " + level.dimension()));
-        return Futures.attempt(() -> CompletableFuture.supplyAsync(() -> convertChunks(level, sourceLevel, chunks, wrapper), executor))
-                .thenCompose(java.util.function.Function.identity());
+        var dhLevel = wrapper == null ? null : wrapper.getDhLevel();
+        if (dhLevel == null) return CompletableFuture.failedFuture(new CancellationException("DH level is unavailable"));
+        return Futures.attempt(() -> CompletableFuture.supplyAsync(() -> convertChunks(level, sourceLevel, chunks, wrapper, dhLevel), executor))
+                .thenCompose(java.util.function.Function.identity())
+                .handle((ignored, error) -> {
+                    if (error != null) {
+                        if (!current(level, wrapper, dhLevel)) throw new CancellationException("DH level closed during conversion");
+                        throw new CompletionException(error);
+                    }
+                    return (Void) null;
+                });
+    }
+
+    private static boolean current(ServerLevel level, IServerLevelWrapper wrapper, IDhLevel dhLevel) {
+        return wrapper(level) == wrapper && wrapper.getDhLevel() == dhLevel;
+    }
+
+    private static void requireCurrent(ServerLevel level, IServerLevelWrapper wrapper, IDhLevel dhLevel) {
+        if (!current(level, wrapper, dhLevel)) throw new CancellationException("DH level closed during conversion");
     }
 
     private static CompletableFuture<Void> convertChunks(ServerLevel level, ServerLevel sourceLevel,
-            List<ChunkAccess> chunks, IServerLevelWrapper wrapper) {
+            List<ChunkAccess> chunks, IServerLevelWrapper wrapper, IDhLevel dhLevel) {
+        // DH can unload while this conversion waits for a worker. Keep one
+        // destination for the batch and reject work belonging to a closed world.
+        requireCurrent(level, wrapper, dhLevel);
         var converter = new DhChunkConversion(wrapper, level);
         var destinations = new java.util.HashMap<Long, FullDataSourceV2>();
         var writes = new ArrayList<CompletableFuture<Void>>();
@@ -116,8 +138,9 @@ final class DhTaskSink {
                 }
             }
             for (var data : destinations.values()) {
+                requireCurrent(level, wrapper, dhLevel);
                 data.recordLastSeen();
-                writes.add(wrapper.getDhLevel().updateDataSourcesAsync(data));
+                writes.add(dhLevel.updateDataSourcesAsync(data));
             }
         } catch (Throwable error) {
             return drainWritesAndClose(destinations, writes).handle((ignored, writeError) -> {

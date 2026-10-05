@@ -120,6 +120,39 @@ class TaskTest {
         assertEquals(TaskProgress.State.COMPLETE, resumed.state());
         assertEquals(-1, resumed.next());
     }
+    @Test void rendererCancellationRetriesUnfinishedBatchesWithoutPausingOrLosingCompletions() {
+        var plan = new SquarePlan(new GenerationArea(0, 0, 4, 0));
+        var progress = new TaskProgress(plan);
+        for (long index = 0; index < plan.batches(); index++) assertEquals(index, progress.next());
+        progress.complete(2);
+        progress.retry(1); progress.retry(0); progress.retry(2);
+        assertEquals(TaskProgress.State.RUNNING, progress.state());
+        assertEquals("", progress.error());
+        assertEquals(0, progress.next()); progress.complete(0);
+        assertEquals(1, progress.next()); progress.complete(1);
+        assertEquals(3, progress.next()); progress.complete(3);
+        assertEquals(plan.chunks(), progress.completedChunks());
+        assertEquals(TaskProgress.State.COMPLETE, progress.state());
+        assertThrows(IllegalArgumentException.class, () -> progress.retry(-1));
+        assertThrows(IllegalArgumentException.class, () -> progress.retry(plan.batches()));
+    }
+    @Test void rendererCancellationKeepsCheckpointRunningAndHonorsUserPause() throws Exception {
+        var area = new GenerationArea(0, 0, 4, 0);
+        var plan = new SquarePlan(area);
+        var progress = new TaskProgress(plan);
+        progress.next(); progress.next(); progress.complete(1); progress.retry(0);
+        Path path = directory.resolve("renderer-shutdown/task.toml");
+        TaskStore.write(path, new TaskRecord("minecraft:overworld", area, true, false, true, progress.snapshot()));
+        var restored = new TaskProgress(plan, TaskStore.read(path).progress());
+        assertEquals(TaskProgress.State.RUNNING, restored.state());
+        assertEquals("", restored.error());
+        assertEquals(0, restored.next()); restored.complete(0);
+        assertEquals(2, restored.next());
+        restored.pause(); restored.retry(2);
+        assertEquals(TaskProgress.State.PAUSED, restored.state());
+        assertEquals(-1, restored.next());
+        restored.resume(); assertEquals(2, restored.next());
+    }
     @Test void pauseStopAndLiveDrainPreserveTaskIntent() {
         var plan = new SquarePlan(new GenerationArea(0, 0, 4, 0));
         var progress = new TaskProgress(plan);

@@ -32,6 +32,11 @@ public final class TaskProgress {
         while (cursor < plan.batches() && beyond.contains(cursor)) cursor++;
         return cursor < plan.batches() ? cursor++ : -1;
     }
+    /** Renderer shutdown can cancel a dispatched batch without pausing the task. */
+    public void retry(long index) {
+        if (index < 0 || index >= plan.batches()) throw new IllegalArgumentException("Invalid batch to retry");
+        if (index >= prefix && !beyond.contains(index)) cursor = Math.min(cursor, index);
+    }
     public void complete(long index) {
         if (index < prefix || beyond.contains(index)) return;
         if (index >= plan.batches()) throw new IllegalArgumentException("Invalid completed batch");
