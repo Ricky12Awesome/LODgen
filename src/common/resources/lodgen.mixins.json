@@ -1,7 +1,7 @@
 {
   "required": true,
   "minVersion": "0.8",
-  "package": "dev.lodgen.mixin",
+  "package": "dev.ricky12awesome.lodgen.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "DhWorldGeneratorMixin",
@@ -48,5 +48,5 @@
   "injectors": {
     "defaultRequire": 1
   },
-  "plugin": "dev.lodgen.mixin.LodgenMixinPlugin"
+  "plugin": "dev.ricky12awesome.lodgen.mixin.LodgenMixinPlugin"
 }

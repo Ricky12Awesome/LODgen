@@ -1,4 +1,4 @@
-# LODgen
+# <img src="src/common/resources/logo.png" alt="LODgen logo" width="48" height="48"> LODgen
 
 Generate LODs for DH or Voxy without saving chunks
 
@@ -63,6 +63,7 @@ on 9950X (these are tested with full generation, may be faster if you skip caves
 
 ## Things to be fixed
 - text and descriptions (currently its ai slop)
+- better logo (I suck at making logos ar any art)
 - much more testing different use cases
   - like testing how it works on servers (if clients gets the LODs)
 

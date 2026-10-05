@@ -19,7 +19,7 @@ def target = matrix[mc]
 def integration = providers.gradleProperty('selfTest').map { it.toBoolean() }.getOrElse(false)
 def startup = providers.gradleProperty('startupTest').map { it.toBoolean() }.getOrElse(false)
 if (integration && startup) throw new GradleException('Choose selfTest or startupTest, not both')
-group = 'dev.lodgen'
+group = 'dev.ricky12awesome.lodgen'
 version = providers.gradleProperty('modVersion').get()
 base.archivesName = "lodgen-${mc}-${platform}"
 layout.buildDirectory = file("build/${mc}/${platform}" + (integration ? '/selftest' : startup ? '/startup' : ''))
@@ -162,7 +162,7 @@ tasks.named('processResources') {
         doLast {
             def metadata = new File(destinationDir, 'lodgen.mixins.json')
             def json = new JsonSlurper().parse(metadata)
-            json.plugin = 'dev.lodgen.integration.IntegrationMixinPlugin'
+            json.plugin = 'dev.ricky12awesome.lodgen.integration.IntegrationMixinPlugin'
             metadata.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json))
         }
     }
@@ -170,7 +170,7 @@ tasks.named('processResources') {
         doLast {
             def metadata = new File(destinationDir, 'fabric.mod.json')
             def json = new JsonSlurper().parse(metadata)
-            json.entrypoints.main.add('dev.lodgen.integration.fabric.IntegrationEntrypoint')
+            json.entrypoints.main.add('dev.ricky12awesome.lodgen.integration.fabric.IntegrationEntrypoint')
             metadata.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json))
         }
     }
@@ -191,7 +191,7 @@ tasks.named('jar') { from('LICENSE') }
 tasks.named('shadowJar') {
     configurations = [project.configurations.bundled]
     archiveClassifier = 'bundled-dev'
-    relocate 'com.electronwill.nightconfig', 'dev.lodgen.libs.nightconfig'
+    relocate 'com.electronwill.nightconfig', 'dev.ricky12awesome.lodgen.libs.nightconfig'
     from('LICENSE')
     exclude 'META-INF/maven/**', 'module-info.class'
 }

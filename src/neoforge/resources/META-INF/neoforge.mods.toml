@@ -6,6 +6,7 @@ license="MIT"
 modId="lodgen"
 version="${version}"
 displayName="LODgen"
+logoFile="logo.png"
 description="Generates chunk-based LODs for Distant Horizons FEATURES and Voxy without saving LOD-only chunks."
 
 [[mixins]]

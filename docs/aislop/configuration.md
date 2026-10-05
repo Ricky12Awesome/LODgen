@@ -1,7 +1,7 @@
 # Configuration code
 
 Settings are declared on the record components in
-[`LodgenConfig`](../src/common/java/dev/lodgen/LodgenConfig.java).
+[`LodgenConfig`](../../src/common/java/dev/ricky12awesome/lodgen/LodgenConfig.java).
 Each `@ConfigOption` supplies its default, bounds, label, description, and any
 control conditions. The same metadata drives TOML loading and saving, defaults,
 validation, and the in-game controls.
