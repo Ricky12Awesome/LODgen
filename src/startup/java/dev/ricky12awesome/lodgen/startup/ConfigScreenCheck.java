@@ -81,14 +81,10 @@ public final class ConfigScreenCheck {
         for (int i = 0; i < 3; i++) press(caves);
         if (!caveLabel.equals(caves.getMessage())) throw new AssertionError("Cave mode did not cycle through all three choices");
         var cpu = (Button) control(list, "cpuLoad");
-        if (dev.ricky12awesome.lodgen.ModSupport.loaded("distanthorizons")) {
-            if (cpu.active || !cpu.getMessage().getString().contains("DH")) throw new AssertionError("DH CPU load must control the disabled Voxy setting");
-        } else {
-            if (!cpu.active) throw new AssertionError("Voxy CPU load is disabled without DH");
-            var initial = cpu.getMessage();
-            for (int i = 0; i < 5; i++) press(cpu);
-            if (!initial.equals(cpu.getMessage())) throw new AssertionError("CPU load did not cycle through all five levels");
-        }
+        if (!cpu.active) throw new AssertionError("LODgen CPU load is disabled");
+        var initial = cpu.getMessage();
+        for (int i = 0; i < 5; i++) press(cpu);
+        if (!initial.equals(cpu.getMessage())) throw new AssertionError("CPU load did not cycle through all five levels");
         var centerMode = original.generationCenter();
         for (int i = 0; i < 3; i++) { press(center); centerMode = centerMode.next(); }
         while (centerMode != dev.ricky12awesome.lodgen.generation.GenerationCenter.CUSTOM) { press(center); centerMode = centerMode.next(); }

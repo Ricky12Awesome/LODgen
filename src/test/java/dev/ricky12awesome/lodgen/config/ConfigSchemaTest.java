@@ -102,6 +102,15 @@ class ConfigSchemaTest {
     }
 
     @Test
+    void lodgenCpuLoadRemainsEditableWithDhInstalled() {
+        var schema = dev.ricky12awesome.lodgen.LodgenConfig.SCHEMA;
+        var draft = schema.draft(dev.ricky12awesome.lodgen.LodgenConfig.DEFAULTS);
+        var cpu = schema.option("cpuLoad");
+        assertTrue(draft.active(cpu, mod -> mod.equals("distanthorizons")));
+        assertEquals("lodgen.config.cpuLoad.3", draft.valueKey(cpu, mod -> mod.equals("distanthorizons")));
+    }
+
+    @Test
     void schemaWithChangesOneLodgenSettingAndPreservesCaveMode() {
         var original = new dev.ricky12awesome.lodgen.LodgenConfig(true, 3, 0, false, 1000,
                 dev.ricky12awesome.lodgen.generation.GenerationCenter.CURRENT, 0, 0, 0,

@@ -33,7 +33,7 @@ parser.add_argument("--layout", choices=("row", "radial"), default="row", help="
 parser.add_argument("--workers", type=int, default=8, help="Concurrent DH benchmark requests")
 parser.add_argument("--native-workers", type=int, default=0, help="Override C2ME parallelism in the disposable server (0 keeps its default)")
 parser.add_argument("--chunky-working-count", type=int, default=0, help="Override Chunky's in-flight limit in the disposable server")
-parser.add_argument("--dh-threads", type=int, default=0, help="DH conversion threads in the disposable benchmark")
+parser.add_argument("--cpu-load", type=int, choices=range(1, 6), default=3, help="LODgen CPU load, also overriding DH in the disposable server")
 parser.add_argument("--dh-executor", action="store_true", help="Use DH's real worldgen executor for the benchmark")
 parser.add_argument("--dh-queue", action="store_true", help="Use DH's actual request selection and admission queue")
 parser.add_argument("--frontier-radius", type=int, default=0, help="Start DH queue requests on a distant square frontier, in chunks")
@@ -79,8 +79,6 @@ if args.vanilla and args.opencl:
     parser.error("--opencl requires C2ME; omit --vanilla")
 if args.warmup_axis < 4 or args.warmup_axis % 4:
     parser.error("--warmup-axis must be a positive multiple of 4")
-if args.dh_threads < 0:
-    parser.error("--dh-threads must be nonnegative")
 if args.benchmark < 0 or args.benchmark % 4:
     parser.error("--benchmark must be zero or a positive multiple of 4")
 if not 1 <= args.workers <= 1024:
@@ -183,7 +181,7 @@ if args.native_workers:
     c2me_config = run / "config" / "c2me.toml"
     current = c2me_config.read_text() if c2me_config.exists() else "version = 3\nglobalExecutorParallelism = \"default\"\n"
     c2me_config.write_text(re.sub(r"(?m)^globalExecutorParallelism\s*=.*$", f"globalExecutorParallelism = {args.native_workers}", current))
-(run / "config" / "lodgen.toml").write_text(f"enabled={'false' if args.baseline else 'true'}\ncpuLoad=3\ncaveMode=\"{args.cave_mode}\"\n")
+(run / "config" / "lodgen.toml").write_text(f"enabled={'false' if args.baseline else 'true'}\ncpuLoad={args.cpu_load}\ncaveMode=\"{args.cave_mode}\"\n")
 (run / "server.properties").write_text("online-mode=false\nserver-port=0\nlevel-seed=123456789\n"
                                        "view-distance=2\nsimulation-distance=2\nmax-tick-time=180000\n")
 heap = "-Xmx2G" if args.startup_only else "-Xmx" + args.heap
@@ -213,7 +211,7 @@ else:
             raise SystemExit("NeoForge installer did not produce a recognized server launcher")
         command = [args.java, heap, "-Dlodgen.test.chunky=" + str(args.chunky).lower(), "-Dlodgen.test.benchmark=" + str(args.benchmark), "-jar", str(launchers[0]), "nogui"]
 
-benchmark_options = [f"-Dlodgen.test.warmupAxis={args.warmup_axis}", f"-Dlodgen.test.dhThreads={args.dh_threads}", f"-Dlodgen.test.layout={args.layout}", f"-Dlodgen.test.workers={args.workers}",
+benchmark_options = [f"-Dlodgen.test.warmupAxis={args.warmup_axis}", f"-Dlodgen.test.layout={args.layout}", f"-Dlodgen.test.workers={args.workers}",
                      f"-Dlodgen.test.baseline={str(args.baseline).lower()}",
                      f"-Dlodgen.test.distance={str(args.distance_check).lower()}",
                      f"-Dlodgen.test.tasks={str(args.task_check).lower()}",

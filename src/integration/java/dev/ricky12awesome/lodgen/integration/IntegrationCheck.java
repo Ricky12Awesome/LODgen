@@ -33,6 +33,7 @@ public final class IntegrationCheck {
         ExecutorService executor = Executors.newFixedThreadPool(8);
         try {
             Files.deleteIfExists(REPORT);
+            cpuLoad();
             DiskPredicateCheck.run();
             int expectedWorkers = Integer.getInteger("lodgen.test.nativeWorkers", 0);
             if (expectedWorkers > 0) {
@@ -64,7 +65,7 @@ public final class IntegrationCheck {
             }
             var requests = new AdmittedRequests(() -> generator instanceof dev.ricky12awesome.lodgen.generation.GenerationAdmission admission
                     && admission.lodgen$isBusy());
-            LodgenConfig.LOGGER.info("INTEGRATION SETTINGS: {} processors; {} native batches; direct requests honor live DH admission",
+            LodgenConfig.LOGGER.info("INTEGRATION SETTINGS: {} processors; {} native batches; direct requests honor live LODgen admission",
                     Runtime.getRuntime().availableProcessors(), dev.ricky12awesome.lodgen.GenerationSettings.current().batches());
             FullDataSourceV2 data = FullDataSourceV2.createEmpty(DhSectionPos.encode((byte) 6, LOD_X / 4, LOD_Z / 4));
             FullDataSourceV2 overlapData = FullDataSourceV2.createEmpty(DhSectionPos.encode((byte) 6, 2048, -2048));
@@ -149,6 +150,36 @@ public final class IntegrationCheck {
             executor.shutdown();
             server.halt(false);
         }
+    }
+
+    private static void cpuLoad() throws Exception {
+        var original = LodgenConfig.INSTANCE;
+        var threading = DhApi.Delayed.configs.multiThreading();
+        int savedThreads = threading.threadCount().getTrueValue();
+        double savedRatio = threading.threadRuntimeRatio().getTrueValue();
+        require(threading.threadCount().getApiValue() != null && threading.threadRuntimeRatio().getApiValue() != null,
+                "LODgen did not override DH CPU load at startup");
+        requireCpuLoadOwner();
+        try {
+            for (int load : new int[]{1, 5}) {
+                LodgenConfig.apply(LodgenConfig.SCHEMA.with(original, "cpuLoad", load));
+                requireCpuLoadOwner();
+                var budget = dev.ricky12awesome.lodgen.GenerationSettings.current();
+                require(threading.threadCount().getValue() == budget.threads(), "DH thread count did not follow live LODgen CPU load");
+                require(threading.threadRuntimeRatio().getValue() == budget.runRatio(), "DH runtime ratio did not follow live LODgen CPU load");
+                require(threading.threadCount().getTrueValue() == savedThreads && threading.threadRuntimeRatio().getTrueValue() == savedRatio,
+                        "LODgen rewrote DH's saved CPU settings");
+            }
+        } finally { LodgenConfig.apply(original); }
+        LodgenConfig.LOGGER.info("PASS: DH's CPU Load row is API-locked and names LODgen as its owner; live thread overrides preserve DH's saved settings");
+    }
+
+    private static void requireCpuLoadOwner() {
+        var preset = com.seibel.distanthorizons.core.config.Config.Client.threadPresetSetting;
+        require(preset.apiIsOverriding() && "LODgen".equals(preset.getApiUser()),
+                "DH's CPU Load row must be API-locked with LODgen in its ownership tooltip");
+        require(preset.getApiValue() == com.seibel.distanthorizons.api.enums.config.quickOptions.EDhApiThreadPreset.CUSTOM,
+                "DH's own preset writer must remain inactive while LODgen controls CPU load");
     }
 
     private static CompletableFuture<Void> lighting(ServerLevel level, ExecutorService executor) {

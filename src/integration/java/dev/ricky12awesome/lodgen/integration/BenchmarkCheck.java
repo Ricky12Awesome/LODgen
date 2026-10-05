@@ -31,16 +31,12 @@ public final class BenchmarkCheck {
         if (axis == 0) return CompletableFuture.completedFuture(null);
         if (axis % 4 != 0) return CompletableFuture.failedFuture(new IllegalArgumentException("Benchmark axis must be divisible by 4"));
         var originalSettings = LodgenConfig.INSTANCE;
-        int originalDhThreads = com.seibel.distanthorizons.core.config.Config.Common.MultiThreading.numberOfThreads.get();
-        int dhThreads = Integer.getInteger("lodgen.test.dhThreads", 0);
-        if (dhThreads > 0) com.seibel.distanthorizons.core.config.Config.Common.MultiThreading.numberOfThreads.set(dhThreads);
         boolean checkLiveConfig = Boolean.getBoolean("lodgen.test.skipWarmup")
                 && Boolean.getBoolean("lodgen.test.dhQueue") && originalSettings.enabled();
         if (checkLiveConfig) {
             try {
                 LodgenConfig.apply(LodgenConfig.SCHEMA.with(originalSettings, "cpuLoad", 1));
-                com.seibel.distanthorizons.core.config.Config.Common.MultiThreading.numberOfThreads.set(1);
-                LodgenConfig.LOGGER.info("QUICK CHECK: applied live DH CPU load of one worker");
+                LodgenConfig.LOGGER.info("QUICK CHECK: applied live LODgen CPU load 1, overriding DH");
             } catch (Exception failure) { return CompletableFuture.failedFuture(failure); }
         }
         ExecutorService benchmarkExecutor = Boolean.getBoolean("lodgen.test.dhExecutor") ? ThreadPoolUtil.getWorldGenExecutor() : executor;
@@ -60,7 +56,6 @@ public final class BenchmarkCheck {
                 return ChunkyCheck.run(16384, -16384, axis).thenCompose(chunky -> write(count, dhNanos, chunky));
             });
         }).whenComplete((ignored, error) -> {
-            if (dhThreads > 0 || checkLiveConfig) com.seibel.distanthorizons.core.config.Config.Common.MultiThreading.numberOfThreads.set(originalDhThreads);
             if (checkLiveConfig) {
                 try { LodgenConfig.apply(originalSettings); }
                 catch (Exception failure) { throw new java.util.concurrent.CompletionException(failure); }

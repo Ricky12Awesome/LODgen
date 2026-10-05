@@ -4,7 +4,7 @@ package dev.ricky12awesome.lodgen.generation;
  * The heap bound leaves room for dependency chunks, renderer data and normal play.
  */
 public record GenerationBudget(int threads, double runRatio, int batches) {
-    public static GenerationBudget voxy(int load, int processors, long heapBytes) {
+    public static GenerationBudget forCpuLoad(int load, int processors, long heapBytes) {
         double fraction = switch (load) {
             case 1 -> 0.10;
             case 2 -> 0.25;

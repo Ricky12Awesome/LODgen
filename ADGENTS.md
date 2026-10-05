@@ -1,4 +1,4 @@
-- You are allowed to use subagents to split out work
+- You are allowed to use subagents to split out tasks
 - You are allowed to make breaking changes
   - which also means tests can be removed/changed
 - Keep version at 0.0.0 until release

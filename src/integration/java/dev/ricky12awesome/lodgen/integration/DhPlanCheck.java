@@ -30,7 +30,6 @@ import java.util.function.BooleanSupplier;
 public final class DhPlanCheck {
     private static final java.util.concurrent.ScheduledExecutorService TIMER = Executors.newSingleThreadScheduledExecutor();
     public static void run(MinecraftServer server, ServerLevel level, DhWorldGenerator generator, ExecutorService executor) throws Exception {
-        Config.Common.MultiThreading.numberOfThreads.set(1);
         Config.Common.WorldGenerator.chunkGeneratorMode.set(EDhApiDistantGeneratorMode.FEATURES);
         configure(false, EDhApiGeneratorPlan.SURFACE_THEN_CHUNKS, GenerationCenter.CURRENT, 64, 0);
         long before = PersistenceRegistry.throughput(level).totalCompleted();
@@ -111,9 +110,6 @@ public final class DhPlanCheck {
     private static void configure(boolean enabled, EDhApiGeneratorPlan plan, GenerationCenter center, int radius, int coordinate) throws Exception {
         Config.Common.WorldGenerator.generatorPlan.set(plan);
         LodgenConfig.apply(new LodgenConfig(enabled, 1, radius, false, 1000, center, coordinate, -coordinate, 0));
-        Config.Client.threadPresetSetting.set(com.seibel.distanthorizons.api.enums.config.quickOptions.EDhApiThreadPreset.CUSTOM);
-        Config.Common.MultiThreading.numberOfThreads.setApiValue(1, "LODgen plan regression");
-        require(dev.ricky12awesome.lodgen.GenerationSettings.current().batches() == 1, "Fixture needs one active batch to observe live disable");
     }
     private static CompletableFuture<Void> request(DhWorldGenerator generator, ExecutorService executor, int x, int z, byte detail) {
         int width = 4 << detail;

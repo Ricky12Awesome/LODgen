@@ -33,12 +33,6 @@ public final class TaskCheck {
                 LodgenConfig.apply(new LodgenConfig(true, 1, 5, false, 1000, GenerationCenter.CUSTOM, 65536, -65536, 1, LodgenConfig.INSTANCE.caveMode()));
                 com.seibel.distanthorizons.core.config.Config.Common.WorldGenerator.chunkGeneratorMode.set(com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiDistantGeneratorMode.FEATURES);
             }
-            // DH owns the budget when installed. Keep this tiny task's admission
-            // window at one batch so pausing can leave undispatched work.
-            com.seibel.distanthorizons.core.config.Config.Common.MultiThreading.numberOfThreads.set(1);
-            com.seibel.distanthorizons.core.config.Config.Client.threadPresetSetting.set(com.seibel.distanthorizons.api.enums.config.quickOptions.EDhApiThreadPreset.CUSTOM);
-            com.seibel.distanthorizons.core.config.Config.Common.MultiThreading.numberOfThreads.setApiValue(1, "LODgen task regression");
-            require(dev.ricky12awesome.lodgen.GenerationSettings.current().batches() == 1, "Task regression needs one active batch");
             dev.ricky12awesome.lodgen.minecraft.DhTaskSinkCheck.run(server.overworld());
             if (Boolean.getBoolean("lodgen.test.reload")) {
                 var checkpoint = TaskStore.read(server.getWorldPath(LevelResource.ROOT).resolve("lodgen/task.toml"));

@@ -85,6 +85,7 @@ dependencies {
     testImplementation "maven.modrinth:distanthorizons:${target.dh}"
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.9'
+    testRuntimeOnly 'org.apache.logging.log4j:log4j-core:2.25.2'
     if (integration) {
         modRuntimeOnly "maven.modrinth:distanthorizons:${target.dh}"
         modRuntimeOnly "maven.modrinth:c2me-${platform}:${target[platform == 'fabric' ? 'c2meFabric' : 'c2meNeoForge']}"

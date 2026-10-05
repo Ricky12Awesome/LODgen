@@ -34,7 +34,7 @@ showChunksPerSecond = false
 chunksPerSecondUpdateIntervalMs = 1000
 ```
 
-`cpuLoad` controls Voxy utilization. With DH installed, LODgen follows **DH’s CPU Load** (including its advanced thread count and runtime ratio); the Voxy control is disabled. Both changes apply live. The five Voxy levels match DH’s processor scaling:
+`cpuLoad` controls LODgen utilization for both DH and Voxy. With DH installed, LODgen overrides DH’s thread count and runtime ratio through the DH API. DH’s own **CPU Load** row is API-locked and its tooltip identifies **LODgen** as the controlling mod. LODgen’s control stays enabled and changes apply live, including after DH finishes initializing. DH’s saved thread settings remain intact. The five levels match DH’s processor scaling:
 
 | Value | CPU load | Conversion workers | Duty ratio |
 | --- | --- | --- | --- |
@@ -44,7 +44,7 @@ chunksPerSecondUpdateIntervalMs = 1000
 | 4 | Aggressive | 75% | 100% |
 | 5 | Full power | 100% | 100% |
 
-Native concurrency and memory use adjust automatically; there are no batch, waiting-queue or spatial-grouping controls. Full power on a 32-thread CPU with a 32 GB heap permits 256 concurrent 4×4 requests (4,096 target chunks plus dependencies). Smaller heaps reduce that window. Automatic and command tasks complete compact 32×32 patches before moving outward, keeping native dependencies useful as the radius grows. Requests refill on completion, while conversion, ticket cleanup and normal play retain their own lifetimes. These settings control LODgen’s work; C2ME and renderer storage services retain their own worker settings. They are utilization presets, rather than strict limits on overall process CPU usage.
+Native concurrency and memory use adjust automatically; there are no batch, waiting-queue or spatial-grouping controls. Full power on a 32-thread CPU with a 32 GB heap permits 256 concurrent 4×4 requests (4,096 target chunks plus dependencies). Smaller heaps reduce that window. Automatic and command tasks complete compact 32×32 patches before moving outward, keeping native dependencies useful as the radius grows. Requests refill on completion, while conversion, ticket cleanup and normal play retain their own lifetimes. These settings control LODgen’s work and DH’s shared worker settings; C2ME and Voxy storage services retain their own worker settings. They are utilization presets, rather than strict limits on overall process CPU usage.
 
 For maximum OpenCL throughput, use Java 25+ with a sufficiently large heap, `-XX:+UseZGC -XX:+UseCompactObjectHeaders`, ScalableLux, Lithium, FerriteCore, Structure Layout Optimizer and zFastNoise. Set C2ME’s `globalExecutorParallelism` to the available thread count or slightly below; its default can be lower. LODgen does not rewrite C2ME’s configuration or alter the scheduler used by ordinary player and Chunky requests. More RAM keeps useful native dependencies alive; allocating all RAM does not necessarily improve throughput.
 
@@ -245,7 +245,7 @@ python3 scripts/integration-test.py --mc 1.21.1 --loader neoforge --quick \
   --worldgen-instance '/path/to/Prism/instance/minecraft'
 ```
 
-`--quick` skips benchmark warmup, caps each server run, and uses the existing versioned server installation. `--skip-build` reuses the self-test jar. The tiny workload is a correctness check, not a performance benchmark. For an enabled addon with `--dh-queue`, quick checks temporarily set DH to one worker, then restore its original CPU load to verify live backpressure. Only the selected WWOO/Continents worldgen jars and configuration are copied. The runner accepts the EULA for a disposable server and recreates only its world under `build/`.
+`--quick` skips benchmark warmup, caps each server run, and uses the existing versioned server installation. `--skip-build` reuses the self-test jar. The tiny workload is a correctness check, not a performance benchmark. `--cpu-load` selects the disposable server’s LODgen CPU load (1–5, default 3), which also overrides DH. For an enabled addon with `--dh-queue`, quick checks temporarily apply LODgen CPU load 1, then restore the original settings to verify live backpressure. Only the selected WWOO/Continents worldgen jars and configuration are copied. The runner accepts the EULA for a disposable server and recreates only its world under `build/`.
 
 See [VALIDATION.md](VALIDATION.md) for current checks. The 26.2 vanilla/OpenCL measurements include generation and real renderer conversion; the 2,500 chunks/s expectation is not reached in every test area. Earlier performance measurements belong to the predecessor and are preserved in [docs/VALIDATION-0.2.1.md](docs/VALIDATION-0.2.1.md); they are not a new benchmark of this development build.
 

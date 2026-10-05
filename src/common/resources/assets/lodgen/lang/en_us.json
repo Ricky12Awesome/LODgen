@@ -19,7 +19,6 @@
   "lodgen.config.cave.fill": "Fill",
   "lodgen.config.cave.empty": "Empty",
   "lodgen.config.units": "Distances are in chunks; X/Z are in blocks.",
-  "lodgen.config.cpuLoad.dh": "Uses DH CPU Load",
   "lodgen.config.cpuLoad.1": "1 — Minimal impact",
   "lodgen.config.cpuLoad.2": "2 — Low impact",
   "lodgen.config.cpuLoad.3": "3 — Balanced",
