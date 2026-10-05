@@ -28,6 +28,7 @@ public final class IntegrationCheck {
     private static final Path REPORT = Path.of(Boolean.getBoolean("lodgen.test.reload") ? "integration-reload-result.txt" : "integration-result.txt");
 
     public static void run(MinecraftServer server) {
+        if (Boolean.getBoolean("lodgen.test.shutdown")) { dev.ricky12awesome.lodgen.minecraft.ShutdownCheck.run(server); return; }
         if (Boolean.getBoolean("lodgen.test.caves")) { CaveModeCheck.run(server); return; }
         if (Boolean.getBoolean("lodgen.test.tasks")) { TaskCheck.run(server); return; }
         ExecutorService executor = Executors.newFixedThreadPool(8);

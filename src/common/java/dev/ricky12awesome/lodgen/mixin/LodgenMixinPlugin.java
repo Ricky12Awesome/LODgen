@@ -32,6 +32,9 @@ public final class LodgenMixinPlugin implements IMixinConfigPlugin {
     @Override public String getRefMapperConfig() { return null; }
     @Override public void acceptTargets(Set<String> own, Set<String> other) {}
     @Override public List<String> getMixins() { return null; }
-    @Override public void preApply(String target, ClassNode node, String mixin, IMixinInfo info) {}
+    @Override public void preApply(String target, ClassNode node, String mixin, IMixinInfo info) {
+        if (mixin.endsWith(".VoxySavingMixin") && dev.ricky12awesome.lodgen.voxy.VoxySavingFix.repair(node))
+            dev.ricky12awesome.lodgen.LodgenConfig.LOGGER.info("Repaired Voxy save-queue flag ordering to preserve concurrent updates");
+    }
     @Override public void postApply(String target, ClassNode node, String mixin, IMixinInfo info) {}
 }
