@@ -137,7 +137,10 @@ public final class LodGenerationWorld {
             var entry = iterator.next();
             if (entry.getKey().getServer() != server) continue;
             for (var session : entry.getValue().values()) if (session.storage != null) {
-                try { session.level.close(); }
+                try {
+                    drain(session.level);
+                    session.level.close();
+                }
                 catch (IOException error) { LodgenConfig.LOGGER.error("Cannot close temporary LOD terrain", error); }
                 finally {
                     MODES.remove(session.level);
@@ -150,6 +153,22 @@ public final class LodGenerationWorld {
             }
             iterator.remove();
         }
+    }
+    /** These worlds are absent from MinecraftServer's normal shutdown loop.
+     * Unload their holders while storage, lighting and OpenCL remain available,
+     * and keep pumping server tasks needed by generation and ticket cleanup.
+     */
+    private static void drain(ServerLevel level) {
+        var cache = level.getChunkSource();
+        level.getServer().managedBlock(() -> {
+            // #if MC_1211
+            cache.removeTicketsOnClosing();
+            // #else
+            cache.deactivateTicketsOnClosing();
+            // #endif
+            cache.tick(() -> true, false);
+            return !cache.chunkMap.hasWork();
+        });
     }
     private static void delete(Path directory) {
         if (directory == null) return;
