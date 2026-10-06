@@ -45,6 +45,8 @@ configurations {
     implementation.extendsFrom(bundled)
     modRuntimeOnly
     runtimeOnly.extendsFrom(modRuntimeOnly)
+    dhRuntime
+    runtimeOnly.extendsFrom(dhRuntime)
 }
 
 unimined.minecraft {
@@ -56,6 +58,10 @@ unimined.minecraft {
         fabric { loader target.fabricLoader }
         if (mc == '1.21.1') {
             mods {
+                remap(project.configurations.dhRuntime) {
+                    // DH also ships a NeoForge widener in the named namespace.
+                    catchAWNamespaceAssertion()
+                }
                 modImplementation {
                     mixinRemap {
                         // Fabric API's MixinExtras selectors must use Mojang names too.
@@ -96,6 +102,7 @@ dependencies {
     }
     bundled 'com.electronwill.night-config:toml:3.9.0'
     compileOnly "maven.modrinth:distanthorizons:${target.dh}"
+    dhRuntime "maven.modrinth:distanthorizons:${target.dh}"
     testImplementation dependencies.platform('org.junit:junit-bom:5.11.4')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testImplementation 'com.google.code.gson:gson:2.10.1'
@@ -105,7 +112,6 @@ dependencies {
     testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.9'
     testRuntimeOnly 'org.apache.logging.log4j:log4j-core:2.25.2'
     if (integration) {
-        modRuntimeOnly "maven.modrinth:distanthorizons:${target.dh}"
         modRuntimeOnly "maven.modrinth:c2me-${platform}:${target[platform == 'fabric' ? 'c2meFabric' : 'c2meNeoForge']}"
     }
 }
