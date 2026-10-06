@@ -18,6 +18,7 @@ if (!matrix.containsKey(mc) || !(platform in ['fabric', 'neoforge'])) {
 def target = matrix[mc]
 def integration = providers.gradleProperty('selfTest').map { it.toBoolean() }.getOrElse(false)
 def startup = providers.gradleProperty('startupTest').map { it.toBoolean() }.getOrElse(false)
+def hotReload = providers.gradleProperty('hotReload').map { it.toBoolean() }.getOrElse(true) && !integration && !startup
 if (integration && startup) throw new GradleException('Choose selfTest or startupTest, not both')
 group = 'dev.ricky12awesome.lodgen'
 version = providers.gradleProperty('modVersion').get()
@@ -26,6 +27,9 @@ layout.buildDirectory = file("build/${mc}/${platform}" + (integration ? '/selfte
 
 sourceSets.main.java.srcDirs('src/common/java', "src/${platform}/java", layout.buildDirectory.dir('generated/sources/minecraft'))
 sourceSets.main.resources.srcDirs('src/common/resources', "src/${platform}/resources")
+sourceSets.create('clientHotReload') {
+    java.srcDir('src/clientHotReload/java')
+}
 if (integration) sourceSets.main.java.srcDirs('src/integration/java', "src/integration/${platform}/java")
 if (startup) sourceSets.main.resources.srcDir('src/startup/resources')
 
@@ -50,6 +54,16 @@ unimined.minecraft {
     }
     if (platform == 'fabric') {
         fabric { loader target.fabricLoader }
+        if (mc == '1.21.1') {
+            mods {
+                modImplementation {
+                    mixinRemap {
+                        // Fabric API's MixinExtras selectors must use Mojang names too.
+                        enableMixinExtra()
+                    }
+                }
+            }
+        }
     } else {
         def prefix = mc == '1.21.1' ? '21.1.' : (mc == '26.1.2' ? '26.1.2.' : "${mc}.0.")
         neoForged { loader target.neoForge.substring(prefix.length()); useToolchains = false }
@@ -76,7 +90,10 @@ if (platform == 'fabric') {
 }
 
 dependencies {
-    if (platform == 'fabric') modImplementation("maven.modrinth:modmenu:${target.modMenu}") { transitive = false }
+    if (platform == 'fabric') {
+        modImplementation("maven.modrinth:modmenu:${target.modMenu}") { transitive = false }
+        modImplementation "net.fabricmc.fabric-api:fabric-api:${target.fabricApi}"
+    }
     bundled 'com.electronwill.night-config:toml:3.9.0'
     compileOnly "maven.modrinth:distanthorizons:${target.dh}"
     testImplementation dependencies.platform('org.junit:junit-bom:5.11.4')
@@ -90,13 +107,13 @@ dependencies {
     if (integration) {
         modRuntimeOnly "maven.modrinth:distanthorizons:${target.dh}"
         modRuntimeOnly "maven.modrinth:c2me-${platform}:${target[platform == 'fabric' ? 'c2meFabric' : 'c2meNeoForge']}"
-        if (platform == 'fabric') modImplementation "net.fabricmc.fabric-api:fabric-api:${target.fabricApi}"
     }
 }
 
 // Only Minecraft signature changes are conditional. Generation scheduling, DH
 // integration, configuration, and platform-independent tests share one source tree.
 def generated = layout.buildDirectory.dir('generated/sources/minecraft')
+def minecraftFlags = [MC_1211: mc == '1.21.1', MC_1211_FABRIC: mc == '1.21.1' && platform == 'fabric', MC_263: mc == '26.3', MC_26: mc != '1.21.1', MC_262_PLUS: mc in ['26.2', '26.3']]
 def preprocess = tasks.register('preprocessMinecraft') {
     inputs.dir('src/minecraft/java')
     inputs.property('mc', mc)
@@ -116,7 +133,7 @@ def preprocess = tasks.register('preprocessMinecraft') {
                     def directive = line.trim()
                     if (directive.startsWith('// #if ')) {
                         def flag = directive.substring(7)
-                        def enabled = [MC_1211: mc == '1.21.1', MC_1211_FABRIC: mc == '1.21.1' && platform == 'fabric', MC_263: mc == '26.3', MC_26: mc != '1.21.1', MC_262_PLUS: mc in ['26.2', '26.3']][flag]
+                        def enabled = minecraftFlags[flag]
                         if (enabled == null) throw new GradleException("Unknown preprocessor flag ${flag}")
                         active.add(active.last() && enabled)
                     } else if (directive == '// #else') {
@@ -153,6 +170,54 @@ tasks.named('test') {
     useJUnitPlatform()
     workingDir(layout.buildDirectory.dir('unit-test-run'))
     doFirst { workingDir.mkdirs() }
+}
+// This agent is a separate source set and never enters the distributable mod.
+def clientHotReloadJar = tasks.register('clientHotReloadJar', Jar) {
+    from(sourceSets.clientHotReload.output)
+    archiveFileName = 'lodgen-client-hot-reload-agent.jar'
+    destinationDirectory = layout.buildDirectory.dir('client-hot-reload')
+    manifest.attributes(
+            'Premain-Class': 'dev.ricky12awesome.lodgen.dev.ClientHotReloadAgent',
+            'Can-Redefine-Classes': 'true',
+            'Can-Retransform-Classes': 'true')
+}
+tasks.named('test') {
+    dependsOn(clientHotReloadJar)
+    systemProperty 'lodgen.hotReloadAgentJar', clientHotReloadJar.flatMap { it.archiveFile }.get().asFile.absolutePath
+}
+if (hotReload) {
+    def reloadConfig = layout.buildDirectory.file('client-hot-reload/client.properties')
+    def prepareClientHotReload = tasks.register('prepareClientHotReload') {
+        dependsOn(tasks.named('classes'), clientHotReloadJar)
+        // Export the resolved classpath each launch, including selected mappings.
+        doLast {
+            def config = new Properties()
+            config.setProperty('javaRoots', sourceSets.main.java.srcDirs.findAll { it != generated.get().asFile }.collect { it.absolutePath }.join('\n'))
+            config.setProperty('preprocessRoots', file('src/minecraft/java').absolutePath)
+            config.setProperty('resourceRoots', sourceSets.main.resources.srcDirs.collect { it.absolutePath }.join('\n'))
+            config.setProperty('classOutput', tasks.named('compileJava', JavaCompile).get().destinationDirectory.get().asFile.absolutePath)
+            config.setProperty('resourceOutput', tasks.named('processResources').get().destinationDir.absolutePath)
+            config.setProperty('stagingDirectory', layout.buildDirectory.dir('client-hot-reload/staging').get().asFile.absolutePath)
+            config.setProperty('compileClasspath', tasks.named('compileJava', JavaCompile).get().classpath.asPath)
+            config.setProperty('release', target.java.toString())
+            minecraftFlags.each { flag, enabled -> config.setProperty("flag.${flag}".toString(), enabled.toString()) }
+            reloadConfig.get().asFile.withOutputStream { config.store(it, 'Client hot reload; generated by Gradle') }
+        }
+    }
+    tasks.named('runClient') {
+        dependsOn(prepareClientHotReload)
+        doFirst {
+            def mixinAgent = classpath.files.find { entry ->
+                if (!entry.name.endsWith('.jar')) return false
+                new java.util.jar.JarFile(entry).withCloseable { jar ->
+                    jar.manifest?.mainAttributes?.getValue('Premain-Class') == 'org.spongepowered.tools.agent.MixinAgent'
+                }
+            }
+            if (mixinAgent == null) throw new GradleException('The client Mixin Java agent was not found on its runtime classpath')
+            jvmArgs "-javaagent:${mixinAgent.absolutePath}", "-javaagent:${clientHotReloadJar.get().archiveFile.get().asFile.absolutePath}=${reloadConfig.get().asFile.absolutePath}"
+            jvmArgs '-Dmixin.hotSwap=true'
+        }
+    }
 }
 tasks.named('processResources') {
     def values = [version: version, minecraft: mc, loader: platform, java: target.java, dhVersion: target.dhVersion, fabricLoader: target.fabricLoader]

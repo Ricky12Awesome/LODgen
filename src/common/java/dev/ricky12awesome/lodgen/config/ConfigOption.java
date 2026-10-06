@@ -11,7 +11,6 @@ import java.lang.annotation.Target;
 public @interface ConfigOption {
     String defaultValue();
     String comment();
-    String label() default "";
     int order() default Integer.MAX_VALUE;
     int min() default Integer.MIN_VALUE;
     int max() default Integer.MAX_VALUE;

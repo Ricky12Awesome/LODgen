@@ -113,7 +113,6 @@ public final class ConfigSchema<R extends Record> {
 
         public String key() { return component.getName(); }
         public String labelKey() { return labelKey; }
-        public String label() { return metadata.label().isEmpty() ? humanize(key()) : metadata.label(); }
         public String tooltipKey() { return labelKey + ".tooltip"; }
         public ConfigOption metadata() { return metadata; }
         public Control control() {
@@ -185,14 +184,5 @@ public final class ConfigSchema<R extends Record> {
             return prefix + encode(value);
         }
 
-        public String valueLabel(Object value) {
-            if (value instanceof Boolean toggle) return toggle ? "On" : "Off";
-            return value instanceof Enum<?> choice ? humanize(choice.name().toLowerCase(Locale.ROOT)) : value.toString();
-        }
-
-        private static String humanize(String text) {
-            String words = text.replaceAll("([a-z0-9])([A-Z])", "$1 $2").replace('_', ' ');
-            return Character.toUpperCase(words.charAt(0)) + words.substring(1);
-        }
     }
 }

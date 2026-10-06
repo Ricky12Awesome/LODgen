@@ -106,7 +106,7 @@ public final class LodgenConfigScreen extends Screen {
         private final Component name;
         private final AbstractWidget widget;
         SettingRow(ConfigSchema.Option option, AbstractWidget widget) {
-            name = Component.translatableWithFallback(option.labelKey(), option.label());
+            name = Component.translatable(option.labelKey());
             this.widget = widget;
         }
         @Override public List<? extends GuiEventListener> children() { return List.of(widget); }

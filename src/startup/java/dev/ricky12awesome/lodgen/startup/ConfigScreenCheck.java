@@ -36,7 +36,7 @@ public final class ConfigScreenCheck {
     }
     private static EditBox input(ContainerObjectSelectionList<?> list, String key) {
         var option = LodgenConfig.SCHEMA.option(key);
-        String label = Component.translatableWithFallback(option.labelKey(), option.label()).getString();
+        String label = Component.translatable(option.labelKey()).getString();
         return list.children().stream().flatMap(row -> row.children().stream())
                 .filter(child -> child instanceof EditBox).map(child -> (EditBox) child)
                 .filter(box -> box.getMessage().getString().equals(label)).findFirst().orElseThrow();

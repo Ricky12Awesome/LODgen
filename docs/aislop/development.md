@@ -46,3 +46,26 @@ checks are separate: `scripts/startup-test.py` checks packaged menus/loaders,
 `scripts/integration-test.py` checks generation and persistence, and
 `scripts/voxy-test.py` checks Voxy without DH. Run target builds sequentially
 because Unimined shares remapping state.
+
+## Client hot reload
+
+Run `./gradlew runClient` from the project checkout you are editing. Java and
+resource edits are watched automatically, including the original Minecraft
+sources before preprocessing. The console prints `[LODgen hot reload]` when
+changes compile or reload. No debugger or second Gradle watcher is needed.
+
+Java compilation runs in a staging directory, then updates the running JVM and
+its class files. Compilation errors keep the last working code active; saving a
+correction retries the reload. The installed OpenJDK supports method-body edits.
+Adding or removing fields or methods, changing signatures, deleting classes,
+and changing Mixin targets or configuration require restarting the client.
+Existing object state and static initializers are retained during a reload.
+
+Client assets, including language files and textures, are copied automatically
+and trigger Minecraft's resource reload. Data-pack resources are copied too,
+but still require the server's `/reload` command where applicable. Mod metadata,
+Mixin configuration, dependencies, and Gradle changes require a restart.
+
+Use `./gradlew runClient -PhotReload=false` to disable the watcher. It is also
+disabled for `selfTest` and `startupTest` runs. The watcher and Mixin Java agents
+are development tools and are not included in the distributable mod jar.

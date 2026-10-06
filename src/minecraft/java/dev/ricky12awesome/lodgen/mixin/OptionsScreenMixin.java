@@ -18,7 +18,7 @@ public abstract class OptionsScreenMixin extends Screen {
 
     @Inject(method = "init", at = @At("TAIL"))
     private void lodgen$configButton(CallbackInfo callback) {
-        addRenderableWidget(Button.builder(Component.literal("LODgen…"), button -> ClientScreens.open(minecraft, new LodgenConfigScreen(this)))
+        addRenderableWidget(Button.builder(Component.translatable("lodgen.config.open"), button -> ClientScreens.open(minecraft, new LodgenConfigScreen(this)))
                 .bounds(width - 104, 4, 100, 20).build());
     }
 }
