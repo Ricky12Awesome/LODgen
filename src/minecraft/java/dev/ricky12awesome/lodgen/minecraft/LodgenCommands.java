@@ -14,7 +14,6 @@ import dev.ricky12awesome.lodgen.task.RadiusParser;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.DimensionArgument;
-import net.minecraft.network.chat.Component;
 
 import java.util.function.Consumer;
 
@@ -62,25 +61,25 @@ public final class LodgenCommands {
             var spawn = GenerationCenters.spawn(level); x = spawn.getX(); z = spawn.getZ();
         } else {
             var player = source.getPlayerOrException();
-            if (player.level() != level) throw new SimpleCommandExceptionType(Component.literal("current requires the player to be in the selected dimension")).create();
+            if (player.level() != level) throw new SimpleCommandExceptionType(CommandText.message("lodgen.command.error.currentDimension")).create();
             var pos = player.blockPosition(); x = pos.getX(); z = pos.getZ();
         }
         try {
             var area = new GenerationArea(x, z, RadiusParser.chunks(StringArgumentType.getString(context, "radius")), RadiusParser.chunks(saved));
-            if (area.radius() < 1) throw new IllegalArgumentException("Generation radius must be at least one chunk");
+            if (area.radius() < 1) throw new IllegalArgumentException("lodgen.command.error.radiusMinimum");
             var tasks = GenerationTasks.get(source.getServer());
             tasks.start(level, area);
-            source.sendSuccess(() -> Component.literal(tasks.status()), false);
+            source.sendSuccess(tasks::statusMessage, false);
             return 1;
-        } catch (IllegalArgumentException | IllegalStateException error) { throw new SimpleCommandExceptionType(Component.literal(error.getMessage())).create(); }
+        } catch (IllegalArgumentException | IllegalStateException error) { throw new SimpleCommandExceptionType(CommandText.error(error)).create(); }
     }
     private static int control(CommandContext<CommandSourceStack> context, Consumer<GenerationTasks> action) throws CommandSyntaxException {
         var source = context.getSource();
         var tasks = GenerationTasks.get(source.getServer());
         try {
             action.accept(tasks);
-            source.sendSuccess(() -> Component.literal(tasks.status()), false);
+            source.sendSuccess(tasks::statusMessage, false);
             return 1;
-        } catch (IllegalStateException error) { throw new SimpleCommandExceptionType(Component.literal(error.getMessage())).create(); }
+        } catch (IllegalStateException error) { throw new SimpleCommandExceptionType(CommandText.error(error)).create(); }
     }
 }

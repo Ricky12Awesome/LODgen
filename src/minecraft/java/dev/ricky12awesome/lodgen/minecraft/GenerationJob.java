@@ -9,6 +9,7 @@ import dev.ricky12awesome.lodgen.task.TaskRecord;
 import dev.ricky12awesome.lodgen.task.TaskStore;
 import dev.ricky12awesome.lodgen.util.Futures;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.network.chat.Component;
 
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -58,7 +59,7 @@ final class GenerationJob implements AutoCloseable {
     }
 
     void pause() {
-        if (progress.state() != TaskProgress.State.RUNNING) throw new IllegalStateException("Task is not running");
+        if (progress.state() != TaskProgress.State.RUNNING) throw new IllegalStateException("lodgen.command.error.notRunning");
         progress.pause();
         publishProgress();
         checkpoint();
@@ -180,14 +181,20 @@ final class GenerationJob implements AutoCloseable {
     }
 
     String status() {
+        return CommandText.plain(statusMessage());
+    }
+    Component statusMessage() {
         long done = progress.completedChunks();
         double rate = PersistenceRegistry.throughput(level).chunksPerSecond();
-        return String.format(Locale.ROOT,
-                "LODgen %s%s: dim=%s; center X=%d Z=%d blocks; radius=%dc (%d blocks); saved-radius=%dc (%d blocks); caves=%s; progress=%d/%d chunks (%.2f%%); active=%d; %.1f chunks/s; ETA=%s%s",
-                record.automatic() ? "automatic " : "", displayProgress.state(), record.dimension(), record.area().blockX(), record.area().blockZ(),
+        return CommandText.message("lodgen.command.status.task",
+                record.automatic() ? CommandText.message("lodgen.command.status.automatic") : Component.empty(),
+                CommandText.message("lodgen.command.state." + displayProgress.state().name().toLowerCase(Locale.ROOT)),
+                record.dimension(), record.area().blockX(), record.area().blockZ(),
                 record.area().radius(), (long) record.area().radius() * 16, record.area().savedRadius(), (long) record.area().savedRadius() * 16,
-                record.caveMode().name().toLowerCase(Locale.ROOT), done, plan.chunks(), done * 100.0 / plan.chunks(), active.size(), rate,
-                GenerationProgress.duration(displayProgress.estimatedSeconds(rate)), progress.error().isEmpty() ? "" : "; error=" + progress.error());
+                CommandText.message("lodgen.command.cave." + record.caveMode().name().toLowerCase(Locale.ROOT)),
+                done, plan.chunks(), String.format(Locale.ROOT, "%.2f", done * 100.0 / plan.chunks()), active.size(), String.format(Locale.ROOT, "%.1f", rate),
+                CommandText.duration(displayProgress.estimatedSeconds(rate)), progress.error().isEmpty() ? Component.empty()
+                        : CommandText.message("lodgen.command.status.error", progress.error()));
     }
 
     void checkpoint() {

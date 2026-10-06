@@ -159,6 +159,9 @@ def preprocess = tasks.register('preprocessMinecraft') {
     }
 }
 sourceSets.test.java.srcDirs('src/test/java')
+// Translation/rendering checks exercise Minecraft's text visitors without a client window.
+sourceSets.test.compileClasspath += sourceSets.main.compileClasspath
+sourceSets.test.runtimeClasspath += sourceSets.main.runtimeClasspath
 if (integration) sourceSets.test.java.srcDir('src/integrationTest/java')
 tasks.named('compileJava') { dependsOn(preprocess) }
 java { toolchain.languageVersion = JavaLanguageVersion.of(target.java as int) }

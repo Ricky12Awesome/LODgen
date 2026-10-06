@@ -12,6 +12,7 @@ import dev.ricky12awesome.lodgen.task.TaskRecord;
 import dev.ricky12awesome.lodgen.task.TaskStore;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.storage.LevelResource;
 
 import java.nio.file.Path;
@@ -58,13 +59,13 @@ public final class GenerationTasks {
         start(level, area, false);
     }
     private void start(ServerLevel level, GenerationArea area, boolean automatic) {
-        if (closed) throw new IllegalStateException("Server is closing");
+        if (closed) throw new IllegalStateException("lodgen.command.error.serverClosing");
         if (command != null && !command.record.automatic()
                 && (command.progress.state() == TaskProgress.State.RUNNING || command.progress.state() == TaskProgress.State.PAUSED))
-            throw new IllegalStateException("An LODgen task already exists; stop it before starting another");
+            throw new IllegalStateException("lodgen.command.error.taskExists");
         boolean dh = RendererSinks.dhAvailable(), voxy = RendererSinks.voxyAvailable() && !server.isDedicatedServer();
         if (area.radius() > area.savedRadius() && !dh && !voxy)
-            throw new IllegalStateException("LOD-only generation needs DH or an integrated-server Voxy installation; set saved-radius equal to radius for ordinary pregen");
+            throw new IllegalStateException("lodgen.command.error.rendererRequired");
         if (command != null) command.close();
         var progress = new TaskProgress(new SquarePlan(area));
         // A completed enclosing area needs no regeneration when distance shrinks.
@@ -86,10 +87,13 @@ public final class GenerationTasks {
     public void stop() { requireTask().stop(); }
     private GenerationJob requireTask() {
         autostart();
-        if (command == null) throw new IllegalStateException("No LODgen task");
+        if (command == null) throw new IllegalStateException("lodgen.command.error.noTask");
         return command;
     }
     public String status() {
+        return CommandText.plain(statusMessage());
+    }
+    public Component statusMessage() {
         autostart();
         if (command == null) {
             ServerLevel level = server.overworld();
@@ -100,11 +104,15 @@ public final class GenerationTasks {
             var throughput = PersistenceRegistry.throughput(level);
             var display = displaySource(level).progress();
             double rate = throughput.chunksPerSecond();
-            return String.format(Locale.ROOT, "No task. Automatic generation %s (%s): dim=%s; center X=%d Z=%d blocks (%s); radius=%dc; saved-radius=%dc; progress=%d chunks completed this session; %.1f chunks/s; ETA=%s",
-                    GenerationSettings.policy().anyAutomatic() ? "enabled" : "disabled", display.state(), WorldPaths.dimension(level), area.blockX(), area.blockZ(), settings.generationCenter().name().toLowerCase(Locale.ROOT),
-                    radius, area.savedRadius(), throughput.totalCompleted(), rate, GenerationProgress.duration(display.estimatedSeconds(rate)));
+            return CommandText.message("lodgen.command.status.noTask",
+                    CommandText.message("lodgen.command.automatic." + (GenerationSettings.policy().anyAutomatic() ? "enabled" : "disabled")),
+                    CommandText.message("lodgen.command.state." + display.state().name().toLowerCase(Locale.ROOT)),
+                    WorldPaths.dimension(level), area.blockX(), area.blockZ(),
+                    CommandText.message("lodgen.command.center." + settings.generationCenter().name().toLowerCase(Locale.ROOT)),
+                    radius, area.savedRadius(), throughput.totalCompleted(), String.format(Locale.ROOT, "%.1f", rate),
+                    CommandText.duration(display.estimatedSeconds(rate)));
         }
-        return command.status();
+        return command.statusMessage();
     }
 
     public record DisplaySource(ServerLevel level, Supplier<GenerationProgress> readProgress) {
