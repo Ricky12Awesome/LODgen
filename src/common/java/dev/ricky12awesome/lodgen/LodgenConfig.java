@@ -33,8 +33,8 @@ public record LodgenConfig(
         @ConfigOption(defaultValue = "1000", order = 9, min = 1, max = 60000,
                 comment = "1–60000 milliseconds between action-bar updates. Default: 1000 (one second). The rate and ETA use the last five seconds of throughput. Changes apply immediately.")
         int chunksPerSecondUpdateIntervalMs,
-        @ConfigOption(defaultValue = "current", order = 1, valueKey = "lodgen.config.center.",
-                comment = "Choose the moving player position, the world’s spawn, or a fixed horizontal X/Z center. Commands choose their own fixed center.")
+        @ConfigOption(defaultValue = "origin", order = 1, valueKey = "lodgen.config.center.",
+                comment = "Origin uses the world’s spawn; custom uses a fixed horizontal X/Z center in blocks. Legacy current values use origin. Commands choose their own fixed center.")
         GenerationCenter generationCenter,
         @ConfigOption(defaultValue = "0", order = 2, min = -GenerationArea.WORLD_EDGE_BLOCKS, max = GenerationArea.WORLD_EDGE_BLOCKS,
                 enabledWhen = "generationCenter", enabledValue = "custom", comment = "Custom horizontal X coordinate in blocks. Used only with Custom X/Z.")
@@ -84,7 +84,10 @@ public record LodgenConfig(
     }
 
     static LodgenConfig read(Path file) throws IOException {
-        return SCHEMA.read(TomlFiles.read(file));
+        var values = TomlFiles.read(file);
+        if (values.get("generationCenter") instanceof String center && center.equalsIgnoreCase("current"))
+            values.set("generationCenter", "origin");
+        return SCHEMA.read(values);
     }
 
     public static synchronized void apply(LodgenConfig settings) throws IOException {

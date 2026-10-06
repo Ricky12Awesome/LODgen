@@ -25,14 +25,18 @@ public final class ConfigScreenCheck {
         var lists = screen.children().stream().filter(child -> child instanceof ContainerObjectSelectionList<?>).toList();
         if (lists.size() != 1 || screen.children().size() != 4) throw new AssertionError("Expected one settings list and three footer buttons");
         var list = (ContainerObjectSelectionList<?>) lists.getFirst();
-        if (list.children().size() != LodgenConfig.SCHEMA.options().size()) throw new AssertionError("All settings must be on the same page");
+        if (list.children().size() != LodgenConfig.SCHEMA.options().size() - 3) throw new AssertionError("Center and throughput settings must use compact rows");
+        if (list.children().stream().mapToInt(row -> row.children().size()).sum() != LodgenConfig.SCHEMA.options().size())
+            throw new AssertionError("All settings must be on the same page");
         return list;
     }
     private static AbstractWidget control(ContainerObjectSelectionList<?> list, String key) {
-        int index = LodgenConfig.SCHEMA.options().indexOf(LodgenConfig.SCHEMA.option(key));
-        var row = list.children().get(index);
-        if (row.children().size() != 1) throw new AssertionError("Settings must have one control per row");
-        return (AbstractWidget) row.children().getFirst();
+        var primaryOptions = LodgenConfig.SCHEMA.options().stream().filter(option -> switch (option.key()) {
+            case "centerX", "centerZ", "chunksPerSecondUpdateIntervalMs" -> false;
+            default -> true;
+        }).toList();
+        int index = primaryOptions.indexOf(LodgenConfig.SCHEMA.option(key));
+        return (AbstractWidget) list.children().get(index).children().getFirst();
     }
     private static EditBox input(ContainerObjectSelectionList<?> list, String key) {
         var option = LodgenConfig.SCHEMA.option(key);
@@ -74,8 +78,17 @@ public final class ConfigScreenCheck {
         originalWidth = screen.width; originalHeight = screen.height;
         var list = list(screen);
         boolean custom = original.generationCenter() == dev.ricky12awesome.lodgen.generation.GenerationCenter.CUSTOM;
-        if (input(list, "centerX").active != custom || input(list, "centerZ").active != custom) throw new AssertionError("Custom coordinate activation differs from configured center");
+        if (!input(list, "centerX").visible || !input(list, "centerZ").visible
+                || input(list, "centerX").active != custom || input(list, "centerZ").active != custom)
+            throw new AssertionError("Coordinates must stay visible and editable only in X/Y mode");
         var center = (Button) control(list, "generationCenter");
+        var centerRow = list.children().stream().filter(row -> row.children().contains(center)).findFirst().orElseThrow();
+        if (centerRow.children().size() != 3 || !centerRow.children().contains(input(list, "centerX"))
+                || !centerRow.children().contains(input(list, "centerZ"))) throw new AssertionError("Center coordinates must always share the mode button's row");
+        var throughput = control(list, "showChunksPerSecond");
+        var throughputRow = list.children().stream().filter(row -> row.children().contains(throughput)).findFirst().orElseThrow();
+        if (throughputRow.children().size() != 2 || !throughputRow.children().contains(input(list, "chunksPerSecondUpdateIntervalMs")))
+            throw new AssertionError("Throughput toggle and interval must share a row");
         var caves = (Button) control(list, "caveMode");
         var caveLabel = caves.getMessage();
         for (int i = 0; i < 3; i++) press(caves);
@@ -85,11 +98,33 @@ public final class ConfigScreenCheck {
         var initial = cpu.getMessage();
         for (int i = 0; i < 5; i++) press(cpu);
         if (!initial.equals(cpu.getMessage())) throw new AssertionError("CPU load did not cycle through all five levels");
-        var centerMode = original.generationCenter();
-        for (int i = 0; i < 3; i++) { press(center); centerMode = centerMode.next(); }
-        while (centerMode != dev.ricky12awesome.lodgen.generation.GenerationCenter.CUSTOM) { press(center); centerMode = centerMode.next(); }
+        var centerLabel = center.getMessage();
+        for (int i = 0; i < 2; i++) {
+            press(center);
+            if (!center.getMessage().equals(Component.translatable("lodgen.config.center.origin"))
+                    && !center.getMessage().equals(Component.translatable("lodgen.config.center.custom")))
+                throw new AssertionError("Center button must offer only Origin and X/Y");
+        }
+        if (!centerLabel.equals(center.getMessage())) throw new AssertionError("Center button must cycle through exactly two choices");
+        if (!input(list, "centerX").active) press(center);
         if (!input(list, "centerX").active || !input(list, "centerZ").active) throw new AssertionError("Custom center did not enable X/Z");
-        input(list, "centerX").setValue("-123"); input(list, "centerZ").setValue("456");
+        var centerX = input(list, "centerX");
+        var centerZ = input(list, "centerZ");
+        var distance = input(list, "generationDistance");
+        if (center.getX() != distance.getX() || center.getWidth() > 60
+                || center.getX() + center.getWidth() >= centerX.getX()
+                || centerX.getX() + centerX.getWidth() >= centerZ.getX()
+                || centerZ.getX() + centerZ.getWidth() > distance.getX() + distance.getWidth())
+            throw new AssertionError("Center controls must fit the same width as other settings");
+        centerX.setValue("-123"); centerZ.setValue("456");
+        centerX.setFocused(true);
+        press(center);
+        if (!centerX.visible || !centerZ.visible || centerX.active || centerZ.active || centerX.isFocused()
+                || !centerRow.children().contains(centerX) || !centerRow.children().contains(centerZ))
+            throw new AssertionError("Origin mode must keep coordinates visible and disable editing");
+        press(center);
+        if (!input(list, "centerX").getValue().equals("-123") || !input(list, "centerZ").getValue().equals("456"))
+            throw new AssertionError("Changing center mode discarded custom coordinates");
         input(list, "generationDistance").setValue("64");
         resize(minecraft, screen, 320, 240);
         list = list(screen);

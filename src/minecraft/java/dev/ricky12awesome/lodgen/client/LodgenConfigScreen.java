@@ -34,6 +34,8 @@ public final class LodgenConfigScreen extends Screen {
         super(Component.translatable("lodgen.config.title"));
         this.parent = parent;
         draft = LodgenConfig.SCHEMA.draft(LodgenConfig.INSTANCE);
+        var center = LodgenConfig.SCHEMA.option("generationCenter");
+        if (draft.text(center).equalsIgnoreCase("current")) draft.edit(center, "origin");
     }
     @Override protected void init() {
         double scroll = settings == null ? 0 : settings.position();
@@ -41,7 +43,14 @@ public final class LodgenConfigScreen extends Screen {
         controlWidth = Math.min(200, rowWidth / 2);
         settings = addRenderableWidget(new SettingsList());
         var controls = new ConfigControls(font, draft, controlWidth, ModSupport::loaded);
-        for (var option : LodgenConfig.SCHEMA.options()) settings.add(option, controls.create(option));
+        for (var option : LodgenConfig.SCHEMA.options()) {
+            switch (option.key()) {
+                case "generationCenter" -> settings.add(controls, option, LodgenConfig.SCHEMA.option("centerX"), LodgenConfig.SCHEMA.option("centerZ"));
+                case "showChunksPerSecond" -> settings.add(controls, option, LodgenConfig.SCHEMA.option("chunksPerSecondUpdateIntervalMs"));
+                case "centerX", "centerZ", "chunksPerSecondUpdateIntervalMs" -> { }
+                default -> settings.add(controls, option);
+            }
+        }
         settings.setScrollAmount(scroll);
 
         int left = (width - rowWidth) / 2, footer = height - 28, buttonWidth = (rowWidth - 8) / 3;
@@ -87,7 +96,7 @@ public final class LodgenConfigScreen extends Screen {
             super(LodgenConfigScreen.this.minecraft, LodgenConfigScreen.this.width, Math.max(28, LodgenConfigScreen.this.height - 100), 44, ROW_HEIGHT);
             centerListVertically = false;
         }
-        void add(ConfigSchema.Option option, AbstractWidget widget) { addEntry(new SettingRow(option, widget)); }
+        void add(ConfigControls controls, ConfigSchema.Option... options) { addEntry(new SettingRow(controls, List.of(options))); }
         double position() {
             // #if MC_1211
             return getScrollAmount();
@@ -104,41 +113,53 @@ public final class LodgenConfigScreen extends Screen {
     }
     private final class SettingRow extends ContainerObjectSelectionList.Entry<SettingRow> {
         private final Component name;
-        private final AbstractWidget widget;
-        SettingRow(ConfigSchema.Option option, AbstractWidget widget) {
-            name = Component.translatable(option.labelKey());
-            this.widget = widget;
+        private final List<AbstractWidget> widgets;
+        SettingRow(ConfigControls controls, List<ConfigSchema.Option> options) {
+            name = Component.translatable(options.getFirst().labelKey());
+            widgets = options.stream().map(controls::create).toList();
         }
-        @Override public List<? extends GuiEventListener> children() { return List.of(widget); }
-        @Override public List<? extends NarratableEntry> narratables() { return List.of(widget); }
+        @Override public List<? extends GuiEventListener> children() { return visibleWidgets(); }
+        @Override public List<? extends NarratableEntry> narratables() { return visibleWidgets(); }
+        private List<AbstractWidget> visibleWidgets() { return widgets.stream().filter(widget -> widget.visible).toList(); }
         // #if MC_1211
         @Override public void render(GuiGraphics graphics, int index, int top, int left, int width, int height, int mouseX, int mouseY, boolean hovered, float partialTick) {
             renderRow(graphics, left + 2, top + 2, width - 4, mouseX, mouseY, partialTick);
         }
         private void renderRow(GuiGraphics graphics, int x, int y, int width, int mouseX, int mouseY, float partialTick) {
         // #else
-        @Override public void visitWidgets(Consumer<AbstractWidget> visitor) { visitor.accept(widget); }
+        @Override public void visitWidgets(Consumer<AbstractWidget> visitor) { visibleWidgets().forEach(visitor); }
         @Override public void extractContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, boolean hovered, float partialTick) {
             renderRow(graphics, getContentX(), getContentY(), getContentWidth(), mouseX, mouseY, partialTick);
         }
         private void renderRow(GuiGraphicsExtractor graphics, int x, int y, int width, int mouseX, int mouseY, float partialTick) {
         // #endif
-            widget.setX(x + width - controlWidth); widget.setY(y);
             var lines = font.split(name, width - controlWidth - 12);
             int textY = y + (20 - lines.size() * font.lineHeight) / 2;
             for (var line : lines) {
                 // #if MC_1211
-                graphics.drawString(font, line, x, textY, widget.active ? 0xffffffff : 0xff888888);
+                graphics.drawString(font, line, x, textY, widgets.getFirst().active ? 0xffffffff : 0xff888888);
                 // #else
-                graphics.text(font, line, x, textY, widget.active ? 0xffffffff : 0xff888888);
+                graphics.text(font, line, x, textY, widgets.getFirst().active ? 0xffffffff : 0xff888888);
                 // #endif
                 textY += font.lineHeight;
             }
-            // #if MC_1211
-            widget.render(graphics, mouseX, mouseY, partialTick);
-            // #else
-            widget.extractRenderState(graphics, mouseX, mouseY, partialTick);
-            // #endif
+            int available = controlWidth - (widgets.size() - 1) * 6;
+            int modeWidth = Math.min(60, available / 3);
+            int cursor = x + width - controlWidth;
+            for (int i = 0; i < widgets.size(); i++) {
+                var widget = widgets.get(i);
+                int fieldWidth = widgets.size() == 3 ? (i == 0 ? modeWidth : (available - modeWidth) / 2)
+                        : available / widgets.size();
+                widget.setX(cursor); widget.setY(y); widget.setWidth(fieldWidth);
+                if (widget.visible) {
+                    // #if MC_1211
+                    widget.render(graphics, mouseX, mouseY, partialTick);
+                    // #else
+                    widget.extractRenderState(graphics, mouseX, mouseY, partialTick);
+                    // #endif
+                }
+                cursor += fieldWidth + 6;
+            }
         }
     }
 }
