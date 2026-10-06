@@ -79,7 +79,7 @@ use positional placeholders so translations can reorder values:
 - `lodgen.command.status.task` has 17 arguments: automaticPrefix, state,
   dimension, X, Z, radiusChunks, radiusBlocks, savedChunks, savedBlocks,
   caveMode, completed, total, percent, active, rate, ETA, errorSuffix.
-- `lodgen.command.status.noTask` has 11 arguments: enabled, state, dimension,
+- `lodgen.command.status.no_task` has 11 arguments: enabled, state, dimension,
   X, Z, centerMode, radius, savedRadius, completed, rate, ETA.
 
 Both `%s` and indexed `%1$s` placeholders work; `%%` produces a literal `%`.

@@ -59,13 +59,13 @@ public final class GenerationTasks {
         start(level, area, false);
     }
     private void start(ServerLevel level, GenerationArea area, boolean automatic) {
-        if (closed) throw new IllegalStateException("lodgen.command.error.serverClosing");
+        if (closed) throw new IllegalStateException("lodgen.command.error.server_closing");
         if (command != null && !command.record.automatic()
                 && (command.progress.state() == TaskProgress.State.RUNNING || command.progress.state() == TaskProgress.State.PAUSED))
-            throw new IllegalStateException("lodgen.command.error.taskExists");
+            throw new IllegalStateException("lodgen.command.error.task_already_exists");
         boolean dh = RendererSinks.dhAvailable(), voxy = RendererSinks.voxyAvailable() && !server.isDedicatedServer();
         if (area.radius() > area.savedRadius() && !dh && !voxy)
-            throw new IllegalStateException("lodgen.command.error.rendererRequired");
+            throw new IllegalStateException("lodgen.command.error.renderer_required");
         if (command != null) command.close();
         var progress = new TaskProgress(new SquarePlan(area));
         // A completed enclosing area needs no regeneration when distance shrinks.
@@ -87,7 +87,7 @@ public final class GenerationTasks {
     public void stop() { requireTask().stop(); }
     private GenerationJob requireTask() {
         autostart();
-        if (command == null) throw new IllegalStateException("lodgen.command.error.noTask");
+        if (command == null) throw new IllegalStateException("lodgen.command.error.no_task");
         return command;
     }
     public String status() {
@@ -104,11 +104,11 @@ public final class GenerationTasks {
             var throughput = PersistenceRegistry.throughput(level);
             var display = displaySource(level).progress();
             double rate = throughput.chunksPerSecond();
-            return CommandText.message("lodgen.command.status.noTask",
+            return CommandText.message("lodgen.command.status.no_task",
                     CommandText.message("lodgen.command.automatic." + (GenerationSettings.policy().anyAutomatic() ? "enabled" : "disabled")),
                     CommandText.message("lodgen.command.state." + display.state().name().toLowerCase(Locale.ROOT)),
                     WorldPaths.dimension(level), area.blockX(), area.blockZ(),
-                    CommandText.message("lodgen.command.center." + settings.generationCenter().name().toLowerCase(Locale.ROOT)),
+                    CommandText.message("lodgen.command.center_mode." + settings.generationCenter().name().toLowerCase(Locale.ROOT)),
                     radius, area.savedRadius(), throughput.totalCompleted(), String.format(Locale.ROOT, "%.1f", rate),
                     CommandText.duration(display.estimatedSeconds(rate)));
         }

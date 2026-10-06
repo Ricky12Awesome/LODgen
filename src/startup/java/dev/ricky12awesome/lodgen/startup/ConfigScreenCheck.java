@@ -101,8 +101,8 @@ public final class ConfigScreenCheck {
         var centerLabel = center.getMessage();
         for (int i = 0; i < 2; i++) {
             press(center);
-            if (!center.getMessage().equals(Component.translatable("lodgen.config.center.origin"))
-                    && !center.getMessage().equals(Component.translatable("lodgen.config.center.custom")))
+            if (!center.getMessage().equals(Component.translatable("lodgen.config.option.center_mode.value.origin"))
+                    && !center.getMessage().equals(Component.translatable("lodgen.config.option.center_mode.value.custom")))
                 throw new AssertionError("Center button must offer only Origin and X/Y");
         }
         if (!centerLabel.equals(center.getMessage())) throw new AssertionError("Center button must cycle through exactly two choices");

@@ -31,7 +31,7 @@ public final class LodgenConfigScreen extends Screen {
     private int rowWidth, controlWidth;
 
     public LodgenConfigScreen(Screen parent) {
-        super(Component.translatable("lodgen.config.title"));
+        super(Component.translatable("lodgen.config.screen.title"));
         this.parent = parent;
         draft = LodgenConfig.SCHEMA.draft(LodgenConfig.INSTANCE);
         var center = LodgenConfig.SCHEMA.option("generationCenter");
@@ -54,9 +54,9 @@ public final class LodgenConfigScreen extends Screen {
         settings.setScrollAmount(scroll);
 
         int left = (width - rowWidth) / 2, footer = height - 28, buttonWidth = (rowWidth - 8) / 3;
-        addRenderableWidget(Button.builder(Component.translatable("lodgen.config.defaults"), button -> reset()).bounds(left, footer, buttonWidth, 20).build());
+        addRenderableWidget(Button.builder(Component.translatable("lodgen.config.screen.button.defaults"), button -> reset()).bounds(left, footer, buttonWidth, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), button -> onClose()).bounds(left + buttonWidth + 4, footer, buttonWidth, 20).build());
-        addRenderableWidget(Button.builder(Component.translatable("lodgen.config.apply"), button -> apply()).bounds(left + 2 * (buttonWidth + 4), footer, buttonWidth, 20).build());
+        addRenderableWidget(Button.builder(Component.translatable("lodgen.config.screen.button.apply"), button -> apply()).bounds(left + 2 * (buttonWidth + 4), footer, buttonWidth, 20).build());
     }
     private void reset() {
         draft.reset(LodgenConfig.DEFAULTS);
@@ -67,10 +67,10 @@ public final class LodgenConfigScreen extends Screen {
         try {
             LodgenConfig.apply(draft.snapshot());
             onClose();
-        } catch (IllegalArgumentException invalid) { error = Component.translatable("lodgen.config.invalid"); }
+        } catch (IllegalArgumentException invalid) { error = Component.translatable("lodgen.config.screen.error.invalid_value"); }
         catch (IOException | RuntimeException failure) {
             LodgenConfig.LOGGER.error("Cannot save LODgen settings", failure);
-            error = Component.translatable("lodgen.config.saveFailed");
+            error = Component.translatable("lodgen.config.screen.error.save_failed");
         }
     }
     // #if MC_1211
@@ -78,15 +78,15 @@ public final class LodgenConfigScreen extends Screen {
         renderBackground(graphics, mouseX, mouseY, partialTick);
         super.render(graphics, mouseX, mouseY, partialTick);
         graphics.drawCenteredString(font, title, width / 2, 16, 0xffffffff);
-        graphics.drawCenteredString(font, Component.translatable("lodgen.config.units"), width / 2, 30, 0xffaaaaaa);
-        graphics.drawCenteredString(font, error == null ? Component.translatable("lodgen.config.live") : error, width / 2, height - 46, error == null ? 0xffaaaaaa : 0xffff6666);
+        graphics.drawCenteredString(font, Component.translatable("lodgen.config.screen.hint.units"), width / 2, 30, 0xffaaaaaa);
+        graphics.drawCenteredString(font, error == null ? Component.translatable("lodgen.config.screen.hint.applies_immediately") : error, width / 2, height - 46, error == null ? 0xffaaaaaa : 0xffff6666);
     }
     // #else
     @Override public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
         graphics.centeredText(font, title, width / 2, 16, 0xffffffff);
-        graphics.centeredText(font, Component.translatable("lodgen.config.units"), width / 2, 30, 0xffaaaaaa);
-        graphics.centeredText(font, error == null ? Component.translatable("lodgen.config.live") : error, width / 2, height - 46, error == null ? 0xffaaaaaa : 0xffff6666);
+        graphics.centeredText(font, Component.translatable("lodgen.config.screen.hint.units"), width / 2, 30, 0xffaaaaaa);
+        graphics.centeredText(font, error == null ? Component.translatable("lodgen.config.screen.hint.applies_immediately") : error, width / 2, height - 46, error == null ? 0xffaaaaaa : 0xffff6666);
     }
     // #endif
     @Override public void onClose() { ClientScreens.open(minecraft, parent); }

@@ -96,14 +96,17 @@ public final class ConfigSchema<R extends Record> {
         private final RecordComponent component;
         private final Method accessor;
         private final ConfigOption metadata;
-        private final String labelKey;
+        private final String translationKey;
         private final List<?> choices;
 
         private Option(RecordComponent component, String translationPrefix) {
             this.component = component;
             accessor = component.getAccessor();
             metadata = Objects.requireNonNull(component.getAnnotation(ConfigOption.class), "Missing @ConfigOption on " + key());
-            labelKey = translationPrefix + key();
+            String translationName = metadata.translationName().isEmpty()
+                    ? key().replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase(Locale.ROOT)
+                    : metadata.translationName();
+            translationKey = translationPrefix + translationName;
             accessor.setAccessible(true);
             if (component.getType() != boolean.class && component.getType() != int.class && !component.getType().isEnum())
                 throw new IllegalArgumentException("Unsupported config type: " + component.getType());
@@ -112,8 +115,8 @@ public final class ConfigSchema<R extends Record> {
         }
 
         public String key() { return component.getName(); }
-        public String labelKey() { return labelKey; }
-        public String tooltipKey() { return labelKey + ".tooltip"; }
+        public String labelKey() { return translationKey + ".label"; }
+        public String tooltipKey() { return translationKey + ".tooltip"; }
         public ConfigOption metadata() { return metadata; }
         public Control control() {
             if (component.getType() == boolean.class) return Control.TOGGLE;
@@ -180,7 +183,7 @@ public final class ConfigSchema<R extends Record> {
 
         public String valueKey(Object value) {
             if (value instanceof Boolean toggle) return toggle ? "options.on" : "options.off";
-            String prefix = metadata.valueKey().isEmpty() ? labelKey + "." : metadata.valueKey();
+            String prefix = metadata.valueKey().isEmpty() ? translationKey + ".value." : metadata.valueKey();
             return prefix + encode(value);
         }
 

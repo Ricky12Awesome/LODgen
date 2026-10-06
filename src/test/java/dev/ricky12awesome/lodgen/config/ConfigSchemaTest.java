@@ -43,7 +43,7 @@ class ConfigSchemaTest {
         var theme = schema.option("theme");
         assertEquals(ConfigSchema.Control.CHOICE, amount.control());
         assertEquals(ConfigSchema.Control.CHOICE, theme.control());
-        assertEquals("test.config.theme", theme.labelKey());
+        assertEquals("test.config.theme.label", theme.labelKey());
         assertEquals("test.config.theme.tooltip", theme.tooltipKey());
         assertEquals("test.theme.dark", theme.valueKey(Theme.DARK));
         assertEquals(Theme.LIGHT, theme.next(Theme.DARK));
@@ -107,7 +107,7 @@ class ConfigSchemaTest {
         var draft = schema.draft(dev.ricky12awesome.lodgen.LodgenConfig.DEFAULTS);
         var cpu = schema.option("cpuLoad");
         assertTrue(draft.active(cpu, mod -> mod.equals("distanthorizons")));
-        assertEquals("lodgen.config.cpuLoad.3", draft.valueKey(cpu, mod -> mod.equals("distanthorizons")));
+        assertEquals("lodgen.config.option.cpu_load.value.3", draft.valueKey(cpu, mod -> mod.equals("distanthorizons")));
     }
 
     @Test

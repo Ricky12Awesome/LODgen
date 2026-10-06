@@ -46,7 +46,7 @@ final class ConfigControls {
                 refresh();
             })
                     .bounds(0, 0, width, 20).tooltip(tooltip)
-                    .createNarration(ignored -> Component.translatable("lodgen.config.narration", label, value(option))).build();
+                    .createNarration(ignored -> Component.translatable("lodgen.config.screen.narration", label, value(option))).build();
         }
         widgets.put(option, widget);
         refresh();

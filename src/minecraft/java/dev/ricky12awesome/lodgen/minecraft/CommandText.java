@@ -24,7 +24,7 @@ public final class CommandText {
     public static MutableComponent error(Throwable error) {
         String detail = error.getMessage();
         if (detail != null && detail.startsWith("lodgen.command.")) return message(detail);
-        return message("lodgen.command.error.failed", detail == null ? error.getClass().getSimpleName() : detail);
+        return message("lodgen.command.error.operation_failed", detail == null ? error.getClass().getSimpleName() : detail);
     }
 
     public static MutableComponent duration(long seconds) {

@@ -59,7 +59,7 @@ final class GenerationJob implements AutoCloseable {
     }
 
     void pause() {
-        if (progress.state() != TaskProgress.State.RUNNING) throw new IllegalStateException("lodgen.command.error.notRunning");
+        if (progress.state() != TaskProgress.State.RUNNING) throw new IllegalStateException("lodgen.command.error.task_not_running");
         progress.pause();
         publishProgress();
         checkpoint();
@@ -187,14 +187,14 @@ final class GenerationJob implements AutoCloseable {
         long done = progress.completedChunks();
         double rate = PersistenceRegistry.throughput(level).chunksPerSecond();
         return CommandText.message("lodgen.command.status.task",
-                record.automatic() ? CommandText.message("lodgen.command.status.automatic") : Component.empty(),
+                record.automatic() ? CommandText.message("lodgen.command.status.automatic_prefix") : Component.empty(),
                 CommandText.message("lodgen.command.state." + displayProgress.state().name().toLowerCase(Locale.ROOT)),
                 record.dimension(), record.area().blockX(), record.area().blockZ(),
                 record.area().radius(), (long) record.area().radius() * 16, record.area().savedRadius(), (long) record.area().savedRadius() * 16,
-                CommandText.message("lodgen.command.cave." + record.caveMode().name().toLowerCase(Locale.ROOT)),
+                CommandText.message("lodgen.command.cave_mode." + record.caveMode().name().toLowerCase(Locale.ROOT)),
                 done, plan.chunks(), String.format(Locale.ROOT, "%.2f", done * 100.0 / plan.chunks()), active.size(), String.format(Locale.ROOT, "%.1f", rate),
                 CommandText.duration(displayProgress.estimatedSeconds(rate)), progress.error().isEmpty() ? Component.empty()
-                        : CommandText.message("lodgen.command.status.error", progress.error()));
+                        : CommandText.message("lodgen.command.status.error_suffix", progress.error()));
     }
 
     void checkpoint() {

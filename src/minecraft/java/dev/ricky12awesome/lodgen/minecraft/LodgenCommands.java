@@ -61,12 +61,12 @@ public final class LodgenCommands {
             var spawn = GenerationCenters.spawn(level); x = spawn.getX(); z = spawn.getZ();
         } else {
             var player = source.getPlayerOrException();
-            if (player.level() != level) throw new SimpleCommandExceptionType(CommandText.message("lodgen.command.error.currentDimension")).create();
+            if (player.level() != level) throw new SimpleCommandExceptionType(CommandText.message("lodgen.command.error.player_dimension_mismatch")).create();
             var pos = player.blockPosition(); x = pos.getX(); z = pos.getZ();
         }
         try {
             var area = new GenerationArea(x, z, RadiusParser.chunks(StringArgumentType.getString(context, "radius")), RadiusParser.chunks(saved));
-            if (area.radius() < 1) throw new IllegalArgumentException("lodgen.command.error.radiusMinimum");
+            if (area.radius() < 1) throw new IllegalArgumentException("lodgen.command.error.radius_too_small");
             var tasks = GenerationTasks.get(source.getServer());
             tasks.start(level, area);
             source.sendSuccess(tasks::statusMessage, false);

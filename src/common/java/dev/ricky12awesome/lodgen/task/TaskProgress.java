@@ -50,7 +50,7 @@ public final class TaskProgress {
     public void fail(String message) { pause(); error = message; }
     public void stop() { state = State.STOPPED; }
     public void resume() {
-        if (state != State.PAUSED) throw new IllegalStateException("lodgen.command.error.notPaused");
+        if (state != State.PAUSED) throw new IllegalStateException("lodgen.command.error.task_not_paused");
         state = prefix == plan.batches() ? State.COMPLETE : State.RUNNING; error = ""; cursor = prefix;
     }
     public State state() { return state; }

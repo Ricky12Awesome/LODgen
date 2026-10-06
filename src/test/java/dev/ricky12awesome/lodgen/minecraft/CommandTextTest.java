@@ -32,7 +32,7 @@ class CommandTextTest {
 
     @Test void retainsEnglishFallbackAndTranslationArgumentsOnDedicatedServers() throws Exception {
         Language.inject(language(Map.of()));
-        String key = "lodgen.command.error.failed";
+        String key = "lodgen.command.error.operation_failed";
         var component = CommandText.message(key, "disk unavailable");
         var contents = (TranslatableContents) component.getContents();
         String english;
@@ -50,7 +50,7 @@ class CommandTextTest {
     }
 
     @Test void clientTranslationsAndResourceReloadOverrideServerFallback() {
-        String key = "lodgen.command.error.failed";
+        String key = "lodgen.command.error.operation_failed";
         var component = CommandText.message(key, "detail");
         Language.inject(language(Map.of(key, "First locale: %s")));
         assertEquals("First locale: detail", component.getString());
@@ -60,9 +60,9 @@ class CommandTextTest {
     }
 
     @Test void rendersKeyedErrorsAndKeepsUnexpectedFailureDetails() {
-        Language.inject(language(Map.of("lodgen.command.error.noTask", "§cNo task§r",
-                "lodgen.command.error.failed", "§cFailed: %s§r")));
-        assertEquals("No task", CommandText.plain(CommandText.error(new IllegalStateException("lodgen.command.error.noTask"))));
+        Language.inject(language(Map.of("lodgen.command.error.no_task", "§cNo task§r",
+                "lodgen.command.error.operation_failed", "§cFailed: %s§r")));
+        assertEquals("No task", CommandText.plain(CommandText.error(new IllegalStateException("lodgen.command.error.no_task"))));
         assertEquals("Failed: disk unavailable", CommandText.plain(CommandText.error(new IllegalStateException("disk unavailable"))));
         assertEquals("Failed: IllegalStateException", CommandText.plain(CommandText.error(new IllegalStateException())));
     }
