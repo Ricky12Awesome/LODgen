@@ -37,9 +37,11 @@ public final class GenerationOverlay {
         double rate = DISPLAY.rate();
         if (rate <= 0) { hide(client); return; }
         var progress = source.progress();
-        lastMessage = Component.translatable("lodgen.overlay.throughput", String.format(Locale.ROOT, "%.1f", rate),
+        var translated = Component.translatable("lodgen.overlay.message", String.format(Locale.ROOT, "%.1f", rate),
                 progress.radius(), GenerationProgress.duration(progress.estimatedSeconds(rate)),
-                Component.translatable("lodgen.overlay.status." + progress.state().name().toLowerCase(Locale.ROOT)));
+                Component.translatable("lodgen.overlay.state." + progress.state().name().toLowerCase(Locale.ROOT)));
+        // Keep language-file formatting continuous across translation placeholders.
+        lastMessage = Component.literal(translated.getString());
         send(client, lastMessage);
     }
 

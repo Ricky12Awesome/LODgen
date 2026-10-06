@@ -43,7 +43,7 @@ class LodgenConfigTest {
     @Test void parsesRealTomlAndPreservesUnrelatedTables() throws Exception {
         Path file = directory.resolve("lodgen.toml");
         Files.writeString(file, "enabled = true # Inline comment\ncpuLoad = 0x3\n[notes]\nvalue = 'keep me'\n");
-        assertEquals(new LodgenConfig(true, 3, 0, false, 1000, dev.ricky12awesome.lodgen.generation.GenerationCenter.CURRENT, 0, 0, 0), LodgenConfig.read(file));
+        assertEquals(new LodgenConfig(true, 3, 0, false, 1000, dev.ricky12awesome.lodgen.generation.GenerationCenter.ORIGIN, 0, 0, 0), LodgenConfig.read(file));
         LodgenConfig.write(file, LodgenConfig.DEFAULTS);
         assertTrue(Files.readString(file).contains("keep me"));
     }
@@ -55,5 +55,18 @@ class LodgenConfigTest {
             assertFalse(LodgenConfig.load(file).enabled(), text);
             assertEquals(text, Files.readString(file));
         }
+    }
+
+    @Test void legacyPlayerCenterUsesOriginWithoutDiscardingOtherSettings() throws Exception {
+        Path file = directory.resolve("lodgen.toml");
+        Files.writeString(file, "generationCenter = 'CURRENT'\ncenterX = 123\ncenterZ = -456\ngenerationDistance = 64\n");
+        var config = LodgenConfig.read(file);
+        assertEquals(dev.ricky12awesome.lodgen.generation.GenerationCenter.ORIGIN, config.generationCenter());
+        assertEquals(123, config.centerX());
+        assertEquals(-456, config.centerZ());
+        assertEquals(64, config.generationDistance());
+        LodgenConfig.write(file, config);
+        assertEquals(config, LodgenConfig.read(file));
+        assertTrue(Files.readString(file).contains("generationCenter = \"origin\""));
     }
 }

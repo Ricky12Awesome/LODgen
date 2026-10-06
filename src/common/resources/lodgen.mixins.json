@@ -37,6 +37,7 @@
     "ServerTasksMixin"
   ],
   "client": [
+    "CommandFormattingMixin",
     "OptionsScreenMixin",
     "VoxyClientTickMixin",
     "VoxyServerShutdownMixin",

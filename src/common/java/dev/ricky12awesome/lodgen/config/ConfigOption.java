@@ -11,11 +11,12 @@ import java.lang.annotation.Target;
 public @interface ConfigOption {
     String defaultValue();
     String comment();
-    String label() default "";
     int order() default Integer.MAX_VALUE;
     int min() default Integer.MIN_VALUE;
     int max() default Integer.MAX_VALUE;
     boolean cycle() default false;
+    /** Language-key name; defaults to the record field name in snake_case. */
+    String translationName() default "";
     String valueKey() default "";
     String enabledWhen() default "";
     String enabledValue() default "";

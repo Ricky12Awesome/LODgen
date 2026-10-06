@@ -2,14 +2,14 @@
 
 Settings are declared on the record components in
 [`LodgenConfig`](../../src/common/java/dev/ricky12awesome/lodgen/LodgenConfig.java).
-Each `@ConfigOption` supplies its default, bounds, label, description, and any
+Each `@ConfigOption` supplies its default, bounds, TOML comment, and any
 control conditions. The same metadata drives TOML loading and saving, defaults,
 validation, and the in-game controls.
 
 For example, a bounded integer becomes a text input automatically:
 
 ```java
-@ConfigOption(defaultValue = "1000", label = "Overlay update interval (ms)",
+@ConfigOption(defaultValue = "1000", translationName = "overlay_update_interval",
         min = 1, max = 60000, comment = "Milliseconds between action-bar updates.")
 int chunksPerSecondUpdateIntervalMs
 ```
@@ -30,10 +30,16 @@ custom coordinates. `disabledWithMod` and `disabledValueKey` let an installed
 mod supply the setting, as with DH's CPU load. The renderer applies these rules
 to every control after edits.
 
-Labels and descriptions live in the annotation. Language resources can override
-`lodgen.config.<name>` and `lodgen.config.<name>.tooltip`; English entries are
-optional. Choice labels use `valueKey` or `lodgen.config.<name>.<value>`, with a
-readable fallback for untranslated values.
+Labels and tooltips live in `assets/lodgen/lang/en_us.json`, under
+`lodgen.config.option.<name>.label` and `lodgen.config.option.<name>.tooltip`.
+The name defaults to the record field converted to snake_case; `translationName`
+provides a more descriptive name without changing the TOML key. Choice labels
+use `lodgen.config.option.<name>.value.<value>` unless `valueKey` overrides the
+prefix. Boolean choices use Minecraft's `options.on` and `options.off` entries.
+
+Other language IDs use `lodgen.config.screen.*` for screen text,
+`lodgen.overlay.message` and `lodgen.overlay.state.*` for the action bar, and
+`lodgen.command.*` for command responses. All ID segments use snake_case.
 
 `ConfigDraft` keeps unfinished text separate from live settings and validates
 when creating a snapshot. `SCHEMA.with(settings, key, value)` creates a validated

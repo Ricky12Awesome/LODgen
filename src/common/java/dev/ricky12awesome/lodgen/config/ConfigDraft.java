@@ -39,7 +39,5 @@ public final class ConfigDraft<R extends Record> {
         return option.valueKey(option.parse(text(option)));
     }
 
-    public String valueLabel(ConfigSchema.Option option) { return option.valueLabel(option.parse(text(option))); }
-
     public R snapshot() { return schema.fromDraft(this); }
 }

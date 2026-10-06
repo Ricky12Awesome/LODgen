@@ -29,8 +29,8 @@ final class ConfigControls {
     }
 
     AbstractWidget create(ConfigSchema.Option option) {
-        var label = Component.translatableWithFallback(option.labelKey(), option.label());
-        var tooltip = Tooltip.create(Component.translatableWithFallback(option.tooltipKey(), option.metadata().comment()));
+        var label = Component.translatable(option.labelKey());
+        var tooltip = Tooltip.create(Component.translatable(option.tooltipKey()));
         AbstractWidget widget;
         if (option.control() == ConfigSchema.Control.NUMBER) {
             var input = new EditBox(font, 0, 0, width, 20, label);
@@ -40,9 +40,13 @@ final class ConfigControls {
             input.setResponder(text -> { draft.edit(option, text); refresh(); });
             widget = input;
         } else {
-            widget = Button.builder(value(option), button -> { draft.cycle(option); refresh(); })
+            widget = Button.builder(value(option), button -> {
+                draft.cycle(option);
+                if (option.key().equals("generationCenter") && draft.text(option).equalsIgnoreCase("current")) draft.cycle(option);
+                refresh();
+            })
                     .bounds(0, 0, width, 20).tooltip(tooltip)
-                    .createNarration(ignored -> label.copy().append(": ").append(value(option))).build();
+                    .createNarration(ignored -> Component.translatable("lodgen.config.screen.narration", label, value(option))).build();
         }
         widgets.put(option, widget);
         refresh();
@@ -50,12 +54,17 @@ final class ConfigControls {
     }
 
     private Component value(ConfigSchema.Option option) {
-        return Component.translatableWithFallback(draft.valueKey(option, modLoaded), draft.valueLabel(option));
+        return Component.translatable(draft.valueKey(option, modLoaded));
     }
 
     private void refresh() {
         widgets.forEach((option, widget) -> {
             widget.active = draft.active(option, modLoaded);
+            if (widget instanceof EditBox input) input.setEditable(widget.active);
+            if (option.key().equals("centerX") || option.key().equals("centerZ")) {
+                widget.visible = true;
+                if (!widget.active) widget.setFocused(false);
+            }
             if (widget instanceof Button button) button.setMessage(value(option));
         });
     }

@@ -4,6 +4,7 @@ import dev.ricky12awesome.lodgen.minecraft.DiskPredicateAccess;
 import dev.ricky12awesome.lodgen.minecraft.DiskBlockReads;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.WorldGenLevel;
@@ -17,30 +18,25 @@ import net.minecraft.world.level.levelgen.feature.configurations.DiskConfigurati
 // #endif
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Redirect;
+// #if MC_1211_FABRIC
+import org.spongepowered.asm.mixin.injection.Desc;
+// #endif
 
 @Mixin(DiskFeature.class)
 public abstract class DiskFeatureMixin {
-    // #if MC_1211_FABRIC
-    // Legacy Fabric runs in the intermediary namespace. Keep explicit selector
-    // descriptors and the nested invocation in that same namespace.
-    @Redirect(method = "method_13151(Lnet/minecraft/class_5821;)Z", remap = false,
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/class_2338;method_10097(Lnet/minecraft/class_2338;Lnet/minecraft/class_2338;)Ljava/lang/Iterable;", remap = false))
-    // #else
-    @Redirect(
+    @WrapOperation(
             // #if MC_263
             method = "place(Lnet/minecraft/world/level/WorldGenLevel;Lnet/minecraft/world/level/chunk/ChunkGenerator;Lnet/minecraft/util/RandomSource;Lnet/minecraft/core/BlockPos;)Z",
             // #else
             method = "place(Lnet/minecraft/world/level/levelgen/feature/FeaturePlaceContext;)Z",
             // #endif
             at = @At(value = "INVOKE", target = "Lnet/minecraft/core/BlockPos;betweenClosed(Lnet/minecraft/core/BlockPos;Lnet/minecraft/core/BlockPos;)Ljava/lang/Iterable;"))
-    // #endif
     // #if MC_263
-    private Iterable<BlockPos> lodgen$columns(BlockPos from, BlockPos to, WorldGenLevel level,
+    private Iterable<BlockPos> lodgen$columns(BlockPos from, BlockPos to, Operation<Iterable<BlockPos>> original, WorldGenLevel level,
             ChunkGenerator generator, RandomSource random, BlockPos origin) {
         var config = (DiskFeature) (Object) this;
     // #else
-    private Iterable<BlockPos> lodgen$columns(BlockPos from, BlockPos to, FeaturePlaceContext<DiskConfiguration> context) {
+    private Iterable<BlockPos> lodgen$columns(BlockPos from, BlockPos to, Operation<Iterable<BlockPos>> original, FeaturePlaceContext<DiskConfiguration> context) {
         var config = context.config();
         var level = context.level();
     // #endif
@@ -59,11 +55,7 @@ public abstract class DiskFeatureMixin {
         try (var scope = DiskBlockReads.open(level, eligible)) { return original.call(level, generator, random, origin); }
     }
     // #else
-    // #if MC_1211_FABRIC
-    @WrapMethod(method = "method_13151(Lnet/minecraft/class_5821;)Z", remap = false)
-    // #else
     @WrapMethod(method = "place(Lnet/minecraft/world/level/levelgen/feature/FeaturePlaceContext;)Z")
-    // #endif
     private boolean lodgen$scan(FeaturePlaceContext<DiskConfiguration> context, Operation<Boolean> original) {
         var config = context.config();
         boolean eligible = ((DiskPredicateAccess) (Object) config).lodgen$targetPlan() != null
@@ -72,20 +64,20 @@ public abstract class DiskFeatureMixin {
     }
     // #endif
 
-    // #if MC_1211_FABRIC
-    @Redirect(method = "method_43160", remap = false, at = @At(value = "INVOKE",
-            target = "Lnet/minecraft/class_6646;test(Ljava/lang/Object;Ljava/lang/Object;)Z", remap = false))
-    // #else
-    @Redirect(method = "placeColumn", at = @At(value = "INVOKE",
+    @WrapOperation(method = "placeColumn", at = @At(value = "INVOKE",
+            // #if MC_1211_FABRIC
+            desc = @Desc(owner = BlockPredicate.class, value = "test",
+                    args = {Object.class, Object.class}, ret = boolean.class)))
+            // #else
             target = "Lnet/minecraft/world/level/levelgen/blockpredicates/BlockPredicate;test(Ljava/lang/Object;Ljava/lang/Object;)Z"))
-    // #endif
+            // #endif
     // #if MC_263
-    private boolean lodgen$testTarget(BlockPredicate target, Object region, Object position,
+    private boolean lodgen$testTarget(BlockPredicate target, Object region, Object position, Operation<Boolean> original,
                                       WorldGenLevel level, RandomSource random,
                                       int maxY, int minY, BlockPos.MutableBlockPos column) {
         var plan = ((DiskPredicateAccess) (Object) this).lodgen$targetPlan();
     // #else
-    private boolean lodgen$testTarget(BlockPredicate target, Object region, Object position,
+    private boolean lodgen$testTarget(BlockPredicate target, Object region, Object position, Operation<Boolean> original,
                                       DiskConfiguration config, WorldGenLevel level, RandomSource random,
                                       int maxY, int minY, BlockPos.MutableBlockPos column) {
         var plan = ((DiskPredicateAccess) (Object) config).lodgen$targetPlan();
