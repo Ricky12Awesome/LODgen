@@ -23,9 +23,9 @@ public final class LodgenCommands {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         var root = Commands.literal("lodgen")
                 // #if MC_1211
-                .requires(source -> source.hasPermission(2));
+                .requires(source -> source.hasPermission(3));
                 // #else
-                .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS));
+                .requires(Commands.hasPermission(Commands.LEVEL_ADMINS));
                 // #endif
         root.then(Commands.literal("start").then(Commands.argument("dim", DimensionArgument.dimension())
                 .then(Commands.argument("x", coordinate())
