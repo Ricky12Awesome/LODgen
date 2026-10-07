@@ -1,4 +1,6 @@
 import groovy.json.JsonSlurper
+import com.modrinth.minotaur.ModrinthExtension
+import com.modrinth.minotaur.TaskModrinthUpload
 import java.nio.file.Path
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.internal.file.UnionFileCollection
@@ -7,6 +9,7 @@ plugins {
     id 'java'
     id 'xyz.wagyourtail.unimined' version '1.4.43-kappa'
     id 'com.gradleup.shadow' version '9.2.2'
+    id 'com.modrinth.minotaur' version '2.10.0' apply false
 }
 
 def matrix = new JsonSlurper().parse(file('versions.json'))
@@ -274,6 +277,97 @@ tasks.named('shadowJar') {
 tasks.named('remapJar') {
     dependsOn(tasks.named('shadowJar'))
     inputFile.set(tasks.named('shadowJar').flatMap { it.archiveFile })
+}
+
+// Credentials stay in the ignored .env file or the process environment.
+// Read values as data, without executing shell commands from .env.
+def modrinthEnv = providers.fileContents(layout.projectDirectory.file('.env')).asText.orElse('').map { contents ->
+    contents.readLines().collectEntries { line ->
+        def entry = line.trim().replaceFirst(/^export\s+/, '').split('=', 2)
+        if (entry.length != 2 || !(entry[0].trim() in ['MODRINTH_PROJECT_ID', 'MODRINTH_TOKEN', 'MODRINTH_PAT'])) return [:]
+        def value = entry[1].trim()
+        if (value.length() >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
+            value = value.substring(1, value.length() - 1)
+        } else {
+            value = value.replaceFirst(/\s+#.*$/, '').trim()
+        }
+        [(entry[0].trim()): value]
+    }
+}
+def voxyTarget = new JsonSlurper().parse(file('voxy-versions.json'))[mc]?.get(platform)
+// Ignore build metadata and classify the first prerelease identifier.
+def versionParts = version.toString().split(/\+/, 2)[0].split('-', 2)
+def versionQualifier = versionParts.length > 1 ? versionParts[1].split(/[.-]/, 2)[0] : ''
+// Register Minotaur's extension and uploader under our publishing task name.
+extensions.create('modrinth', ModrinthExtension, project)
+modrinth {
+    token.set(providers.environmentVariable('MODRINTH_TOKEN')
+            .orElse(providers.environmentVariable('MODRINTH_PAT'))
+            .orElse(modrinthEnv.map { it.MODRINTH_TOKEN ?: it.MODRINTH_PAT ?: '' }))
+    projectId.set(providers.gradleProperty('modrinthProjectId')
+            .orElse(providers.environmentVariable('MODRINTH_PROJECT_ID'))
+            .orElse(modrinthEnv.map { it.MODRINTH_PROJECT_ID ?: '' }))
+    // Each target gets its own version so publishing the matrix cannot collide.
+    versionNumber = "${version}+${mc}-${platform}"
+    versionName = "LODgen ${version} — Minecraft ${mc} (${platform == 'fabric' ? 'Fabric' : 'NeoForge'})"
+    versionType = versionQualifier in ['alpha', 'beta'] ? versionQualifier : 'release'
+    environment.set(providers.gradleProperty('modrinthEnvironment').orElse('client_or_server_prefers_both'))
+    file.set(tasks.named('remapJar').flatMap { it.archiveFile })
+    gameVersions = [mc]
+    loaders = [platform]
+    detectLoaders = false
+    debugMode.set(providers.gradleProperty('modrinthDebug').map { it.toBoolean() }.orElse(false))
+    if (providers.gradleProperty('modrinthChangelogFile').isPresent()) {
+        changelog.set(providers.fileContents(layout.projectDirectory.file(providers.gradleProperty('modrinthChangelogFile').get())).asText)
+    }
+    dependencies {
+        optional.version target.dh
+        optional.version target[platform == 'fabric' ? 'c2meFabric' : 'c2meNeoForge']
+        if (platform == 'fabric') optional.version target.modMenu
+        if (voxyTarget) {
+            optional.version voxyTarget.voxy
+            if (voxyTarget.roxy) optional.version voxyTarget.roxy
+        }
+    }
+}
+tasks.register('publishModrinth', TaskModrinthUpload) {
+    group = 'publishing'
+    description = 'Build, test, and publish the selected Minecraft/loader target to Modrinth.'
+    dependsOn(tasks.named('assemble'), tasks.named('check'))
+    mustRunAfter(tasks.named('build'))
+    wiredInputFiles.from(modrinth.file)
+    inputs.property('changelog', modrinth.changelog).optional(true)
+    notCompatibleWithConfigurationCache('Minotaur accesses the project during upload')
+    doFirst {
+        if (integration || startup) throw new GradleException('Publish with selfTest=false and startupTest=false; test variants are not releases')
+        if (!modrinth.projectId.get().trim()) throw new GradleException('Set MODRINTH_PROJECT_ID in .env or the environment, or use -PmodrinthProjectId=<id>')
+        if (!modrinth.debugMode.get() && !modrinth.token.get().trim()) throw new GradleException('Set MODRINTH_PAT or MODRINTH_TOKEN in .env or the environment before publishing')
+    }
+}
+
+// Each nested build selects one target. Chain them to protect shared build caches
+// and stop publishing subsequent targets if a build or upload fails.
+def previousPublication = null
+matrix.keySet().each { gameVersion ->
+    ['fabric', 'neoforge'].each { loaderName ->
+        def priorPublication = previousPublication
+        previousPublication = tasks.register("modrinthMatrix${gameVersion.replace('.', '_')}${loaderName.capitalize()}", GradleBuild) {
+            dir = rootProject.projectDir
+            buildName = "lodgen-publish-${gameVersion}-${loaderName}"
+            tasks = ['publishModrinth']
+            startParameter.projectProperties = new LinkedHashMap(gradle.startParameter.projectProperties) + [mcVersion: gameVersion, loader: loaderName]
+            startParameter.offline = gradle.startParameter.offline
+            startParameter.refreshDependencies = gradle.startParameter.refreshDependencies
+            startParameter.rerunTasks = gradle.startParameter.rerunTasks
+            mustRunAfter('build')
+            if (priorPublication != null) dependsOn(priorPublication)
+        }
+    }
+}
+tasks.register('publishModrinthAll') {
+    group = 'publishing'
+    description = 'Build, test, and publish every Minecraft/loader target in versions.json to Modrinth.'
+    dependsOn(previousPublication)
 }
 
 if (integration) {

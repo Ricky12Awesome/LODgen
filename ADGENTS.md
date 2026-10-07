@@ -1,6 +1,6 @@
 - You are allowed to make breaking changes
   - which also means tests can be removed/changed
-- Keep version at 0.0.0 until release
+- Do not modify versions unless ask to
 - Test using smaller values (like 64c)
   - only use bigger values unless specifically ask or figuring out performance issues
 - Avoid any test that needs to launch a window

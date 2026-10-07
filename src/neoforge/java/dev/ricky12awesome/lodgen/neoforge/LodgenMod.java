@@ -8,6 +8,6 @@ import net.neoforged.fml.common.Mod;
 public final class LodgenMod {
     public LodgenMod() {
         GenerationSettings.initialize();
-        LodgenConfig.LOGGER.info("LODgen loaded (development version 0.0.0)");
+        LodgenConfig.LOGGER.info("LODgen loaded");
     }
 }
