@@ -20,8 +20,8 @@ parser.add_argument("--java", default="java", help="Java 21 for MC 1.21.1; Java 
 parser.add_argument("--run-name", help="Separate disposable benchmark directory name")
 parser.add_argument("--skip-build", action="store_true")
 parser.add_argument("--startup-only", action="store_true", help="Load the packaged startup fixture and stop before opening a world")
-parser.add_argument("--task-check", action="store_true", help="Commands, mixed saved/LOD radius, and orderly auto-resume using only a 5c radius")
-parser.add_argument("--autostart-check", action="store_true", help="Automatic task pause/reload, cancel and distance shrink using only a 5c radius")
+parser.add_argument("--task-check", action="store_true", help="Commands, mixed saved/LOD radius, and auto resume using only a 5c radius")
+parser.add_argument("--autostart-check", action="store_true", help="Dedicated autostart blocking and auto-resume setting lifecycle using only a 5c radius")
 parser.add_argument("--shutdown-check", action="store_true", help="Quit with 64 native Empty LOD chunks still generating")
 parser.add_argument("--dh-plan-check", action="store_true", help="DH generator plans, center-first ordering, live disable and commands; maximum 5c radius")
 parser.add_argument("--distance-check", action="store_true", help="Check custom 64 versus DH 128 using only two 4x4 LOD sections")
@@ -250,6 +250,9 @@ with log.open("w") as output:
 if not report.exists() or not report.read_text().startswith("PASS:"):
     print(log.read_text()[-16000:])
     raise SystemExit(report.read_text() if report.exists() else "Server stopped without an integration result")
+if args.autostart_check:
+    print(report.read_text().strip())
+    raise SystemExit(0)
 if args.startup_only:
     if any(world.rglob("*.mca")):
         raise SystemExit("Startup-only check generated chunks")
@@ -331,9 +334,9 @@ if args.task_check:
             for z in range(-8192 - 24, -8192 + 24):
                 if present(folder, x, z):
                     raise SystemExit(f"Automatic custom-center LOD area was saved: {folder} {x},{z}")
-    result = {"minecraft": args.mc, "loader": args.loader, "automaticCustomCenter": "PASS", "automaticTargets": 4, "radiusChunks": 5, "savedRadiusChunks": 1,
+    result = {"minecraft": args.mc, "loader": args.loader, "dedicatedAutostartBlocked": "PASS", "automaticTargets": 0, "radiusChunks": 5, "savedRadiusChunks": 1,
               "targetChunks": 100, "nativeChunksSaved": saved, "outsideNativePoiEntityChunks": 0,
-              "startPauseContinueStopStatus": "PASS", "automaticResume": "PASS"}
+              "startPauseResumeStopStatus": "PASS", "automaticResume": "PASS"}
     (run / "task-result.json").write_text(json.dumps(result, indent=2) + "\n")
     print(report.read_text().strip())
     print(reload_report.read_text().strip())

@@ -4,12 +4,17 @@ import dev.ricky12awesome.lodgen.LodgenConfig;
 import dev.ricky12awesome.lodgen.generation.GenerationCenter;
 import dev.ricky12awesome.lodgen.minecraft.GenerationTasks;
 import dev.ricky12awesome.lodgen.task.TaskProgress;
+import dev.ricky12awesome.lodgen.task.TaskRecord;
 import dev.ricky12awesome.lodgen.task.TaskStore;
+import dev.ricky12awesome.lodgen.task.SquarePlan;
+import dev.ricky12awesome.lodgen.generation.GenerationArea;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.storage.LevelResource;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
@@ -19,41 +24,46 @@ public final class TaskCheck {
     private static long started;
     private static int stage;
     private static boolean done;
-    private static final boolean AUTOMATIC = Boolean.getBoolean("lodgen.test.autostart");
-    private static long stoppedAt, stoppedCount;
+    private static final boolean LIFECYCLE_CHECK = Boolean.getBoolean("lodgen.test.autostart");
     private static java.util.concurrent.ScheduledExecutorService timer;
     private static AutoCloseable hiddenWorld;
-    private static String canceledProgress;
+    private static TaskProgress.Snapshot canceledProgress;
 
     public static void run(MinecraftServer server) {
         try {
             started = System.nanoTime();
             LodgenConfig.apply(new LodgenConfig(true, 1, 0, false, 1000, GenerationCenter.CURRENT, 0, 0, 0, LodgenConfig.INSTANCE.caveMode()));
-            if (AUTOMATIC) {
-                LodgenConfig.apply(new LodgenConfig(true, 1, 5, false, 1000, GenerationCenter.CUSTOM, 65536, -65536, 1, LodgenConfig.INSTANCE.caveMode()));
-                com.seibel.distanthorizons.core.config.Config.Common.WorldGenerator.chunkGeneratorMode.set(com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiDistantGeneratorMode.FEATURES);
+            if (LIFECYCLE_CHECK) {
+                require(server.isDedicatedServer(), "Autostart regression requires a dedicated server");
+                LodgenConfig.apply(new LodgenConfig(true, 1, 5, false, 1000, GenerationCenter.CUSTOM,
+                        65536, -65536, 1, LodgenConfig.INSTANCE.caveMode()));
+                com.seibel.distanthorizons.core.config.Config.Common.WorldGenerator.generatorPlan.set(
+                        com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiGeneratorPlan.CHUNKS_ONLY);
+                com.seibel.distanthorizons.core.config.Config.Common.WorldGenerator.chunkGeneratorMode.set(
+                        com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiDistantGeneratorMode.FEATURES);
+                verifyCommands(server);
+                GenerationTasks.tick(server);
+                require(TaskStore.read(server.getWorldPath(LevelResource.ROOT).resolve("lodgen/task.toml")) == null,
+                        "Dedicated server autostart created a task");
+                lifecycleCheck(server);
+                Files.writeString(REPORT, "PASS: dedicated autostart was blocked; autoResume true/false restored running tasks correctly; paused, stopped and completed checkpoints retained state; manual resume worked.\n");
+                finish(server); return;
             }
             dev.ricky12awesome.lodgen.minecraft.DhTaskSinkCheck.run(server.overworld());
             if (Boolean.getBoolean("lodgen.test.reload")) {
                 var checkpoint = TaskStore.read(server.getWorldPath(LevelResource.ROOT).resolve("lodgen/task.toml"));
-                require(checkpoint != null && checkpoint.progress().state() == (AUTOMATIC ? TaskProgress.State.PAUSED : TaskProgress.State.RUNNING), "Task intent must survive shutdown");
-                require(checkpoint.automatic() == AUTOMATIC, "Task origin was not checkpointed");
-                require(GenerationTasks.get(server).status().contains(AUTOMATIC ? "PAUSED" : "RUNNING"), "Task did not restore automatically");
-                if (AUTOMATIC) { stoppedAt = System.nanoTime(); stoppedCount = checkpoint.progress().prefix(); }
-                stage = AUTOMATIC ? 5 : 2;
-            } else if (AUTOMATIC) {
-                GenerationTasks.tick(server);
-                var automatic = record(server);
-                require(automatic != null && automatic.automatic() && automatic.area().radius() == 5 && automatic.area().savedRadius() == 1,
-                        "Autostart did not create the same saved task as start");
-                command(server, "lodgen status");
-                stage = 0;
+                require(checkpoint != null && checkpoint.progress().state() == TaskProgress.State.RUNNING, "Task intent must survive shutdown");
+                require(!checkpoint.automatic(), "Task origin was not checkpointed");
+                require(currentProgress(server).state() == TaskProgress.State.RUNNING, "Task did not resume automatically");
+                // The minimum load leaves time to pause the first run; the restart only checks completion.
+                LodgenConfig.apply(LodgenConfig.SCHEMA.with(LodgenConfig.INSTANCE, "cpuLoad", 3));
+                stage = 2;
             } else {
                 command(server, "lodgen start overworld origin 1c");
                 command(server, "lodgen pause");
                 require(record(server).area().savedRadius() == 0, "Optional saved-radius did not default to zero");
                 command(server, "lodgen status");
-                command(server, "lodgen continue");
+                command(server, "lodgen resume");
                 command(server, "lodgen stop");
                 // 79 blocks rounds up to 5c; 15 blocks rounds up to a 1c saved area.
                 command(server, "lodgen start overworld 65536 -65536 79 15");
@@ -75,108 +85,122 @@ public final class TaskCheck {
         if (done) return;
         try {
             require(System.nanoTime() - started < TimeUnit.SECONDS.toNanos(60), "Task regression timed out");
-            String status = GenerationTasks.get(server).status();
-            require(!status.contains("error="), status);
-            require(status.contains(stage <= 2 || stage == 5 ? "radius=5c" : "radius=1c") && status.contains("ETA="), "Task status omitted radius or ETA: " + status);
+            var progress = currentProgress(server);
+            var display = GenerationTasks.displaySource(server.overworld()).progress();
+            int active = activeCount(server);
+            require(progress.error().isEmpty(), "Task failed: " + progress.error());
+            require(record(server).area().radius() == 5, "Task radius changed");
             if (stage == -2) {
                 beginDisconnect(server);
             } else if (stage == -1) {
-                if (!status.contains("active=0")) return;
-                require(status.contains("WAITING_FOR_RENDERER") && status.contains(canceledProgress), "Canceled output advanced or paused the task: " + status);
-                require(record(server).progress().state() == TaskProgress.State.RUNNING && record(server).progress().error().isEmpty(), "DH disconnect poisoned the saved task");
+                if (active != 0) return;
+                require(display.state() == dev.ricky12awesome.lodgen.generation.GenerationProgress.State.WAITING_FOR_RENDERER
+                        && progress.snapshot().equals(canceledProgress), "Canceled output advanced or paused the task");
+                require(record(server).progress().state() == TaskProgress.State.RUNNING, "DH disconnect poisoned the saved task");
                 hiddenWorld.close(); hiddenWorld = null;
                 LodgenConfig.LOGGER.info("PASS: DH disconnect canceled an in-flight native batch, drained cleanup, and retained RUNNING retryable progress");
                 stage = 0;
             } else if (stage == 0) {
-                if (status.contains("progress=0/")) return;
-                require(!status.contains("COMPLETE"), "Test finished before exercising pause/restart");
+                if (progress.completedChunks() == 0) return;
+                require(progress.state() == TaskProgress.State.RUNNING, "Test finished before exercising pause/restart");
                 command(server, "lodgen pause");
                 stage = 1;
             } else if (stage == 1) {
-                if (!status.contains("active=0")) return;
-                require(status.contains("PAUSED"), "Pause did not stop dispatch: " + status);
-                require(status.contains("ETA=—"), "Paused task showed a running estimate: " + status);
-                command(server, "lodgen continue");
-                if (AUTOMATIC) command(server, "lodgen pause");
+                if (active != 0) return;
+                require(progress.state() == TaskProgress.State.PAUSED, "Pause did not stop dispatch");
+                require(display.estimatedSeconds(1) < 0, "Paused task showed a running estimate");
+                command(server, "lodgen resume");
                 command(server, "lodgen status");
-                Files.writeString(REPORT, AUTOMATIC ? "PASS: autostart created a real 5c task in task.toml; command status/pause/continue control it; native work drained; closed with an unfinished PAUSED automatic task.\n"
-                        : "PASS: origin, optional saved radius, block rounding, status, pause, continue and stop commands; closed with an incomplete RUNNING 5c task at 65536,-65536.\n");
+                Files.writeString(REPORT, "PASS: origin, optional saved radius, block rounding, status, pause, resume and stop commands; closed with an incomplete RUNNING 5c task at 65536,-65536.\n");
                 finish(server);
-            } else if (stage == 3) {
-                var auto = record(server);
-                if (auto == null || !auto.automatic() || auto.progress().state() != TaskProgress.State.COMPLETE) return;
-                require(auto.area().blockX() == 131072 && auto.area().blockZ() == -131072 && auto.area().radius() == 1 && auto.area().savedRadius() == 0, "Automatic custom center ignored");
-                var rendererProgress = dev.ricky12awesome.lodgen.minecraft.RendererSinks.progress(server.overworld(), 1);
-                require(rendererProgress != null && rendererProgress.radius() == 1, "DH generation estimate unavailable in a live level");
-                if (AUTOMATIC) {
-                    command(server, "lodgen cancel");
-                    require(record(server).automatic() && record(server).progress().state() == TaskProgress.State.STOPPED, "Cancel did not checkpoint automatic STOPPED");
-                    LodgenConfig.apply(new LodgenConfig(true, 1, 1, false, 1000, GenerationCenter.CUSTOM, 196608, -196608, 0, LodgenConfig.INSTANCE.caveMode()));
-                    stoppedAt = System.nanoTime(); stoppedCount = dev.ricky12awesome.lodgen.minecraft.PersistenceRegistry.throughput(server.overworld()).totalCompleted();
-                    stage = 4; return;
-                }
-                Files.writeString(REPORT, "PASS: restart automatically resumed the 100-chunk 5c task with saved radius 1c; custom-center autostart created a real task and generated four additional LOD-only chunks. Native file headers audited after shutdown.\n");
-                finish(server);
-            } else if (stage == 4) {
-                if (System.nanoTime() - stoppedAt < TimeUnit.MILLISECONDS.toNanos(300)) return;
-                require(record(server).progress().state() == TaskProgress.State.STOPPED && status.contains("STOPPED"), "Stopped task was replaced by autostart");
-                require(dev.ricky12awesome.lodgen.minecraft.PersistenceRegistry.throughput(server.overworld()).totalCompleted() == stoppedCount, "Cancel failed to block later automatic work");
-                checkPausedDhQueue(server);
-                Files.writeString(REPORT, "PASS: PAUSED automatic task survived world reload without dispatch; continue resumed the 100 targets; shrinking completed radius reused progress; cancel saved STOPPED, blocked DH's queue and prevented config changes from restarting; saved-radius files audited after shutdown.\n");
-                finish(server);
-            } else if (stage == 5) {
-                if (System.nanoTime() - stoppedAt < TimeUnit.MILLISECONDS.toNanos(300)) return;
-                require(record(server).progress().prefix() == stoppedCount && record(server).progress().state() == TaskProgress.State.PAUSED,
-                        "World reload dispatched paused automatic work");
-                checkPausedDhQueue(server);
-                command(server, "lodgen continue"); stage = 2;
-            } else if (stage == 6) {
-                if (record(server).area().radius() != 1) return;
-                require(record(server).progress().state() == TaskProgress.State.COMPLETE, "Completed larger radius was regenerated on shrink");
-                require(dev.ricky12awesome.lodgen.minecraft.PersistenceRegistry.throughput(server.overworld()).totalCompleted() == stoppedCount, "Shrink generated already completed chunks");
-                LodgenConfig.apply(new LodgenConfig(true, 1, 1, false, 1000, GenerationCenter.CUSTOM, 131072, -131072, 0, LodgenConfig.INSTANCE.caveMode())); stage = 3;
-            } else if (status.contains("COMPLETE")) {
-                require(status.contains("progress=100/100"), status);
-                require(status.contains("ETA=0s"), "Completed task retained an unfinished estimate: " + status);
+            } else if (progress.state() == TaskProgress.State.COMPLETE) {
+                require(progress.completedChunks() == 100, "Task omitted targets");
+                require(display.estimatedSeconds(1) == 0, "Completed task retained an unfinished estimate");
                 command(server, "lodgen status");
-                var checkpoint = record(server);
-                require(checkpoint.progress().state() == TaskProgress.State.COMPLETE, "Completion was not checkpointed");
-                com.seibel.distanthorizons.core.config.Config.Common.WorldGenerator.chunkGeneratorMode.set(com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiDistantGeneratorMode.FEATURES);
-                if (AUTOMATIC) {
-                    stoppedCount = dev.ricky12awesome.lodgen.minecraft.PersistenceRegistry.throughput(server.overworld()).totalCompleted();
-                    LodgenConfig.apply(new LodgenConfig(true, 1, 1, false, 1000, GenerationCenter.CUSTOM, 65536, -65536, 0, LodgenConfig.INSTANCE.caveMode())); stage = 6;
-                } else {
-                    LodgenConfig.apply(new LodgenConfig(true, 1, 1, false, 1000, GenerationCenter.CUSTOM, 131072, -131072, 0, LodgenConfig.INSTANCE.caveMode())); stage = 3;
-                }
+                require(record(server).progress().state() == TaskProgress.State.COMPLETE, "Completion was not checkpointed");
+                LodgenConfig.apply(new LodgenConfig(true, 1, 1, false, 1000, GenerationCenter.CUSTOM, 131072, -131072, 0, LodgenConfig.INSTANCE.caveMode()));
+                GenerationTasks.tick(server);
+                require(!record(server).automatic() && record(server).area().blockX() == 65536,
+                        "Dedicated server replaced the completed task with autostart");
+                Files.writeString(REPORT, "PASS: restart resumed the 100-chunk 5c task with saved radius 1c; dedicated-server config changes did not autostart another task. Native file headers audited after shutdown.\n");
+                finish(server);
             }
         } catch (Throwable error) { fail(server, error); }
     }
-    private static void beginDisconnect(MinecraftServer server) {
+    private static void beginDisconnect(MinecraftServer server) throws Exception {
         GenerationTasks.tick(server);
-        String status = GenerationTasks.get(server).status();
-        // Automatic tasks may finish DH's rough surface pass before native work.
-        if (!status.contains("active=1")) return;
-        canceledProgress = status.substring(status.indexOf("progress="), status.indexOf("; active="));
+        if (activeCount(server) != 1) return;
+        canceledProgress = currentProgress(server).snapshot();
         hiddenWorld = dev.ricky12awesome.lodgen.minecraft.DhTaskSinkCheck.hideWorld();
         stage = -1;
     }
     private static void command(MinecraftServer server, String command) throws Exception {
         require(server.getCommands().getDispatcher().execute(command, server.createCommandSourceStack()) == 1, "Command failed: " + command);
     }
-    private static void checkPausedDhQueue(MinecraftServer server) throws Exception {
-        for (var wrapper : com.seibel.distanthorizons.api.DhApi.Delayed.worldProxy.getAllLoadedLevelWrappers()) {
-            if (!(wrapper instanceof com.seibel.distanthorizons.core.wrapperInterfaces.world.IServerLevelWrapper level)
-                    || level.getWrappedMcObject() != server.overworld()) continue;
-            var dh = (com.seibel.distanthorizons.core.level.IDhServerLevel) level.getDhLevel();
-            var queue = new com.seibel.distanthorizons.core.generation.queues.WorldGenerationQueue(
-                    new com.seibel.distanthorizons.core.generation.DhWorldGenerator(dh), dh);
-            try {
-                var busy = queue.getClass().getDeclaredMethod("isGeneratorBusy"); busy.setAccessible(true);
-                require(Boolean.TRUE.equals(busy.invoke(queue)), "Paused/stopped automatic task did not block DH's queue");
-            } finally { queue.close(); }
-            return;
+    private static void verifyCommands(MinecraftServer server) {
+        var root = server.getCommands().getDispatcher().getRoot().getChild("lodgen");
+        for (String name : new String[]{"start", "pause", "resume", "stop", "status"})
+            require(root != null && root.getChild(name) != null, "Missing command: " + name);
+        require(root.getChild("continue") == null && root.getChild("cancel") == null, "Removed commands are still registered");
+    }
+    private static Object currentJob(MinecraftServer server) throws Exception {
+        var field = GenerationTasks.class.getDeclaredField("command");
+        field.setAccessible(true);
+        var job = field.get(GenerationTasks.get(server));
+        require(job != null, "Missing restored task");
+        return job;
+    }
+    private static TaskProgress currentProgress(MinecraftServer server) throws Exception {
+        var job = currentJob(server);
+        var field = job.getClass().getDeclaredField("progress");
+        field.setAccessible(true);
+        return (TaskProgress) field.get(job);
+    }
+    private static int activeCount(MinecraftServer server) throws Exception {
+        var job = currentJob(server);
+        var field = job.getClass().getDeclaredField("active");
+        field.setAccessible(true);
+        return ((Map<?, ?>) field.get(job)).size();
+    }
+    /** Restore real jobs without ticking them, so no terrain is generated by this lifecycle check. */
+    private static void lifecycleCheck(MinecraftServer server) throws Exception {
+        var path = server.getWorldPath(LevelResource.ROOT).resolve("lodgen/task.toml");
+        var config = LodgenConfig.INSTANCE;
+        var area = new GenerationArea(65536, -65536, 5, 1);
+        var plan = new SquarePlan(area);
+        for (boolean autoResume : new boolean[]{true, false}) {
+            for (boolean automatic : new boolean[]{false, true}) {
+                for (var state : TaskProgress.State.values()) {
+                    GenerationTasks.beginShutdown(server);
+                    GenerationTasks.endShutdown(server);
+                    var saved = state == TaskProgress.State.COMPLETE
+                            ? new TaskProgress.Snapshot(state, plan.batches(), List.of(), "")
+                            : new TaskProgress.Snapshot(state, 1, List.of(3L), state == TaskProgress.State.PAUSED ? "saved pause detail" : "");
+                    var record = new TaskRecord("minecraft:overworld", area, false, false, automatic, saved, config.caveMode());
+                    TaskStore.write(path, record);
+                    LodgenConfig.apply(LodgenConfig.SCHEMA.with(config, "autoResume", autoResume));
+                    var restored = currentProgress(server);
+                    var expectedState = state == TaskProgress.State.RUNNING && !autoResume ? TaskProgress.State.PAUSED : state;
+                    var expected = new TaskProgress.Snapshot(expectedState, saved.prefix(), saved.beyond(), saved.error());
+                    require(restored.snapshot().equals(expected), "Restore changed task intent or progress: " + state + ", autoResume=" + autoResume);
+                    var checkpoint = TaskStore.read(path);
+                    require(checkpoint.area().equals(area) && checkpoint.automatic() == automatic
+                            && checkpoint.progress().prefix() == saved.prefix() && checkpoint.progress().beyond().equals(saved.beyond()),
+                            "Restore discarded checkpoint progress or area");
+                    if (expectedState == TaskProgress.State.PAUSED) {
+                        require(restored.next() == -1, "Restored paused task dispatched work");
+                        command(server, "lodgen resume");
+                        require(restored.state() == TaskProgress.State.RUNNING && restored.snapshot().prefix() == saved.prefix()
+                                && restored.snapshot().beyond().equals(saved.beyond()), "Manual resume discarded progress");
+                    }
+                    command(server, "lodgen stop");
+                }
+            }
         }
-        throw new AssertionError("Missing live DH level");
+        LodgenConfig.apply(LodgenConfig.SCHEMA.with(config, "autoResume", false));
+        command(server, "lodgen start overworld 65536 -65536 1c 1c");
+        require(currentProgress(server).state() == TaskProgress.State.RUNNING, "Auto resume disabled a fresh command task");
+        command(server, "lodgen stop");
     }
     private static void require(boolean condition, String text) { if (!condition) throw new AssertionError(text); }
     private static void finish(MinecraftServer server) {

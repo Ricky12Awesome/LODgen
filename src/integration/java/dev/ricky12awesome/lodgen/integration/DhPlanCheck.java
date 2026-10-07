@@ -10,6 +10,7 @@ import com.seibel.distanthorizons.core.level.IDhServerLevel;
 import com.seibel.distanthorizons.core.pos.DhSectionPos;
 import com.seibel.distanthorizons.core.pos.blockPos.DhBlockPos2D;
 import dev.ricky12awesome.lodgen.LodgenConfig;
+import dev.ricky12awesome.lodgen.generation.GenerationArea;
 import dev.ricky12awesome.lodgen.generation.GenerationCenter;
 import dev.ricky12awesome.lodgen.minecraft.GenerationTasks;
 import dev.ricky12awesome.lodgen.minecraft.PersistenceRegistry;
@@ -46,6 +47,7 @@ public final class DhPlanCheck {
                 .thenCompose(ignored -> onServer(server, () -> {
                     require(!PersistenceRegistry.get(level).suppress(6000, -6000), "Surface Only with auto off generated native chunks");
                     configure(true, EDhApiGeneratorPlan.SURFACE_ONLY, GenerationCenter.CUSTOM, 5, 7000 * 16);
+                    seedAutomatic(server, level, 7000 * 16, -7000 * 16, 5);
                 })).thenCompose(ignored -> until(server, () -> automaticProgress(server).completedChunks() > 0))
                 .thenCompose(ignored -> onServer(server, () -> {
                     require(automaticProgress(server).completedChunks() < 100, "Fixture missed live disable window");
@@ -80,8 +82,11 @@ public final class DhPlanCheck {
                     requireOverrideBusy(generator, true, "API generator ignored DH Disabled");
                     require(server.getCommands().getDispatcher().execute("lodgen start overworld 131072 -131072 1c", server.createCommandSourceStack()) == 1,
                             "Commands must run with DH disabled");
-                })).thenCompose(ignored -> until(server, () -> GenerationTasks.get(server).status().contains("progress=4/4")))
-                .thenCompose(ignored -> onServer(server, () -> configure(true, EDhApiGeneratorPlan.SURFACE_THEN_CHUNKS, GenerationCenter.CUSTOM, 1, 9000 * 16)))
+                })).thenCompose(ignored -> until(server, () -> automaticProgress(server).state() == TaskProgress.State.COMPLETE))
+                .thenCompose(ignored -> onServer(server, () -> {
+                    configure(true, EDhApiGeneratorPlan.SURFACE_THEN_CHUNKS, GenerationCenter.CUSTOM, 1, 9000 * 16);
+                    seedAutomatic(server, level, 9000 * 16, -9000 * 16, 1);
+                }))
                 .thenCompose(ignored -> until(server, () -> automaticProgress(server).state() == TaskProgress.State.COMPLETE
                         && automaticArea(server).blockX() == 9000 * 16))
                 .thenCompose(ignored -> onServer(server, () -> {
@@ -168,6 +173,13 @@ public final class DhPlanCheck {
         catch (Exception error) { throw new RuntimeException(error); }
     }
     private static Object automaticJob(MinecraftServer server) { return field(GenerationTasks.get(server), "command"); }
+    /** Dedicated-server autostart is intentionally disabled; seed the same automatic job explicitly for DH integration coverage. */
+    private static void seedAutomatic(MinecraftServer server, ServerLevel level, int blockX, int blockZ, int radius) throws Exception {
+        var tasks = GenerationTasks.get(server);
+        var start = GenerationTasks.class.getDeclaredMethod("start", ServerLevel.class, GenerationArea.class, boolean.class);
+        start.setAccessible(true);
+        start.invoke(tasks, level, new GenerationArea(blockX, blockZ, radius, LodgenConfig.INSTANCE.savedChunkRadius()), true);
+    }
     private static TaskProgress automaticProgress(MinecraftServer server) {
         var job = automaticJob(server);
         return job == null ? new TaskProgress(new dev.ricky12awesome.lodgen.task.SquarePlan(new dev.ricky12awesome.lodgen.generation.GenerationArea(0, 0, 1, 0))) : (TaskProgress) field(job, "progress");

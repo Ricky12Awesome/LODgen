@@ -99,14 +99,14 @@ public final class VoxyWorldCheck {
                         var currentRecord = dev.ricky12awesome.lodgen.task.TaskStore.read(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("lodgen/task.toml"));
                         if (currentRecord.area().blockX() != player.blockPosition().getX() || currentRecord.area().savedRadius() != 0)
                             throw new AssertionError("current center or default saved radius incorrect");
-                        dispatcher.execute("lodgen continue", source); dispatcher.execute("lodgen stop", source);
+                        dispatcher.execute("lodgen resume", source); dispatcher.execute("lodgen stop", source);
                         dispatcher.execute("lodgen start overworld origin 1c", source);
                         dispatcher.execute("lodgen pause", source);
                         var originRecord = dev.ricky12awesome.lodgen.task.TaskStore.read(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("lodgen/task.toml"));
                         var spawn = dev.ricky12awesome.lodgen.minecraft.GenerationCenters.spawn(serverLevel);
                         if (originRecord.area().blockX() != spawn.getX() || originRecord.area().blockZ() != spawn.getZ())
                             throw new AssertionError("origin did not select world spawn");
-                        dispatcher.execute("lodgen continue", source); dispatcher.execute("lodgen stop", source);
+                        dispatcher.execute("lodgen resume", source); dispatcher.execute("lodgen stop", source);
                         dispatcher.execute("lodgen start overworld 65568 -65504 2c", source);
                     } catch (Exception error) { throw new RuntimeException(error); }
                 }, server);
@@ -124,7 +124,7 @@ public final class VoxyWorldCheck {
                 var message = actionBar.lodgen$actionBarMessage();
                 if (message != null && !message.getString().isEmpty()) throw new AssertionError("Zero throughput left action-bar text behind");
                 StartupCheck.report("PASS: Voxy without DH generated " + completedChunks
-                        + " custom-center task chunks (radius 1, saved radius 1) and 20 far command chunks across overworld/nether without a dimension visit; current/origin/start/pause/continue/stop commands passed; vanilla action-bar throughput appeared, cleared at zero, and preserved another message. Total target chunks <= 88.");
+                        + " custom-center task chunks (radius 1, saved radius 1) and 20 far command chunks across overworld/nether without a dimension visit; current/origin/start/pause/resume/stop commands passed; vanilla action-bar throughput appeared, cleared at zero, and preserved another message. Total target chunks <= 88.");
                 stage = 4; client.stop(); return;
             }
             if (!far.isDone() || !taskStatus.isDone() || !OverlayCheck.rendered) return;

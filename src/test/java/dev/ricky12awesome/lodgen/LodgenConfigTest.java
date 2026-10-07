@@ -14,11 +14,31 @@ class LodgenConfigTest {
     @Test void createsTomlAndRoundTripsAllSettings() throws Exception {
         Path file = directory.resolve("lodgen.toml");
         assertEquals(LodgenConfig.DEFAULTS, LodgenConfig.load(file));
-        var edited = new LodgenConfig(false, 5, 64, true, 250, dev.ricky12awesome.lodgen.generation.GenerationCenter.CUSTOM, 1234, -5678, 2, dev.ricky12awesome.lodgen.generation.CaveMode.EMPTY);
+        var edited = new LodgenConfig(false, false, 5, 64, true, 250, dev.ricky12awesome.lodgen.generation.GenerationCenter.CUSTOM, 1234, -5678, 2, dev.ricky12awesome.lodgen.generation.CaveMode.EMPTY);
         LodgenConfig.write(file, edited);
         assertEquals(edited, LodgenConfig.read(file));
         assertTrue(Files.readString(file).contains("cpuLoad = 5"));
+        assertTrue(Files.readString(file).contains("autoResume = false"));
         try (var paths = Files.list(directory)) { assertEquals(1, paths.count(), "No temporary file remains"); }
+    }
+
+    @Test void legacyConfigDefaultsAutoResumeAndDraftCanToggleIt() throws Exception {
+        Path file = directory.resolve("lodgen.toml");
+        Files.writeString(file, "enabled=false\ncpuLoad=4\n");
+        var config = LodgenConfig.read(file);
+        assertTrue(config.autoResume());
+        var option = LodgenConfig.SCHEMA.option("autoResume");
+        assertEquals(dev.ricky12awesome.lodgen.config.ConfigSchema.Control.TOGGLE, option.control());
+        assertEquals("lodgen.config.option.auto_resume.label", option.labelKey());
+        assertEquals("lodgen.config.option.auto_resume.tooltip", option.tooltipKey());
+        var draft = LodgenConfig.SCHEMA.draft(config);
+        draft.cycle(option);
+        var edited = draft.snapshot();
+        assertFalse(edited.autoResume());
+        assertFalse(edited.enabled());
+        assertEquals(4, edited.cpuLoad());
+        LodgenConfig.write(file, edited);
+        assertEquals(edited, LodgenConfig.read(file));
     }
 
     @Test void caveModesAreOptionalCaseInsensitiveAndRoundTrip() throws Exception {
@@ -50,7 +70,7 @@ class LodgenConfigTest {
 
     @Test void invalidTypesAndBoundsDisableWithoutRewritingTheBadFile() throws Exception {
         Path file = directory.resolve("lodgen.toml");
-        for (String text : new String[]{"enabled = 'false'", "showChunksPerSecond = 1", "generationCenter = 'invalid'", "generationCenter = true", "savedChunkRadius = -1", "centerX = 30000001", "chunksPerSecondUpdateIntervalMs = 0", "chunksPerSecondUpdateIntervalMs = 60001", "chunksPerSecondUpdateIntervalMs = 1.5", "cpuLoad = 0", "cpuLoad = 6", "cpuLoad = 1.5", "enabled = invalid", "generationDistance = -1", "generationDistance = 1.5", "generationDistance = 2147483648"}) {
+        for (String text : new String[]{"enabled = 'false'", "autoResume = 'false'", "autoResume = 1", "showChunksPerSecond = 1", "generationCenter = 'invalid'", "generationCenter = true", "savedChunkRadius = -1", "centerX = 30000001", "chunksPerSecondUpdateIntervalMs = 0", "chunksPerSecondUpdateIntervalMs = 60001", "chunksPerSecondUpdateIntervalMs = 1.5", "cpuLoad = 0", "cpuLoad = 6", "cpuLoad = 1.5", "enabled = invalid", "generationDistance = -1", "generationDistance = 1.5", "generationDistance = 2147483648"}) {
             Files.writeString(file, text);
             assertFalse(LodgenConfig.load(file).enabled(), text);
             assertEquals(text, Files.readString(file));

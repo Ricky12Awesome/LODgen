@@ -58,7 +58,7 @@ on 9950X (these are tested with full generation, may be faster if you skip caves
     - `current` current player position
   - `/lodgen stop` stop current task
   - `/lodgen pause` pause current task
-  - `/lodgen continue` continue current task
+  - `/lodgen resume` resume current task
   - `/lodgen status` status of current task
 
 ## TODO

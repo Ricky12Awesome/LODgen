@@ -33,9 +33,8 @@ public final class LodgenCommands {
                 .then(Commands.literal("origin").then(radius(GenerationCenter.ORIGIN)))
                 .then(Commands.literal("current").then(radius(GenerationCenter.CURRENT)))));
         root.then(control("stop", GenerationTasks::stop));
-        root.then(control("cancel", GenerationTasks::stop));
         root.then(control("pause", GenerationTasks::pause));
-        root.then(control("continue", GenerationTasks::resume));
+        root.then(control("resume", GenerationTasks::resume));
         root.then(control("status", tasks -> {}));
         dispatcher.register(root);
     }

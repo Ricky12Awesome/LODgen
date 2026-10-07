@@ -45,8 +45,11 @@ public final class GenerationTasks {
             var record = TaskStore.read(directory.resolve("task.toml"));
             if (record != null) {
                 var level = find(record.dimension());
-                if (level != null) command = job(level, record);
-                else LodgenConfig.LOGGER.error("Cannot resume LODgen: dimension {} is unavailable", record.dimension());
+                if (level != null) {
+                    command = job(level, record);
+                    if (!LodgenConfig.INSTANCE.autoResume() && command.progress.state() == TaskProgress.State.RUNNING)
+                        command.pause();
+                } else LodgenConfig.LOGGER.error("Cannot resume LODgen: dimension {} is unavailable", record.dimension());
             }
         } catch (Exception invalid) { LodgenConfig.LOGGER.error("Cannot restore LODgen task checkpoint", invalid); }
     }
@@ -175,7 +178,7 @@ public final class GenerationTasks {
      * are never replaced by login, config changes or completion callbacks.
      */
     private void autostart() {
-        if (closed || !GenerationSettings.policy().automatic()) return;
+        if (closed || server.isDedicatedServer() || !GenerationSettings.policy().automatic()) return;
         if (command != null) {
             var state = command.progress.state();
             if (state == TaskProgress.State.PAUSED || state == TaskProgress.State.STOPPED) return;
@@ -183,9 +186,8 @@ public final class GenerationTasks {
             if (command.settings.equals(AutomaticSettings.current(command.level))) return;
         }
         for (var level : server.getAllLevels()) {
-            if (level.players().isEmpty() && (!server.isDedicatedServer() || level != server.overworld())) continue;
+            if (level.players().isEmpty()) continue;
             var settings = LodgenConfig.INSTANCE;
-            if (settings.generationCenter() == GenerationCenter.CURRENT && level.players().isEmpty()) continue;
             boolean dh = RendererSinks.dhAvailable() && GenerationSettings.policy().automaticChunks();
             boolean voxy = RendererSinks.voxyAvailable() && !server.isDedicatedServer();
             if (!dh && !voxy && settings.savedChunkRadius() == 0) continue;
