@@ -25,8 +25,15 @@ public final class GenerationWorkers extends ThreadPoolExecutor {
     }
     @Override protected void beforeExecute(Thread thread, Runnable command) { started.set(System.nanoTime()); }
     @Override protected void afterExecute(Runnable command, Throwable error) {
-        double ratio = GenerationSettings.current().runRatio();
         long elapsed = System.nanoTime() - started.get(); started.remove();
-        if (ratio < 1 && !isShutdown()) LockSupport.parkNanos(Math.min(TimeUnit.MILLISECONDS.toNanos(50), (long) (elapsed * (1 / ratio - 1))));
+        long resting = System.nanoTime();
+        while (!isShutdown() && !Thread.currentThread().isInterrupted()) {
+            double ratio = GenerationSettings.current().runRatio();
+            long remaining = (long) (elapsed * (1 / ratio - 1)) - (System.nanoTime() - resting);
+            if (remaining <= 0) break;
+            // Keep the entire duty-cycle delay, while observing live settings
+            // and shutdown at least every 50ms.
+            LockSupport.parkNanos(Math.min(TimeUnit.MILLISECONDS.toNanos(50), remaining));
+        }
     }
 }

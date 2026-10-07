@@ -1,12 +1,18 @@
 package dev.ricky12awesome.lodgen;
 
 import dev.ricky12awesome.lodgen.generation.GenerationBudget;
+import dev.ricky12awesome.lodgen.generation.CpuThrottle;
 import dev.ricky12awesome.lodgen.generation.GenerationPolicy;
 import com.seibel.distanthorizons.core.config.Config;
 import com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiDistantGeneratorMode;
 
 /** LODgen owns CPU load; DH still controls its generation plan and mode. */
 public final class GenerationSettings {
+    // All dimensions and renderer pipelines spend the same process-wide budget.
+    public static final CpuThrottle CPU_THROTTLE = new CpuThrottle(Runtime.getRuntime().availableProcessors(),
+            () -> GenerationBudget.cpuFraction(LodgenConfig.INSTANCE.cpuLoad()),
+            () -> LodgenConfig.INSTANCE.cpuLoad() == 5 ? Integer.MAX_VALUE : current().batches());
+
     public static void initialize() {
         if (ModSupport.loaded("distanthorizons")) new DhCpuSettings().register();
     }

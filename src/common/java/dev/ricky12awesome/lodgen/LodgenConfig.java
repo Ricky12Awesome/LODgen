@@ -22,7 +22,7 @@ public record LodgenConfig(
                 comment = "Start a generation task on world load using the configured area. Pause, continue or stop it with /lodgen commands. DH’s Disabled plan blocks autostart. DH chunk phases still use LODgen when this is off; Surface Only adds chunks only when on. Explicit starts run independently.")
         boolean enabled,
         @ConfigOption(defaultValue = "3", order = 7, min = 1, max = 5, cycle = true,
-                comment = "CPU utilization: 1 minimal impact, 2 low impact, 3 balanced, 4 aggressive, 5 full power. Overrides DH’s thread count and runtime ratio through its API when installed. Concurrency and conversion workers adjust automatically; more RAM allows a larger native work window.")
+                comment = "CPU utilization targets: 1 minimum (1%, one native batch and conversion worker), 2 low (25%), 3 medium (50%), 4 high (75%), 5 maximum (unthrottled). Native admission accounts for Minecraft/C2ME CPU work. Overrides DH’s thread count and runtime ratio through its API when installed. Changes apply live; active native work drains first.")
         int cpuLoad,
         @ConfigOption(defaultValue = "0", order = 4, min = 0, max = GenerationArea.MAX_RADIUS, translationName = "lod_radius",
                 comment = "Radius in chunks for chunk-based LOD generation. 0 uses DH’s or Voxy’s distance. Positive values override it. Changes apply immediately; running work finishes.")

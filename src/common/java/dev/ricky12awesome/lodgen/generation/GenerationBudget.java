@@ -1,19 +1,28 @@
 package dev.ricky12awesome.lodgen.generation;
 
-/** DH's processor fractions, with a larger asynchronous native-generation window.
- * The heap bound leaves room for dependency chunks, renderer data and normal play.
- */
+/** Processor budgets shared by native admission and renderer conversion. */
 public record GenerationBudget(int threads, double runRatio, int batches) {
     public static GenerationBudget forCpuLoad(int load, int processors, long heapBytes) {
-        double fraction = switch (load) {
-            case 1 -> 0.10;
+        processors = Math.max(1, processors);
+        double fraction = cpuFraction(load);
+        int threads = load == 1 ? 1 : Math.max(1, (int) Math.ceil(processors * fraction));
+        // Compensate for rounding on CPUs whose thread count isn't divisible by four.
+        double ratio = Math.min(1, processors * fraction / threads);
+        var budget = of(threads, ratio, processors, heapBytes);
+        // Only Maximum keeps a large dependency window. Even a single native
+        // batch can fan out onto all of Minecraft/C2ME's generation workers.
+        return new GenerationBudget(threads, budget.runRatio(), load == 5 ? budget.batches() : Math.min(threads, budget.batches()));
+    }
+
+    public static double cpuFraction(int load) {
+        return switch (load) {
+            case 1 -> 0.01;
             case 2 -> 0.25;
             case 3 -> 0.50;
             case 4 -> 0.75;
             case 5 -> 1.00;
             default -> throw new IllegalArgumentException("CPU load must be 1–5");
         };
-        return of(Math.max(1, (int) Math.ceil(processors * fraction)), load == 1 ? 0.5 : 1.0, processors, heapBytes);
     }
 
     public static GenerationBudget of(int threads, double runRatio, int processors, long heapBytes) {
