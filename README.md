@@ -61,11 +61,17 @@ on 9950X (these are tested with full generation, may be faster if you skip caves
   - `/lodgen continue` continue current task
   - `/lodgen status` status of current task
 
-## Things to be fixed
-- text and descriptions (currently its ai slop)
-- better logo (I suck at making logos ar any art)
+## TODO
 - much more testing different use cases
   - like testing how it works on servers (if clients gets the LODs)
 
 ## AI
 This mod is mostly made using ai (gpt-6.1-sol)
+
+AI is only used for 
+- code
+- some testing (I mostly do manual testing in my own test instances)
+- run series of benchmarks
+
+AI is NOT used for
+- Art (logo is the only art in this project, and I made that myself)
