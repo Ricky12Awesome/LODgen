@@ -45,6 +45,7 @@ public final class StartupCheck {
                 "com.seibel.distanthorizons.core.generation.queues.WorldGenerationQueue$TaskDistancePair"
         };
         for (String target : targets) {
+            if (target.startsWith("com.ishland.c2me.") && !ModSupport.loaded("c2me")) continue;
             if (target.startsWith("com.seibel.") && !ModSupport.loaded("distanthorizons")) continue;
             Class.forName(target, false, StartupCheck.class.getClassLoader());
         }

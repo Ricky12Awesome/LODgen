@@ -20,6 +20,7 @@ parser.add_argument("--java", default="java", help="Java 21 for MC 1.21.1; Java 
 parser.add_argument("--run-name", help="Separate disposable benchmark directory name")
 parser.add_argument("--skip-build", action="store_true")
 parser.add_argument("--startup-only", action="store_true", help="Load the packaged startup fixture and stop before opening a world")
+parser.add_argument("--minimal", action="store_true", help="With --startup-only, install LODgen without DH, C2ME or Fabric API")
 parser.add_argument("--task-check", action="store_true", help="Commands, mixed saved/LOD radius, and auto resume using only a 5c radius")
 parser.add_argument("--autostart-check", action="store_true", help="Dedicated autostart blocking and auto-resume setting lifecycle using only a 5c radius")
 parser.add_argument("--shutdown-check", action="store_true", help="Quit with 64 native Empty LOD chunks still generating")
@@ -76,8 +77,12 @@ if args.dh_plan_check and (args.startup_only or args.task_check or args.distance
     parser.error("--dh-plan-check cannot be combined with startup-only, task-check, distance-check, benchmark or baseline")
 if args.distance_check and (args.startup_only or args.benchmark or args.baseline):
     parser.error("--distance-check cannot be combined with startup-only, benchmark or baseline")
-if args.startup_only and (args.opencl or args.chunky or args.benchmark or args.worldgen_instance or args.baseline or args.vanilla):
-    parser.error("--startup-only checks the default DH/C2ME stack without worldgen or benchmark options")
+if args.minimal and not args.startup_only:
+    parser.error("--minimal requires --startup-only")
+if args.minimal:
+    args.vanilla = True
+if args.startup_only and (args.opencl or args.chunky or args.benchmark or args.worldgen_instance or args.baseline):
+    parser.error("--startup-only cannot be combined with worldgen or benchmark options")
 if args.vanilla and args.opencl:
     parser.error("--opencl requires C2ME; omit --vanilla")
 if args.warmup_axis < 4 or args.warmup_axis % 4:
@@ -138,7 +143,8 @@ if len(artifacts) != 1:
 shutil.rmtree(run / "mods", ignore_errors=True)
 (run / "mods").mkdir()
 shutil.copyfile(artifacts[0], run / "mods" / "lodgen-test.jar")
-modrinth(target["dh"], "distanthorizons")
+if not args.minimal:
+    modrinth(target["dh"], "distanthorizons")
 if not args.vanilla:
     modrinth(target["c2meFabric" if args.loader == "fabric" else "c2meNeoForge"], "c2me")
 else:
@@ -190,8 +196,9 @@ if args.native_workers:
 heap = "-Xmx2G" if args.startup_only else "-Xmx" + args.heap
 if args.loader == "fabric":
     version = target["fabricApi"]
-    download(f"https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/{version}/fabric-api-{version}.jar",
-             run / "mods" / "fabric-api.jar")
+    if not args.minimal:
+        download(f"https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/{version}/fabric-api-{version}.jar",
+                 run / "mods" / "fabric-api.jar")
     download(f"https://meta.fabricmc.net/v2/versions/loader/{args.mc}/{target['fabricLoader']}/1.1.1/server/jar",
              run / "fabric-server-launch.jar")
     command = [args.java, heap, "-Dlodgen.test.chunky=" + str(args.chunky).lower(), "-Dlodgen.test.benchmark=" + str(args.benchmark), "-jar", "fabric-server-launch.jar", "nogui"]

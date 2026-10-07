@@ -15,7 +15,7 @@ public abstract class ServerStartupMixin {
         try {
             StartupCheck.checkTargets();
             if (((DedicatedServer) (Object) this).getAllLevels().iterator().hasNext()) throw new AssertionError("Server loaded a world level");
-            StartupCheck.report("PASS: dedicated server loaded LODgen, DH, C2ME and every generation mixin target; no world levels loaded.");
+            StartupCheck.report("PASS: dedicated server loaded LODgen and every installed generation mixin target; no world levels loaded.");
         } catch (Throwable failure) {
             StartupCheck.report("FAIL: " + failure);
             throw new RuntimeException("Server startup check failed", failure);

@@ -46,6 +46,8 @@ repositories {
 configurations {
     bundled
     implementation.extendsFrom(bundled)
+    modCompileOnly
+    compileOnly.extendsFrom(modCompileOnly)
     modRuntimeOnly
     runtimeOnly.extendsFrom(modRuntimeOnly)
     dhRuntime
@@ -59,17 +61,19 @@ unimined.minecraft {
     }
     if (platform == 'fabric') {
         fabric { loader target.fabricLoader }
-        if (mc == '1.21.1') {
-            mods {
-                remap(project.configurations.dhRuntime) {
-                    // DH also ships a NeoForge widener in the named namespace.
-                    catchAWNamespaceAssertion()
-                }
-                modImplementation {
+        mods {
+            remap([project.configurations.modCompileOnly, project.configurations.modRuntimeOnly]) {
+                if (mc == '1.21.1') {
                     mixinRemap {
                         // Fabric API's MixinExtras selectors must use Mojang names too.
                         enableMixinExtra()
                     }
+                }
+            }
+            if (mc == '1.21.1') {
+                remap(project.configurations.dhRuntime) {
+                    // DH also ships a NeoForge widener in the named namespace.
+                    catchAWNamespaceAssertion()
                 }
             }
         }
@@ -100,8 +104,12 @@ if (platform == 'fabric') {
 
 dependencies {
     if (platform == 'fabric') {
-        modImplementation("maven.modrinth:modmenu:${target.modMenu}") { transitive = false }
-        modImplementation "net.fabricmc.fabric-api:fabric-api:${target.fabricApi}"
+        // Only Mod Menu loads its config entrypoint. Keep its API out of implementation.
+        modCompileOnly("maven.modrinth:modmenu:${target.modMenu}") { transitive = false }
+        modRuntimeOnly("maven.modrinth:modmenu:${target.modMenu}") { transitive = false }
+        // The dev mods use Fabric API; production LODgen only uses Fabric Loader.
+        modRuntimeOnly "net.fabricmc.fabric-api:fabric-api:${target.fabricApi}"
+        if (integration) modCompileOnly "net.fabricmc.fabric-api:fabric-api:${target.fabricApi}"
     }
     bundled 'com.electronwill.night-config:toml:3.9.0'
     compileOnly "maven.modrinth:distanthorizons:${target.dh}"

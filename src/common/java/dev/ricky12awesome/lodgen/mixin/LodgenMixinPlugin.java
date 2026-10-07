@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 
-/** Keep absent renderers out of Minecraft's transformation and class loading. */
+/** Keep absent optional mods out of Minecraft's transformation and class loading. */
 public final class LodgenMixinPlugin implements IMixinConfigPlugin {
     private boolean voxy;
 
@@ -27,6 +27,7 @@ public final class LodgenMixinPlugin implements IMixinConfigPlugin {
         String name = mixinClassName.substring(mixinClassName.lastIndexOf('.') + 1);
         if (name.startsWith("Dh")) return ModSupport.loaded("distanthorizons");
         if (name.startsWith("Voxy")) return voxy;
+        if (name.startsWith("C2me")) return ModSupport.loaded("c2me");
         return true;
     }
     @Override public String getRefMapperConfig() { return null; }
