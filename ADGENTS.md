@@ -4,7 +4,8 @@
 - Test using smaller values (like 64c)
   - only use bigger values unless specifically ask or figuring out performance issues
 - Avoid any test that needs to launch a window
-- if you need to edit `README.md`, edit `README.aislop.md` instead
+- if you need to edit `README.md`, suggest the user what changes to make
   - unless explicitly ask to edit `README.md`
-- if you need to add or change anything in `docs` do it in `docs/aislop` instead
-  - unless explicitly ask to use `docs/`
+- do not edit language files, suggest the user to make changes
+- don't make unneeded docs or validations files
+  - unless explicitly ask to
