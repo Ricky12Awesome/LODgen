@@ -26,6 +26,7 @@ public final class ChunkGenerationPipeline implements AutoCloseable {
     private final BatchGate gate;
     private final Consumer<LodgenConfig> listener;
     private final CaveMode fixedMode;
+    private volatile boolean closed;
 
     public ChunkGenerationPipeline(Object level) {
         this(level, null);
@@ -49,7 +50,7 @@ public final class ChunkGenerationPipeline implements AutoCloseable {
                                             Function<NormalChunkBackend.Batch, CompletableFuture<Void>> convert) {
         refresh();
         var mode = fixedMode == null ? LodgenConfig.INSTANCE.caveMode() : fixedMode;
-        return gate.submit(executor, () -> {
+        return gate.submit(executor, () -> GenerationSettings.CPU_THROTTLE.submit(executor, () -> {
             if (mode == CaveMode.GENERATE)
                 return backend.request(x, z, width, height, area).thenCompose(batch -> convertAndRelease(batch, convert));
             return requests(x, z, width, height, area, mode).thenCompose(requests -> {
@@ -64,7 +65,7 @@ public final class ChunkGenerationPipeline implements AutoCloseable {
                 }
                 return CompletableFuture.allOf(conversions.toArray(CompletableFuture[]::new));
             });
-        });
+        }, () -> closed));
     }
 
     private CompletableFuture<List<CompletableFuture<NormalChunkBackend.Batch>>> requests(int x, int z, int width, int height,
@@ -98,7 +99,15 @@ public final class ChunkGenerationPipeline implements AutoCloseable {
         })).thenCompose(Function.identity());
     }
 
-    private void refresh() { gate.reconfigure(GenerationSettings.current().batches(), 0); }
+    private void refresh() {
+        gate.reconfigure(GenerationSettings.current().batches(), 0);
+        GenerationSettings.CPU_THROTTLE.refresh();
+    }
     public boolean isBusy() { refresh(); return gate.isBusy(); }
-    @Override public void close() { LodgenConfig.stopListening(listener); gate.close(); }
+    @Override public void close() {
+        closed = true;
+        LodgenConfig.stopListening(listener);
+        gate.close();
+        GenerationSettings.CPU_THROTTLE.refresh();
+    }
 }

@@ -34,17 +34,19 @@ showChunksPerSecond = false
 chunksPerSecondUpdateIntervalMs = 1000
 ```
 
-`cpuLoad` controls LODgen utilization for both DH and Voxy. With DH installed, LODgen overrides DH’s thread count and runtime ratio through the DH API. DH’s own **CPU Load** row is API-locked and its tooltip identifies **LODgen** as the controlling mod. LODgen’s control stays enabled and changes apply live, including after DH finishes initializing. DH’s saved thread settings remain intact. The five levels match DH’s processor scaling:
+`cpuLoad` controls LODgen utilization for both DH and Voxy. With DH installed, LODgen overrides DH’s thread count and runtime ratio through the DH API. DH’s own **CPU Load** row is API-locked and its tooltip identifies **LODgen** as the controlling mod. LODgen’s control stays enabled and changes apply live, including after DH finishes initializing. DH’s saved thread settings remain intact.
 
-| Value | CPU load | Conversion workers | Duty ratio |
+| Value | CPU load | CPU budget | Conversion workers |
 | --- | --- | --- | --- |
-| 1 | Minimal impact | 10% of available processors, rounded up | 50% |
-| 2 | Low impact | 25% | 100% |
-| 3 | Balanced (default) | 50% | 100% |
-| 4 | Aggressive | 75% | 100% |
-| 5 | Full power | 100% | 100% |
+| 1 | Minimum | 1% target, at most one native batch | One |
+| 2 | Low | 25% | 25% of available processors, rounded up |
+| 3 | Medium (default) | 50% | 50%, rounded up |
+| 4 | High | 75% | 75%, rounded up |
+| 5 | Maximum | Unthrottled | All available processors |
 
-Native concurrency and memory use adjust automatically; there are no batch, waiting-queue or spatial-grouping controls. Full power on a 32-thread CPU with a 32 GB heap permits 256 concurrent 4×4 requests (4,096 target chunks plus dependencies). Smaller heaps reduce that window. Automatic and command tasks complete compact 32×32 patches before moving outward, keeping native dependencies useful as the radius grows. Requests refill on completion, while conversion, ticket cleanup and normal play retain their own lifetimes. These settings control LODgen’s work and DH’s shared worker settings; C2ME and Voxy storage services retain their own worker settings. They are utilization presets, rather than strict limits on overall process CPU usage.
+Native admission shares one CPU budget across dimensions and renderer pipelines. It measures process CPU time while native batches, conversion and ticket cleanup are active, then defers new batches asynchronously when the budget is exceeded. This accounts for work running on Minecraft/C2ME workers as well as LODgen’s conversion threads. Conversion duty ratios compensate for rounding on small or odd CPU counts. Minimum keeps one native batch and one conversion worker; the middle levels bound concurrent native batches by their worker count and available heap. Active batches finish when the setting decreases, so short CPU spikes can still occur. Gameplay, rendering and unrelated generation add their own CPU usage.
+
+Maximum retains the large heap-bounded native window and immediate refill. On a 32-thread CPU with a 32 GB heap it permits 256 concurrent 4×4 requests (4,096 target chunks plus dependencies). Smaller heaps reduce that window. Automatic and command tasks complete compact 32×32 patches before moving outward, keeping native dependencies useful as the radius grows.
 
 For maximum OpenCL throughput, use Java 25+ with a sufficiently large heap, `-XX:+UseZGC -XX:+UseCompactObjectHeaders`, ScalableLux, Lithium, FerriteCore, Structure Layout Optimizer and zFastNoise. Set C2ME’s `globalExecutorParallelism` to the available thread count or slightly below; its default can be lower. LODgen does not rewrite C2ME’s configuration or alter the scheduler used by ordinary player and Chunky requests. More RAM keeps useful native dependencies alive; allocating all RAM does not necessarily improve throughput.
 

@@ -58,7 +58,9 @@ class DhCpuSettingsTest {
         DhApi.Delayed.configs = DhApiConfig.INSTANCE;
         ApiEventInjector.INSTANCE.fireAllEvents(DhApiAfterDhInitEvent.class, null);
         assertOverride();
-        assertEquals(0.5, Config.Common.MultiThreading.threadRunTimeRatio.get());
+        assertEquals(1, Config.Common.MultiThreading.numberOfThreads.get());
+        assertEquals(Math.min(1, 0.01 * Runtime.getRuntime().availableProcessors()),
+                Config.Common.MultiThreading.threadRunTimeRatio.get());
 
         for (int load = 2; load <= 5; load++) {
             LodgenConfig.apply(LodgenConfig.SCHEMA.with(original, "cpuLoad", load));
