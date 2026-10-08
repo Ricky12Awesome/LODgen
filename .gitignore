@@ -1,6 +1,7 @@
 .gradle/
 .unimined/
 build/
+/bin/
 dist/
 run/
 *.log
