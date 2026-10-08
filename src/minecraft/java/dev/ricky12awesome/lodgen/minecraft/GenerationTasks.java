@@ -66,7 +66,7 @@ public final class GenerationTasks {
         if (command != null && !command.record.automatic()
                 && (command.progress.state() == TaskProgress.State.RUNNING || command.progress.state() == TaskProgress.State.PAUSED))
             throw new IllegalStateException("lodgen.command.error.task_already_exists");
-        boolean dh = RendererSinks.dhAvailable(), voxy = RendererSinks.voxyAvailable() && !server.isDedicatedServer();
+        boolean dh = RendererSinks.dhAvailable(), voxy = RendererSinks.voxyAvailable(level);
         if (area.radius() > area.savedRadius() && !dh && !voxy)
             throw new IllegalStateException("lodgen.command.error.renderer_required");
         if (command != null) command.close();

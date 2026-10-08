@@ -22,7 +22,7 @@ record AutomaticSettings(GenerationCenter center, int x, int z, int radius, int 
         var config = LodgenConfig.INSTANCE;
         var center = GenerationCenters.resolve(level, config, 0, 0);
         boolean lods = RendererSinks.dhAvailable() && GenerationSettings.policy().features()
-                || RendererSinks.voxyAvailable() && !level.getServer().isDedicatedServer();
+                || RendererSinks.voxyAvailable(level);
         int radius = lods ? displayRadius(level, config) : config.savedChunkRadius();
         return new AutomaticSettings(config.generationCenter(), center.getX(), center.getZ(), radius, config.savedChunkRadius(), config.caveMode());
     }

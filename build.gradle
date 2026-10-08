@@ -117,6 +117,7 @@ dependencies {
     testImplementation dependencies.platform('org.junit:junit-bom:5.11.4')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testImplementation 'org.ow2.asm:asm-tree:9.9.1'
+    testImplementation 'org.xerial:sqlite-jdbc:3.49.1.0'
     testImplementation "maven.modrinth:distanthorizons:${target.dh}"
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.9'
@@ -336,6 +337,7 @@ modrinth {
             optional.version voxyTarget.voxy
             if (voxyTarget.roxy) optional.version voxyTarget.roxy
         }
+        if (mc == '1.21.1' && platform == 'neoforge') optional.version 'ysVSK5wH'
     }
 }
 tasks.register('publishModrinth', TaskModrinthUpload) {
