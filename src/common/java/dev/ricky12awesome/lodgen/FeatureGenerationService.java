@@ -5,7 +5,9 @@ import com.seibel.distanthorizons.core.dataObjects.fullData.sources.FullDataSour
 import com.seibel.distanthorizons.core.wrapperInterfaces.world.IServerLevelWrapper;
 import dev.ricky12awesome.lodgen.minecraft.ChunkGenerationPipeline;
 import dev.ricky12awesome.lodgen.minecraft.DhChunkConversion;
+import dev.ricky12awesome.lodgen.minecraft.RendererSinks;
 import dev.ricky12awesome.lodgen.util.Futures;
+import net.minecraft.server.level.ServerLevel;
 
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -32,7 +34,7 @@ public final class FeatureGenerationService implements AutoCloseable {
             return CompletableFuture.failedFuture(new IllegalArgumentException("Expected block-detail DH chunk request"));
         }
         return pipeline.generate(minX, minZ, width, dhExecutor, batch -> {
-            return Futures.attempt(() -> CompletableFuture.runAsync(() -> {
+            var dh = Futures.attempt(() -> CompletableFuture.runAsync(() -> {
                 var converter = new DhChunkConversion(level, level.getWrappedMcObject());
                 var destination = (FullDataSourceV2) pooled;
                 for (var nativeChunk : batch.chunks) {
@@ -44,6 +46,11 @@ public final class FeatureGenerationService implements AutoCloseable {
                 destination.recordLastSeen();
                 consumer.accept(destination);
             }, dhExecutor));
+            var world = (ServerLevel) level.getWrappedMcObject();
+            var vss = world.getServer().isDedicatedServer() && RendererSinks.ready(world, false, true)
+                    ? RendererSinks.convert(world, batch.sourceLevel(), batch.chunks, dhExecutor, false, true)
+                    : CompletableFuture.<Void>completedFuture(null);
+            return CompletableFuture.allOf(dh, vss);
         });
     }
 

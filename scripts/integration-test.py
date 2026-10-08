@@ -56,14 +56,17 @@ parser.add_argument("--jfr", action="store_true", help="Record the disposable se
 parser.add_argument("--trace-ownership", action="store_true", help="Log the callers of transient chunk adoption")
 parser.add_argument("--vanilla", action="store_true", help="Test without C2ME")
 parser.add_argument("--baseline", action="store_true", help="Run the same check with DH's original FEATURES generator")
-parser.add_argument("--vss-check", action="store_true", help="Dedicated-server Voxy Server Side generation gate and transient LOD output check (1.21.1 NeoForge)")
+parser.add_argument("--vss-check", action="store_true", help="Dedicated-server native VSS generation and LOD output check (1.21.1 NeoForge)")
+parser.add_argument("--vss-with-dh", action="store_true", help="Combine the native VSS request check with real DH output (requires --vss-check)")
 parser.add_argument("--vss-generation", action=argparse.BooleanOptionalAction, default=True,
-                    help="Initial VSS generation.enabled setting for --vss-check (default: true; use --no-vss-generation to test false)")
+                    help="VSS generation.enabled value in the fixture config (both values must still generate)")
 parser.add_argument("--vss-store", action=argparse.BooleanOptionalAction, default=True,
-                    help="Enable VSS's native LOD store for --vss-check (default: true; use --no-vss-store to test LODgen sidecar alone)")
+                    help="Enable VSS's native SQLite LOD store for --vss-check")
 args = parser.parse_args()
 if args.vss_check and (args.mc != "1.21.1" or args.loader != "neoforge"):
     parser.error("--vss-check requires --mc 1.21.1 --loader neoforge")
+if args.vss_with_dh and not args.vss_check:
+    parser.error("--vss-with-dh requires --vss-check")
 if args.vss_check and (args.startup_only or args.task_check or args.autostart_check or args.shutdown_check
                        or args.dh_plan_check or args.distance_check or args.cave_check or args.benchmark
                        or args.baseline or args.opencl or args.chunky or args.worldgen_instance
@@ -120,6 +123,8 @@ run.mkdir(parents=True, exist_ok=True)
 world = run / "world"
 if world.exists():
     shutil.rmtree(world)
+vss_witness = run / "vss-native-witness.bin"
+vss_witness.unlink(missing_ok=True)
 report = run / ("startup-result.txt" if args.startup_only else "integration-result.txt")
 report.unlink(missing_ok=True)
 (run / "benchmark-result.json").unlink(missing_ok=True)
@@ -160,6 +165,8 @@ shutil.rmtree(run / "mods", ignore_errors=True)
 shutil.copyfile(artifacts[0], run / "mods" / "lodgen-test.jar")
 if args.vss_check:
     modrinth("ysVSK5wH", "lss")
+    if args.vss_with_dh:
+        modrinth(target["dh"], "distanthorizons")
 elif not args.minimal:
     modrinth(target["dh"], "distanthorizons")
 if not args.vss_check and not args.vanilla:
@@ -211,14 +218,22 @@ if args.native_workers:
 vss_config = run / "config" / "vss-server-config.yaml"
 vss_config_before = None
 if args.vss_check:
-    # Keep the VSS service on while pinning generation and native-store modes.
+    # Pin deliberately restrictive generation settings; LODgen must own admission.
     # The server check and post-run byte comparison catch accidental config edits.
     vss_config.write_text("config_version: 1\nservice:\n  enabled: true\ngeneration:\n  enabled: "
                           + ("true" if args.vss_generation else "false")
+                          + "\n  timeout_ticks: 1"
                           + "\n  concurrency:\n    global: 1\n    per_player: 1\nstorage:\n  lod_store:\n    enabled: "
                           + ("true" if args.vss_store else "false")
                           + "\n    backfill:\n      enabled: false\n")
     vss_config_before = vss_config.read_bytes()
+    regions = world / "region"
+    regions.mkdir(parents=True, exist_ok=True)
+    absent_region = regions / "r.127.-129.mca"
+    empty_region = regions / "r.128.-128.mca"
+    if absent_region.exists():
+        raise SystemExit(f"VSS fixture expected an absent target region file: {absent_region}")
+    empty_region.write_bytes(bytes(8192))
 (run / "server.properties").write_text("online-mode=false\nserver-port=0\nlevel-seed=123456789\n"
                                        "view-distance=2\nsimulation-distance=2\nmax-tick-time=180000\n")
 heap = "-Xmx2G" if args.startup_only else "-Xmx" + args.heap
@@ -264,6 +279,8 @@ benchmark_options = [f"-Dlodgen.test.warmupAxis={args.warmup_axis}", f"-Dlodgen.
                      f"-Dlodgen.test.storeLods={str(args.store_lods).lower()}"]
 benchmark_options.append(f"-Dlodgen.test.vss={str(args.vss_check).lower()}")
 benchmark_options.append(f"-Dlodgen.test.vssGeneration={str(args.vss_generation).lower()}")
+benchmark_options.append(f"-Dlodgen.test.vssStore={str(args.vss_store).lower()}")
+benchmark_options.append(f"-Dlodgen.test.vssDh={str(args.vss_with_dh).lower()}")
 benchmark_options += [f"-Dlodgen.test.originalPredicates={str(args.original_predicates).lower()}",
                       f"-Dlodgen.test.caves={str(args.cave_check).lower()}",
                       f"-Dlodgen.test.originalOreAllocations={str(args.original_ore_allocations).lower()}",
@@ -292,13 +309,8 @@ if args.vss_check:
     if vss_config.read_bytes() != vss_config_before:
         raise SystemExit("VSS config bytes changed during the LODgen integration check")
     first_log_text = log.read_text()
-    warning = json.loads((ROOT / "src/common/resources/assets/lodgen/lang/en_us.json").read_text())["lodgen.warning.vss_generation_disabled"]
-    plain_warning = re.sub(r"§[0-9a-fk-or]", "", warning, flags=re.IGNORECASE)
-    occurrences = first_log_text.count(plain_warning)
-    if occurrences != (1 if args.vss_generation else 0):
-        raise SystemExit(f"VSS warning count was {occurrences}; expected {1 if args.vss_generation else 0}\n{first_log_text[-6000:]}")
-    if not args.vss_generation and "LODgen has disabled VSS generation" in first_log_text:
-        raise SystemExit("VSS warning appeared while generation.enabled was false")
+    if "LODgen has disabled VSS generation" in first_log_text:
+        raise SystemExit("LODgen emitted the removed VSS-generation warning")
     print(report.read_text().strip())
     reload_report = run / "integration-reload-result.txt"
     reload_report.unlink(missing_ok=True)
@@ -314,17 +326,22 @@ if args.vss_check:
     if vss_config.read_bytes() != vss_config_before:
         raise SystemExit("VSS config bytes changed during the LODgen reload check")
     reload_text = reload_log.read_text()
-    occurrences = reload_text.count(plain_warning)
-    if occurrences != (1 if args.vss_generation else 0):
-        raise SystemExit(f"VSS reload warning count was {occurrences}; expected {1 if args.vss_generation else 0}\n{reload_text[-6000:]}")
-    if not args.vss_generation and "LODgen has disabled VSS generation" in reload_text:
-        raise SystemExit("VSS warning appeared during reload while generation.enabled was false")
+    if "LODgen has disabled VSS generation" in reload_text:
+        raise SystemExit("LODgen emitted the removed VSS-generation warning during reload")
+    target_regions = {"r.127.-129.mca", "r.128.-129.mca", "r.127.-128.mca", "r.128.-128.mca"}
     for dimension_root in (world, world / "DIM-1"):
-        for folder in ("region", "poi", "entities"):
+        for folder in ("poi", "entities"):
             for region in (dimension_root / folder).glob("r.*.*.mca"):
-                _, rx, rz, _ = region.name.split(".")
-                if abs(int(rx) - 128) <= 1 and abs(int(rz) + 128) <= 1:
+                if region.name in target_regions:
                     raise SystemExit(f"VSS LOD-only area wrote native {folder} data: {region}")
+        for region in (dimension_root / "region").glob("r.*.*.mca"):
+            if region.name not in target_regions:
+                continue
+            contents = region.read_bytes()
+            if len(contents) > 8192 or any(contents[:4096]):
+                raise SystemExit(f"VSS LOD-only area saved a native FULL chunk: {region}")
+    if not empty_region.exists() or len(empty_region.read_bytes()) != 8192 or any(empty_region.read_bytes()):
+        raise SystemExit("VSS fixture's pre-existing empty target MCA region was not preserved")
     print(report.read_text().strip())
     raise SystemExit(0)
 if args.autostart_check:

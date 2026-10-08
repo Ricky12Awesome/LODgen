@@ -1,99 +1,68 @@
 package dev.ricky12awesome.lodgen.voxy;
 
-import dev.ricky12awesome.lodgen.minecraft.RegionReadAccess;
 import org.junit.jupiter.api.Test;
-import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.*;
-
-import java.lang.reflect.Proxy;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicInteger;
-
+import java.util.ArrayList;
 import static org.junit.jupiter.api.Assertions.*;
 
 class VssGenerationFixTest {
-    private static final String ACCESSOR = "dev/vox/lss/mixin/AccessorRegionFileStorage";
-
-    @Test void missesSkipAccessorAndSavedRegionsRetainRawLookupWithDifferentFutureSlots() throws Exception {
-        for (boolean wideArgument : new boolean[]{false, true}) {
-            var loader = new FixtureLoader();
-            var api = new ClassWriter(0);
-            api.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT | Opcodes.ACC_INTERFACE,
-                    ACCESSOR, null, "java/lang/Object", null);
-            api.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT, "lss$getRegionFile",
-                    "(Ljava/lang/Object;)Ljava/lang/Object;", null, null).visitEnd();
-            api.visitEnd();
-            Class<?> accessor = loader.define(api.toByteArray());
-            var node = task(wideArgument);
-            VssGenerationFix.guardMissingRawRegions(node);
-            // Deliberately retain emitted frames: verify the transformer does not
-            // depend on an eventual COMPUTE_FRAMES pass by the mixin runtime.
-            var writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
-            node.accept(writer);
-            Class<?> task = loader.define(writer.toByteArray());
-            var reads = new AtomicInteger();
-            boolean[] missing = {true};
-            Object storage = Proxy.newProxyInstance(loader, new Class<?>[]{accessor, RegionReadAccess.class},
-                    (proxy, method, arguments) -> {
-                        if (method.getName().equals("lodgen$missingRegion")) return missing[0];
-                        reads.incrementAndGet();
-                        return new Object();
-                    });
-            var parameterTypes = wideArgument
-                    ? new Class<?>[]{long.class, Object.class, Object.class, CompletableFuture.class}
-                    : new Class<?>[]{Object.class, Object.class, CompletableFuture.class};
-            var method = task.getMethod("fetch", parameterTypes);
-            for (boolean absent : new boolean[]{true, false}) {
-                missing[0] = absent;
-                var future = new CompletableFuture<>();
-                Object[] arguments = wideArgument
-                        ? new Object[]{3L, storage, new Object(), future}
-                        : new Object[]{storage, new Object(), future};
-                method.invoke(null, arguments);
-                assertEquals(Optional.empty(), future.join());
-                assertEquals(absent ? 0 : 1, reads.get());
-            }
+    @Test void nativeHooksDeriveMappedTicketAndChunkTypesForBothTicketApis() {
+        for (boolean legacy : new boolean[]{true, false}) {
+            var node = fixture(legacy);
+            VssGenerationFix.nativeGeneration(node);
+            var calls = new ArrayList<MethodInsnNode>();
+            for (var method : node.methods) for (var instruction : method.instructions.toArray())
+                if (instruction instanceof MethodInsnNode call) calls.add(call);
+            assertTrue(calls.stream().noneMatch(call -> call.owner.equals("mapped/Cache")));
+            assertTrue(calls.stream().anyMatch(call -> call.name.equals(legacy ? "add4" : "add3")
+                    && call.desc.endsWith("Ljava/lang/Object;)V")));
+            assertEquals(3, calls.stream().filter(call -> call.name.equals(legacy ? "remove4" : "remove3")).count());
+            assertTrue(calls.stream().anyMatch(call -> call.name.equals("beforeTick")));
+            assertTrue(calls.stream().anyMatch(call -> call.name.equals("serialize") && call.getOpcode() == Opcodes.INVOKESTATIC));
+            assertTrue(java.util.Arrays.stream(node.methods.get(1).instructions.toArray())
+                    .anyMatch(instruction -> instruction instanceof TypeInsnNode cast && cast.desc.equals("mapped/FullChunk")));
         }
     }
-
-    @Test void unsupportedTaskShapeFailsInsteadOfInstallingAnUnsafeGuard() {
-        var node = task(false);
-        node.methods.getFirst().desc = "(Ljava/lang/Object;Ljava/lang/Object;)V";
-        assertThrows(IllegalStateException.class, () -> VssGenerationFix.guardMissingRawRegions(node));
-    }
-
-    private static ClassNode task(boolean wideArgument) {
+    @Test void runtimeReloadOverridesDoNotChangeConfigurationSerializationReads() {
         var node = new ClassNode();
-        node.version = Opcodes.V17;
-        node.access = Opcodes.ACC_PUBLIC;
-        node.name = "fixture/RawRegionTask";
-        node.superName = "java/lang/Object";
-        String descriptor = wideArgument
-                ? "(JLjava/lang/Object;Ljava/lang/Object;Ljava/util/concurrent/CompletableFuture;)V"
-                : "(Ljava/lang/Object;Ljava/lang/Object;Ljava/util/concurrent/CompletableFuture;)V";
-        var method = new MethodNode(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "fetch", descriptor, null, null);
-        int storage = wideArgument ? 2 : 0;
-        method.instructions.add(new VarInsnNode(Opcodes.ALOAD, storage));
-        method.instructions.add(new TypeInsnNode(Opcodes.CHECKCAST, ACCESSOR));
-        method.instructions.add(new VarInsnNode(Opcodes.ALOAD, storage + 1));
-        method.instructions.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, ACCESSOR, "lss$getRegionFile",
-                "(Ljava/lang/Object;)Ljava/lang/Object;", true));
-        method.instructions.add(new InsnNode(Opcodes.POP));
-        method.instructions.add(new VarInsnNode(Opcodes.ALOAD, storage + 2));
-        method.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "java/util/Optional", "empty",
-                "()Ljava/util/Optional;", false));
-        method.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/util/concurrent/CompletableFuture",
-                "complete", "(Ljava/lang/Object;)Z", false));
-        method.instructions.add(new InsnNode(Opcodes.POP));
-        method.instructions.add(new InsnNode(Opcodes.RETURN));
-        node.methods.add(method);
-        return node;
+        for (String name : new String[]{"reconcileSettings", "lambda$reconcileSettings$3", "values", "save"}) {
+            var method = new MethodNode(Opcodes.ACC_PUBLIC, name, "()V", null, null);
+            method.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,
+                    "dev/vox/lss/common/config/ServerSettings$Generation", "enabled", "()Z", false));
+            method.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,
+                    "dev/vox/lss/common/config/ServerSettings$Generation", "timeoutTicks", "()I", false));
+            method.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,
+                    "dev/vox/lss/common/config/ServerSettings$GenerationConcurrency", "perPlayer", "()I", false));
+            node.methods.add(method);
+        }
+        VssGenerationFix.nativeRuntimePolicy(node);
+        for (var method : node.methods) {
+            boolean runtime = method.name.contains("reconcileSettings");
+            long calls = java.util.Arrays.stream(method.instructions.toArray()).filter(instruction -> instruction instanceof MethodInsnNode).count();
+            assertEquals(runtime ? 0 : 3, calls);
+            if (runtime) assertTrue(java.util.Arrays.stream(method.instructions.toArray())
+                    .anyMatch(instruction -> instruction instanceof LdcInsnNode constant && constant.cst.equals(Integer.MAX_VALUE)));
+        }
     }
-
-    private static class FixtureLoader extends ClassLoader {
-        FixtureLoader() { super(VssGenerationFixTest.class.getClassLoader()); }
-        Class<?> define(byte[] bytes) { return defineClass(null, bytes, 0, bytes.length); }
+    @Test void unsupportedNativeServiceFailsClosed() {
+        assertThrows(IllegalStateException.class, () -> VssGenerationFix.nativeGeneration(new ClassNode()));
+    }
+    private static ClassNode fixture(boolean legacy) {
+        var node = new ClassNode(); node.name = "fixture/NativeService";
+        var submit = new MethodNode(Opcodes.ACC_PUBLIC, "submitGeneration", "()V", null, null);
+        var tick = new MethodNode(Opcodes.ACC_PUBLIC, "tick", "()Ljava/util/List;", null, null);
+        var shutdown = new MethodNode(Opcodes.ACC_PUBLIC, "shutdown", "()V", null, null);
+        var deferred = new MethodNode(Opcodes.ACC_STATIC, "lambda$removePlayer$2", "()V", null, null);
+        node.methods.add(submit); node.methods.add(tick); node.methods.add(shutdown); node.methods.add(deferred);
+        String ticket = "(Lmapped/Ticket;Lmapped/Position;I" + (legacy ? "Ljava/lang/Object;" : "") + ")V";
+        submit.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "mapped/Cache", legacy ? "addRegionTicket" : "addTicketWithRadius", ticket, false));
+        tick.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "mapped/Cache", "getChunkNow", "(II)Lmapped/FullChunk;", false));
+        tick.instructions.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE,
+                "dev/vox/lss/networking/server/ChunkGenerationService$ColumnSerializer", "serialize",
+                "(Lmapped/World;Lmapped/FullChunk;II)Lnative/Column;", true));
+        for (var method : new MethodNode[]{tick, shutdown, deferred})
+            method.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "mapped/Cache", legacy ? "removeRegionTicket" : "removeTicketWithRadius", ticket, false));
+        return node;
     }
 }

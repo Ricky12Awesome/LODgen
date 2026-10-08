@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import java.nio.file.Path;
 
 @Mixin(RegionFileStorage.class)
-public abstract class RegionStorageMixin implements dev.ricky12awesome.lodgen.minecraft.RegionReadAccess {
+public abstract class RegionStorageMixin {
     @Shadow @Final private Path folder;
     @Shadow @Final private RegionStorageInfo info;
 
@@ -27,10 +27,6 @@ public abstract class RegionStorageMixin implements dev.ricky12awesome.lodgen.mi
     private boolean lodgen$missing(ChunkPos pos) {
         return PersistenceRegistry.get(info) != null
                 && !ChunkPersistence.regionExists(folder, PersistenceRegistry.x(pos), PersistenceRegistry.z(pos));
-    }
-
-    @Override public boolean lodgen$missingRegion(Object position) {
-        return lodgen$missing((ChunkPos) position);
     }
 
     @Inject(method = "read", at = @At("HEAD"), cancellable = true)

@@ -35,10 +35,10 @@
     "LevelCloseMixin",
     "CommandsMixin",
     "VssGenerationMixin",
-    "VssStoreMixin",
+    "VssNativeGenerationMixin",
+    "VssServiceMixin",
+    "VssCacheMixin",
     "VssSaveMixin",
-    "VssRegionMixin",
-    "VssReadMixin",
     "VssSerializationMixin",
     "ServerTasksMixin"
   ],

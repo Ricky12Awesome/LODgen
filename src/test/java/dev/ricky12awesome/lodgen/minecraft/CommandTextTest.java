@@ -93,16 +93,6 @@ class CommandTextTest {
         assertEquals("LODgen failed: IllegalStateException", CommandText.plain(CommandText.error(new IllegalStateException())));
     }
 
-    @Test void vssGenerationWarningKeepsItsColorsAndServerPlainText() {
-        var warning = CommandText.message("lodgen.warning.vss_generation_disabled");
-        assertEquals("\u00a7cLODgen has disabled VSS generation, set \u00a7b'generation.enabled'"
-                + "\u00a7c to \u00a7dfalse\u00a7c in \u00a7bconfig/vss-server-config.yaml"
-                + "\u00a7c on server to suppress this warning", warning.getString());
-        assertEquals("LODgen has disabled VSS generation, set 'generation.enabled' to false"
-                + " in config/vss-server-config.yaml on server to suppress this warning",
-                CommandText.plain(warning));
-    }
-
     @Test void durationUsesServerUnitsAndPreservesBoundaryRemainders() {
         Language.inject(language(Map.of()));
         assertEquals("—", CommandText.duration(-1).getString());
