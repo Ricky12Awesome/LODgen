@@ -26,6 +26,7 @@ public final class LodgenMixinPlugin implements IMixinConfigPlugin {
     @Override public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
         String name = mixinClassName.substring(mixinClassName.lastIndexOf('.') + 1);
         if (name.startsWith("Dh")) return ModSupport.loaded("distanthorizons");
+        if (name.startsWith("Vss")) return ModSupport.loaded("lss");
         if (name.startsWith("Voxy")) return voxy;
         if (name.startsWith("C2me")) return ModSupport.loaded("c2me");
         return true;
@@ -34,6 +35,10 @@ public final class LodgenMixinPlugin implements IMixinConfigPlugin {
     @Override public void acceptTargets(Set<String> own, Set<String> other) {}
     @Override public List<String> getMixins() { return null; }
     @Override public void preApply(String target, ClassNode node, String mixin, IMixinInfo info) {
+        if (mixin.endsWith(".VssSerializationMixin"))
+            dev.ricky12awesome.lodgen.voxy.VssGenerationFix.bindTargetMask(node);
+        if (mixin.endsWith(".VssStoreMixin"))
+            dev.ricky12awesome.lodgen.voxy.VssGenerationFix.disableReloadGeneration(node);
         if (mixin.endsWith(".VoxySavingMixin") && dev.ricky12awesome.lodgen.voxy.VoxySavingFix.repair(node))
             dev.ricky12awesome.lodgen.LodgenConfig.LOGGER.info("Repaired Voxy save-queue flag ordering to preserve concurrent updates");
     }

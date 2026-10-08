@@ -24,6 +24,9 @@ public final class RendererSinks {
     public static void voxy(VoxySink sink) { voxy = sink; }
     public static boolean dhAvailable() { return ModSupport.loaded("distanthorizons"); }
     public static boolean voxyAvailable() { return ModSupport.loaded("voxy") || ModSupport.loaded("roxy"); }
+    public static boolean voxyAvailable(ServerLevel level) {
+        return level.getServer().isDedicatedServer() ? ModSupport.loaded("lss") : voxyAvailable();
+    }
     public static boolean ready(ServerLevel level, boolean useDh, boolean useVoxy) {
         return (!useDh || dhAvailable() && DhTaskSink.ready(level))
                 && (!useVoxy || voxy != null && voxy.ready(level));

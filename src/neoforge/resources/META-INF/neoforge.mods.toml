@@ -34,6 +34,13 @@ ordering="AFTER"
 side="BOTH"
 
 [[dependencies.lodgen]]
+modId="lss"
+type="optional"
+versionRange="*"
+ordering="AFTER"
+side="SERVER"
+
+[[dependencies.lodgen]]
 modId="c2me"
 type="optional"
 versionRange="[0.4.0-alpha.0,)"

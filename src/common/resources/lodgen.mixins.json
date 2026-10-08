@@ -34,6 +34,9 @@
     "C2meStorageMixin",
     "LevelCloseMixin",
     "CommandsMixin",
+    "VssGenerationMixin",
+    "VssStoreMixin",
+    "VssSerializationMixin",
     "ServerTasksMixin"
   ],
   "client": [
