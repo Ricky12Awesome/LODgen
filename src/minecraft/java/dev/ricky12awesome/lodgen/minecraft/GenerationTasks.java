@@ -108,12 +108,14 @@ public final class GenerationTasks {
             var display = displaySource(level).progress();
             double rate = throughput.chunksPerSecond();
             return CommandText.message("lodgen.command.status.no_task",
-                    CommandText.message("lodgen.command.automatic." + (GenerationSettings.policy().anyAutomatic() ? "enabled" : "disabled")),
+                    CommandText.message("lodgen.command.automatic." + (GenerationSettings.policy().anyAutomatic() ? "enabled" : "disabled")).append(" "),
                     CommandText.message("lodgen.command.state." + display.state().name().toLowerCase(Locale.ROOT)),
                     WorldPaths.dimension(level), area.blockX(), area.blockZ(),
-                    CommandText.message("lodgen.command.center_mode." + settings.generationCenter().name().toLowerCase(Locale.ROOT)),
-                    radius, area.savedRadius(), throughput.totalCompleted(), String.format(Locale.ROOT, "%.1f", rate),
-                    CommandText.duration(display.estimatedSeconds(rate)));
+                    radius, (long) radius * 16, area.savedRadius(), (long) area.savedRadius() * 16,
+                    CommandText.message("lodgen.command.cave_mode." + settings.caveMode().name().toLowerCase(Locale.ROOT)),
+                    // Renderer-managed generation has no fixed task total or active-batch count.
+                    throughput.totalCompleted(), "—", "—", "—", String.format(Locale.ROOT, "%.1f", rate),
+                    CommandText.duration(display.estimatedSeconds(rate)), Component.empty());
         }
         return command.statusMessage();
     }

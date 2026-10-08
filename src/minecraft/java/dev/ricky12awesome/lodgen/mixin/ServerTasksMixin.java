@@ -19,10 +19,12 @@ public abstract class ServerTasksMixin {
     private void lodgen$tasks(CallbackInfo callback) {
         dev.ricky12awesome.lodgen.minecraft.LodGenerationWorld.tick((MinecraftServer) (Object) this);
         GenerationTasks.tick((MinecraftServer) (Object) this);
+        dev.ricky12awesome.lodgen.minecraft.ServerOperatorOverlay.tick((MinecraftServer) (Object) this);
     }
     @Inject(method = "stopServer", at = @At("HEAD"))
     private void lodgen$stopTasks(CallbackInfo callback) {
         GenerationTasks.beginShutdown((MinecraftServer) (Object) this);
+        dev.ricky12awesome.lodgen.minecraft.ServerOperatorOverlay.remove((MinecraftServer) (Object) this);
         dev.ricky12awesome.lodgen.minecraft.LodGenerationWorld.close((MinecraftServer) (Object) this);
     }
     @Inject(method = "stopServer", at = @At("RETURN"))

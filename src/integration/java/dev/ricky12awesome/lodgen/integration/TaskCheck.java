@@ -33,6 +33,7 @@ public final class TaskCheck {
         try {
             started = System.nanoTime();
             LodgenConfig.apply(new LodgenConfig(true, 1, 0, false, 1000, GenerationCenter.CURRENT, 0, 0, 0, LodgenConfig.INSTANCE.caveMode()));
+            verifyStatus(server);
             if (LIFECYCLE_CHECK) {
                 require(server.isDedicatedServer(), "Autostart regression requires a dedicated server");
                 LodgenConfig.apply(new LodgenConfig(true, 1, 5, false, 1000, GenerationCenter.CUSTOM,
@@ -136,6 +137,18 @@ public final class TaskCheck {
     }
     private static void command(MinecraftServer server, String command) throws Exception {
         require(server.getCommands().getDispatcher().execute(command, server.createCommandSourceStack()) == 1, "Command failed: " + command);
+        verifyStatus(server);
+    }
+    private static void verifyStatus(MinecraftServer server) {
+        var message = GenerationTasks.get(server).statusMessage();
+        require(!(message.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents),
+                "Status still depends on client translations");
+        String text = dev.ricky12awesome.lodgen.minecraft.CommandText.plain(message);
+        require(!java.util.regex.Pattern.compile("%(?:[0-9]+\\$)?s|%%").matcher(text).find(),
+                "Status contains unformatted placeholders: " + text);
+        require(text.contains("Radius:") && text.contains(" blocks)") && text.contains("Caves:")
+                && text.contains("Progress:") && text.contains("Chunks/s:") && text.contains("ETA:"),
+                "Status omitted generation details: " + text);
     }
     private static void verifyCommands(MinecraftServer server) {
         var root = server.getCommands().getDispatcher().getRoot().getChild("lodgen");

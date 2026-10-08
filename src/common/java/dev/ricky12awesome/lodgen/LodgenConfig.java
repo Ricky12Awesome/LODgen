@@ -31,7 +31,7 @@ public record LodgenConfig(
                 comment = "Radius in chunks for chunk-based LOD generation. 0 uses DH’s or Voxy’s distance. Positive values override it. Changes apply immediately; running work finishes.")
         int generationDistance,
         @ConfigOption(defaultValue = "false", order = 9, translationName = "show_throughput",
-                comment = "Show completed LOD chunks per second, generation radius, estimated time remaining and status above the hotbar. Hidden at zero throughput or when DH uses its own overlay.")
+                comment = "Show completed LOD chunks per second, generation radius, estimated time remaining and status above the hotbar in singleplayer. Hidden at zero throughput or when DH uses its own overlay. Dedicated servers automatically show active generation progress to operators.")
         boolean showChunksPerSecond,
         @ConfigOption(defaultValue = "1000", order = 10, min = 1, max = 60000, translationName = "overlay_update_interval",
                 comment = "1–60000 milliseconds between action-bar updates. Default: 1000 (one second). The rate and ETA use the last five seconds of throughput. Changes apply immediately.")
