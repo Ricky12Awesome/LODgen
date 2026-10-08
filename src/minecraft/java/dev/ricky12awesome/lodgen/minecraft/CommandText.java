@@ -9,16 +9,23 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
-/** Translations retain their keys for clients and English fallbacks for dedicated servers. */
+/** Resolve server messages before sending them to clients without LODgen translations. */
 public final class CommandText {
     private static final Map<String, String> ENGLISH = loadEnglish();
 
     private CommandText() {}
 
     public static MutableComponent message(String key, Object... args) {
-        return Component.translatableWithFallback(key, ENGLISH.get(key), args);
+        Object[] values = new Object[args.length];
+        for (int index = 0; index < args.length; index++) {
+            values[index] = args[index] instanceof Component component ? component.getString() : args[index];
+        }
+        // Minecraft's server Language does not include mod assets. Format the
+        // bundled template directly, including nested messages and literal %%.
+        return Component.literal(String.format(Locale.ROOT, ENGLISH.getOrDefault(key, key), values));
     }
 
     public static MutableComponent error(Throwable error) {
