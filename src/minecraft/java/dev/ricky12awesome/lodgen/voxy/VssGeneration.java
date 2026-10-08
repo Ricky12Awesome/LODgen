@@ -46,6 +46,7 @@ public final class VssGeneration {
             if (failure != null) return;
             Object service = call(type("networking.server.LSSServerNetworking"), "getRequestService");
             if (service == null) return;
+            Session active;
             synchronized (SESSIONS) {
                 if (!SESSIONS.containsKey(service)) {
                     var session = new Session(server, service);
@@ -54,8 +55,10 @@ public final class VssGeneration {
                     catch (Throwable error) { SESSIONS.remove(service); session.close(); throw error; }
                     RendererSinks.voxy(session);
                 }
-                SESSIONS.get(service).refreshMask();
+                active = SESSIONS.get(service);
             }
+            active.refreshMask();
+            active.publishReady();
         } catch (Throwable error) {
             if (failure == null) LodgenConfig.LOGGER.error("Cannot initialize Voxy Server Side output", error);
             failure = error;
@@ -107,6 +110,28 @@ public final class VssGeneration {
         }
     }
 
+    public static boolean generatedRegion(Object table, String dimension, int x, int z) {
+        synchronized (SESSIONS) {
+            for (var session : SESSIONS.values())
+                if (session.regionStamps == table && session.columns.hasRegion(dimension, x, z)) return true;
+            return false;
+        }
+    }
+
+    /** Flush after VSS has delivered older terminal responses for the current tick. */
+    public static void broadcast(Object service) {
+        Session session;
+        synchronized (SESSIONS) { session = SESSIONS.get(service); }
+        if (session == null || session.stopping) return;
+        try {
+            Object processor = call(service, "getOffThreadProcessor");
+            VssUpdates.Batch batch;
+            while ((batch = session.ready.poll()) != null) session.notifyReady(processor, batch);
+        } catch (Exception error) {
+            LodgenConfig.LOGGER.error("Cannot announce generated VSS columns", error);
+        }
+    }
+
     public static void serverStopping(MinecraftServer server) {
         synchronized (SESSIONS) {
             for (var session : SESSIONS.values()) if (session.server == server) session.stopConversions();
@@ -129,9 +154,11 @@ public final class VssGeneration {
 
     private static final class Session implements RendererSinks.VoxySink, AutoCloseable {
         final MinecraftServer server;
-        final Object service, original, codec, diagnostics, proxy;
+        final Object service, original, codec, diagnostics, proxy, regionStamps;
         final Class<?> storeType = type("common.store.LodStoreService");
         final VssColumns columns;
+        final VssUpdates updates = new VssUpdates();
+        final java.util.concurrent.ConcurrentLinkedQueue<VssUpdates.Batch> ready = new java.util.concurrent.ConcurrentLinkedQueue<>();
         final VssRegionFiles regions;
         final long maskNonce = System.nanoTime();
         String masks;
@@ -143,6 +170,7 @@ public final class VssGeneration {
         Session(MinecraftServer server, Object service) throws Exception {
             this.server = server;
             this.service = service;
+            regionStamps = call(service, "getRegionStamps");
             original = call(service, "getLodStore");
             codec = call(type("common.store.StoreCodec"), "zstdOrNull");
             if (codec == null) throw new IllegalStateException("VSS's compression codec is unavailable");
@@ -233,11 +261,55 @@ public final class VssGeneration {
                     byte[] frame = snapshot.bytes.length == 0 ? new byte[0] : (byte[]) call(codec, "compress", snapshot.bytes);
                     batch.add(new VssColumns.Column(snapshot.dimension, snapshot.position, frame, snapshot.bytes.length, snapshot.stamp, snapshot.revision));
                 }
-                columns.put(batch);
+                updates.committed(columns.put(batch));
             } catch (Exception error) { throw new java.util.concurrent.CompletionException(error); }
             finally {
                 for (var snapshot : snapshots) columns.release(snapshot.dimension, snapshot.position, snapshot.revision);
                 conversionLock.readLock().unlock();
+            }
+        }
+
+        void publishReady() throws ReflectiveOperationException {
+            if (stopping) return;
+            Object processor = call(service, "getOffThreadProcessor");
+            for (var batch : updates.drain()) {
+                // The normal invalidation pipeline also taints old reads/probes in flight.
+                // Its tagged array preserves the newly committed sidecar rows only.
+                call(processor, "invalidateTimestamps", batch.dimension(), batch.positions(),
+                        (Runnable) () -> { if (!stopping) ready.add(batch); });
+            }
+        }
+
+        void notifyReady(Object processor, VssUpdates.Batch batch) throws ReflectiveOperationException {
+            var players = (Map<?, ?>) call(service, "getPlayers");
+            Object config = call(service, "settingsConfig");
+            int radius = (int) call(config, "lodDistanceForWorld", (Object) new String[]{batch.dimension()});
+            Class<?> payloadType = type("networking.payloads.DirtyColumnsS2CPayload");
+            int limit = payloadType.getField("MAX_POSITIONS").getInt(null);
+            Object transport = call(type("platform.LoaderServices"), "get");
+            for (Object state : players.values()) {
+                if (!(boolean) call(state, "hasCompletedHandshake")) continue;
+                var player = (net.minecraft.server.level.ServerPlayer) call(state, "getPlayer");
+                if (player == null || player.isRemoved()) continue;
+                if (!call(state, "getLastDimension").equals(player.level().dimension())) continue;
+                // #if MC_1211
+                String dimension = player.level().dimension().location().toString();
+                // #else
+                String dimension = player.level().dimension().identifier().toString();
+                // #endif
+                if (!dimension.equals(batch.dimension())) continue;
+                for (long[] page : VssUpdates.inRange(batch.positions(), player.getBlockX() >> 4,
+                        player.getBlockZ() >> 4, radius, limit)) {
+                    // Queue the clear before sending; VSS late-drains it ahead of re-asks.
+                    call(processor, "clearDiskReadDone", player.getUUID(), page);
+                    call(state, "clearProbeSuppress", page);
+                    Object payload = payloadType.getConstructor(long[].class).newInstance((Object) page);
+                    try { call(transport, "sendToPlayer", player, payload); }
+                    catch (Exception error) {
+                        LodgenConfig.LOGGER.error("Cannot announce generated VSS columns to " + player.getUUID(), error);
+                        break;
+                    }
+                }
             }
         }
 
@@ -256,7 +328,8 @@ public final class VssGeneration {
                     return type("common.store.LodStoreService$StoreHit").getConstructor(byte[].class, long.class).newInstance(bytes, column.stamp());
                 }
             }
-            if (name.equals("invalidate")) columns.delete((String) args[0], (long[]) args[1]);
+            if (name.equals("invalidate") && !updates.preserves((String) args[0], (long[]) args[1]))
+                columns.delete((String) args[0], (long[]) args[1]);
             if (name.equals("delete")) columns.delete((String) args[0], new long[]{(long) args[1]});
             if (original != null) try { return method.invoke(original, args); }
             catch (InvocationTargetException error) { throw error.getCause(); }
@@ -327,7 +400,23 @@ public final class VssGeneration {
         throw new IllegalStateException("Unsupported VSS API: " + type.getName() + "." + name);
     }
     private static Object call(Object target, String name, Object... args) throws ReflectiveOperationException {
-        return method(target instanceof Class<?> type ? type : target.getClass(), name, args.length)
-                .invoke(target instanceof Class<?> ? null : target, args);
+        Class<?> owner = target instanceof Class<?> type ? type : target.getClass();
+        for (var candidate : owner.getMethods()) {
+            if (!candidate.getName().equals(name) || candidate.getParameterCount() != args.length) continue;
+            Class<?>[] parameters = candidate.getParameterTypes();
+            boolean compatible = true;
+            for (int i = 0; i < parameters.length; i++) {
+                Class<?> parameter = parameters[i];
+                if (parameter.isPrimitive()) parameter = switch (parameter.getName()) {
+                    case "boolean" -> Boolean.class;
+                    case "int" -> Integer.class;
+                    case "long" -> Long.class;
+                    default -> parameter;
+                };
+                if (args[i] != null && !parameter.isInstance(args[i])) { compatible = false; break; }
+            }
+            if (compatible) return candidate.invoke(target instanceof Class<?> ? null : target, args);
+        }
+        throw new NoSuchMethodException("Unsupported VSS API: " + owner.getName() + "." + name);
     }
 }

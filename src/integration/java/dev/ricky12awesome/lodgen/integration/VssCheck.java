@@ -3,6 +3,7 @@ package dev.ricky12awesome.lodgen.integration;
 import dev.ricky12awesome.lodgen.LodgenConfig;
 import dev.ricky12awesome.lodgen.generation.GenerationArea;
 import dev.ricky12awesome.lodgen.minecraft.GenerationTasks;
+import dev.ricky12awesome.lodgen.minecraft.PersistenceRegistry;
 import dev.ricky12awesome.lodgen.task.TaskProgress;
 import dev.ricky12awesome.lodgen.task.TaskRecord;
 import dev.ricky12awesome.lodgen.task.TaskStore;
@@ -28,6 +29,8 @@ public final class VssCheck {
     private static final Path REPORT = Path.of("integration-result.txt");
     private static final int BLOCK_X = 65_552, BLOCK_Z = -65_520;
     private static final int CHUNK_X = Math.floorDiv(BLOCK_X, 16), CHUNK_Z = Math.floorDiv(BLOCK_Z, 16);
+    private static final int SYNTHETIC_PLAYER_CHUNK_X = CHUNK_X + 64;
+    private static final int SYNTHETIC_PLAYER_CHUNK_Z = CHUNK_Z;
     private static final long STARTED = System.nanoTime();
     private static final boolean CONFIGURED = Boolean.getBoolean("lodgen.test.vssGeneration");
     private static final boolean RELOAD = Boolean.getBoolean("lodgen.test.vssReload");
@@ -42,6 +45,11 @@ public final class VssCheck {
     private static boolean reconcilingSettings;
     private static boolean settingsReconciled;
     private static boolean done;
+    private static long readyNoticeWaitStartedAt;
+    private static final ConcurrentLinkedQueue<Object> CAPTURED_NOTICES = new ConcurrentLinkedQueue<>();
+    private static Object clientColumns;
+    private static Object syntheticPlayer;
+    private static UUID syntheticPlayerId;
 
     private VssCheck() {}
 
@@ -77,6 +85,7 @@ public final class VssCheck {
                 require(!(boolean) invoke(configured, "enableChunkGeneration"), "VSS live generation config was not disabled");
                 store = invoke(service, "getLodStore");
                 require(store != null, "VSS LOD store is unavailable in the test fixture");
+                clientColumns = newClientColumnState();
                 require(LodgenConfig.INSTANCE.enabled(), "LODgen default generation setting should remain enabled");
                 if (RELOAD) {
                     stage = 3;
@@ -88,9 +97,14 @@ public final class VssCheck {
                 return;
             }
             if (service != null && !RELOAD && stage == 0) {
-                GenerationTasks.get(server).start(server.overworld(), area());
-                verifyTask("minecraft:overworld");
-                stage = 1;
+                if (!checkingStore) beginGeneration("minecraft:overworld", server.overworld(), () -> {
+                    try {
+                        GenerationTasks.get(server).start(server.overworld(), area());
+                        verifyTask("minecraft:overworld");
+                        stage = 1;
+                    } catch (Throwable error) { fail(error); }
+                });
+                return;
             }
 
             if (RELOAD) {
@@ -109,9 +123,13 @@ public final class VssCheck {
                     if (stage == 1) {
                         ServerLevel nether = server.getLevel(Level.NETHER);
                         require(nether != null, "Nether server level is unavailable");
-                        GenerationTasks.get(server).start(nether, area());
-                        verifyTask("minecraft:the_nether");
-                        stage = 2;
+                        beginGeneration("minecraft:the_nether", nether, () -> {
+                            try {
+                                GenerationTasks.get(server).start(nether, area());
+                                verifyTask("minecraft:the_nether");
+                                stage = 2;
+                            } catch (Throwable error) { fail(error); }
+                        });
                     } else {
                         int active = (int) invoke(invoke(service, "getGenerationService"), "getActiveCount");
                         require(active == 0, "VSS admitted generation work despite its server switch being disabled");
@@ -167,14 +185,144 @@ public final class VssCheck {
 
     private static void checkOutput(String dimension, ServerLevel level, Runnable success) {
         if (checkingStore) return;
+        if (!RELOAD && readyNoticeWaitStartedAt == 0) readyNoticeWaitStartedAt = System.nanoTime();
         checkingStore = true;
         CompletableFuture.supplyAsync(() -> storeWitness(dimension), storeReader)
                 .whenComplete((witness, failure) -> server.execute(() -> {
                     if (failure != null) { checkingStore = false; fail(failure); return; }
-                    if (witness == null) { checkingStore = false; return; }
-                    try { submitDiskRead(dimension, level, witness, success); }
+                    if (witness == null) {
+                        if (!RELOAD && System.nanoTime() - readyNoticeWaitStartedAt > TimeUnit.SECONDS.toNanos(3)) {
+                            checkingStore = false;
+                            fail(new AssertionError("VSS sidecar row or readiness notice was not available within 3 seconds"));
+                        } else checkingStore = false;
+                        return;
+                    }
+                    try {
+                        if (!RELOAD) verifyTransientSavePreserves(dimension, level, witness);
+                        verifyRegionFreshness(dimension);
+                        if (!RELOAD && CAPTURED_NOTICES.isEmpty()) {
+                            if (System.nanoTime() - readyNoticeWaitStartedAt > TimeUnit.SECONDS.toNanos(3))
+                                throw new AssertionError("VSS did not announce generated columns within 3 seconds");
+                            checkingStore = false;
+                            return;
+                        }
+                        if (!RELOAD) verifyReadyNotice(dimension);
+                        readyNoticeWaitStartedAt = 0;
+                        submitDiskRead(dimension, level, witness, success);
+                    }
                     catch (Throwable error) { checkingStore = false; fail(error); }
                 }));
+    }
+
+    /**
+     * Exercise the same terminal client state produced by VSS's NOT_GENERATED answer
+     * before the chunk exists. The readiness packet must later revive this exact state.
+     */
+    private static void beginGeneration(String dimension, ServerLevel level, Runnable continueGeneration) throws Exception {
+        long packed = packedPosition();
+        invoke(store, "delete", new Class<?>[]{String.class, long.class}, dimension, packed);
+        installSyntheticClient(level);
+        CAPTURED_NOTICES.clear();
+        readyNoticeWaitStartedAt = 0;
+        checkingStore = true;
+        submitDiskRead(dimension, level, null, continueGeneration);
+    }
+
+    private static void installSyntheticClient(ServerLevel level) throws Exception {
+        require(!PersistenceRegistry.get(level).permanent(CHUNK_X, CHUNK_Z),
+                "VSS target was adopted before synthetic client registration");
+        if (syntheticPlayerId != null) invoke(service, "removePlayer", new Class<?>[]{UUID.class}, syntheticPlayerId);
+        syntheticPlayerId = UUID.randomUUID();
+        Class<?> profileType = classFor("com.mojang.authlib.GameProfile");
+        Object profile = profileType.getConstructor(UUID.class, String.class).newInstance(syntheticPlayerId, "LodgenVssProbe");
+        Class<?> factory = classFor("net.neoforged.neoforge.common.util.FakePlayerFactory");
+        syntheticPlayer = factory.getMethod("get", ServerLevel.class, profileType).invoke(null, level, profile);
+        invoke(service, "registerPlayer", new Class<?>[]{classFor("net.minecraft.server.level.ServerPlayer"), int.class},
+                syntheticPlayer, 0);
+        require(!PersistenceRegistry.get(level).permanent(CHUNK_X, CHUNK_Z),
+                "synthetic client registration promoted the VSS target to a normal save");
+        positionSyntheticPlayer(level);
+    }
+
+    private static void positionSyntheticPlayer(ServerLevel level) throws Exception {
+        invoke(syntheticPlayer, "setPos", new Class<?>[]{double.class, double.class, double.class},
+                SYNTHETIC_PLAYER_CHUNK_X * 16.0 + 8.0, 80.0, SYNTHETIC_PLAYER_CHUNK_Z * 16.0 + 8.0);
+        require(!PersistenceRegistry.get(level).permanent(CHUNK_X, CHUNK_Z),
+                "placing the synthetic client promoted the VSS target to a normal save");
+        Object state = ((Map<?, ?>) invoke(service, "getPlayers")).get(syntheticPlayerId);
+        require(state != null, "synthetic VSS client was not registered");
+        invoke(state, "updatePlayerChunk", new Class<?>[]{int.class, int.class},
+                SYNTHETIC_PLAYER_CHUNK_X, SYNTHETIC_PLAYER_CHUNK_Z);
+    }
+
+    private static Object newClientColumnState() throws Exception {
+        Class<?> type = classFor("dev.vox.lss.networking.client.ColumnStateMap");
+        var constructor = type.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        return constructor.newInstance();
+    }
+
+    /** Called only by the integration mixin; swallow the synthetic client's packet. */
+    public static boolean captureNotice(Object player, Object payload) {
+        try {
+            if (syntheticPlayerId == null || !syntheticPlayerId.equals(invoke(player, "getUUID"))) return false;
+            if (!payload.getClass().getName().endsWith("DirtyColumnsS2CPayload")) return false;
+            CAPTURED_NOTICES.add(payload);
+            return true;
+        } catch (Throwable error) {
+            LodgenConfig.LOGGER.error("Cannot capture VSS readiness notice", error);
+            return false;
+        }
+    }
+
+    private static void verifyReadyNotice(String dimension) throws Exception {
+        if (RELOAD) return;
+        Object notice = CAPTURED_NOTICES.poll();
+        require(notice != null, "VSS did not send a readiness DirtyColumns notice for " + dimension);
+        long[] positions = (long[]) invoke(notice, "dirtyPositions");
+        long packed = packedPosition();
+        require(Arrays.stream(positions).anyMatch(position -> position == packed),
+                "VSS readiness notice omitted the generated position " + dimension);
+        boolean revived = (boolean) invokeDeclared(clientColumns, "markDirtyIfKnown", new Class<?>[]{long.class}, packed);
+        require(revived, "VSS readiness notice could not revive the parked client position");
+        require((long) invokeDeclared(clientColumns, "classify", new Class<?>[]{long.class}, packed) == -1L,
+                "revived client position did not become a first request");
+    }
+
+    private static void verifyRegionFreshness(String dimension) throws Exception {
+        Object table = invoke(service, "getRegionStamps");
+        int tileX = CHUNK_X >> 5, tileZ = CHUNK_Z >> 5;
+        long tileStamp = (long) invoke(table, "tileStampSeconds",
+                new Class<?>[]{String.class, int.class, int.class}, dimension, tileX, tileZ);
+        long chunkStamp = (long) invoke(table, "chunkStampSecondsOrUnknown",
+                new Class<?>[]{String.class, int.class, int.class}, dimension, CHUNK_X, CHUNK_Z);
+        boolean suppressed = (boolean) invoke(table, "isClaimSuppressed",
+                new Class<?>[]{String.class, int.class, int.class}, dimension, CHUNK_X, CHUNK_Z);
+        require(tileStamp == Long.MAX_VALUE && chunkStamp == Long.MAX_VALUE && suppressed,
+                "VSS sidecar region did not suppress vanilla freshness claims for " + dimension);
+    }
+
+    private static void verifyTransientSavePreserves(String dimension, ServerLevel level,
+                                                      StoreWitness witness) throws Exception {
+        require(PersistenceRegistry.suppressUpdates(level, CHUNK_X, CHUNK_Z),
+                "VSS test column lost its transient save policy before unload-save verification");
+        Class<?> levelType = classFor("net.minecraft.world.level.Level");
+        Class<?> chunkPosType = classFor("net.minecraft.world.level.ChunkPos");
+        Object chunkPos = chunkPosType.getConstructor(int.class, int.class).newInstance(CHUNK_X, CHUNK_Z);
+        Object chunk = classFor("net.minecraft.world.level.chunk.LevelChunk")
+                .getConstructor(levelType, chunkPosType).newInstance(level, chunkPos);
+        Class<?> accessType = classFor("net.minecraft.world.level.chunk.ChunkAccess");
+        classFor("dev.vox.lss.networking.server.LSSServerNetworking")
+                .getMethod("onChunkSaveData", ServerLevel.class, accessType).invoke(null, level, chunk);
+        Object hit = invoke(store, "getFrame", new Class<?>[]{String.class, long.class}, dimension, packedPosition());
+        require(hit != null, "a transient unload-save invalidated the committed VSS LOD row");
+        require((long) invoke(hit, "columnTimestamp") == witness.timestamp
+                        && Arrays.equals((byte[]) invoke(hit, "frame"), witness.frame),
+                "a transient unload-save changed the committed VSS LOD row");
+    }
+
+    private static long packedPosition() {
+        return ((long) CHUNK_X << 32) | (CHUNK_Z & 0xffff_ffffL);
     }
 
     private static void submitDiskRead(String dimension, ServerLevel level, StoreWitness witness, Runnable success) throws Exception {
@@ -236,6 +384,16 @@ public final class VssCheck {
         require((int) invoke(result, "chunkX") == CHUNK_X && (int) invoke(result, "chunkZ") == CHUNK_Z,
                 "VSS disk read result used the wrong chunk");
         require((long) invoke(result, "submissionOrder") == order, "VSS disk read result lost its submission order");
+        if (witness == null) {
+            require((boolean) invoke(result, "notFound") && !(boolean) invoke(result, "saturated"),
+                    "VSS disk reader did not report the pre-generation column as missing");
+            invokeDeclared(clientColumns, "onNotGenerated", new Class<?>[]{long.class}, packedPosition());
+            var satisfiedField = classFor("dev.vox.lss.networking.client.ColumnStateMap").getDeclaredField("SATISFIED");
+            satisfiedField.setAccessible(true);
+            require((long) invokeDeclared(clientColumns, "classify", new Class<?>[]{long.class}, packedPosition()) == satisfiedField.getLong(null),
+                    "client did not park the pre-generation NOT_GENERATED position");
+            return;
+        }
         require(!(boolean) invoke(result, "notFound") && !(boolean) invoke(result, "saturated"),
                 "VSS disk reader did not serve the stored LOD column");
         require((boolean) invoke(result, "fromStore"), "VSS disk reader bypassed the attached composite store");
@@ -307,12 +465,22 @@ public final class VssCheck {
         return target.getClass().getMethod(method, signature).invoke(target, args);
     }
 
+    private static Object invokeDeclared(Object target, String method, Class<?>[] signature, Object... args) throws Exception {
+        var member = target.getClass().getDeclaredMethod(method, signature);
+        member.setAccessible(true);
+        return member.invoke(target, args);
+    }
+
     private static void require(boolean condition, String message) {
         if (!condition) throw new AssertionError(message);
     }
 
     private static void finish() {
         done = true;
+        if (service != null && syntheticPlayerId != null) {
+            try { invoke(service, "removePlayer", new Class<?>[]{UUID.class}, syntheticPlayerId); }
+            catch (Throwable ignored) {}
+        }
         if (timer != null) timer.shutdownNow();
         if (storeReader != null) storeReader.shutdownNow();
         server.halt(false);

@@ -27,11 +27,15 @@ public final class VssRegionFiles {
             long[] stamps = new long[1024];
             try {
                 if (Files.exists(path)) try (var file = new RandomAccessFile(path.toFile(), "r")) {
-                    int[] locations = new int[1024];
-                    for (int index = 0; index < 1024; index++) locations[index] = file.readInt();
-                    for (int index = 0; index < 1024; index++) {
-                        long seconds = Integer.toUnsignedLong(file.readInt());
-                        if (locations[index] != 0) stamps[index] = seconds == 0 ? Long.MAX_VALUE : seconds;
+                    // RegionFile creates a zero-byte file on a read miss. It contains
+                    // no saved chunks and cannot supersede a generated column.
+                    if (file.length() != 0) {
+                        int[] locations = new int[1024];
+                        for (int index = 0; index < 1024; index++) locations[index] = file.readInt();
+                        for (int index = 0; index < 1024; index++) {
+                            long seconds = Integer.toUnsignedLong(file.readInt());
+                            if (locations[index] != 0) stamps[index] = seconds == 0 ? Long.MAX_VALUE : seconds;
+                        }
                     }
                 }
             } catch (IOException error) { java.util.Arrays.fill(stamps, Long.MAX_VALUE); }

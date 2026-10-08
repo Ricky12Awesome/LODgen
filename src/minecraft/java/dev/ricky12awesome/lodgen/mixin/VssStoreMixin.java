@@ -21,6 +21,9 @@ public abstract class VssStoreMixin {
         if (VssGeneration.invalidate(this)) callback.setReturnValue(true);
     }
 
+    @Inject(method = "tick", at = @At("TAIL"))
+    private void lodgen$ready(CallbackInfo callback) { VssGeneration.broadcast(this); }
+
     @Inject(method = "shutdown", at = @At("TAIL"))
     private void lodgen$close(CallbackInfo callback) { VssGeneration.serviceStopped(this); }
 }

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "lodgen",
+  "version": "${version}",
+  "name": "LODgen",
+  "icon": "logo.png",
+  "description": "Generates chunk-based LODs for Distant Horizons FEATURES and Voxy without saving LOD-only chunks.",
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "dev.ricky12awesome.lodgen.fabric.LodgenEntrypoint"
+    ],
+    "modmenu": [
+      "dev.ricky12awesome.lodgen.fabric.LodgenModMenu"
+    ]
+  },
+  "mixins": [
+    "lodgen.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=${fabricLoader}",
+    "minecraft": "=${minecraft}",
+    "java": ">=${java}"
+  },
+  "suggests": {
+    "c2me": "*",
+    "distanthorizons": "=${dhVersion}",
+    "voxy": "*",
+    "modmenu": "*"
+  }
+}

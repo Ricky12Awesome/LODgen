@@ -44,6 +44,14 @@ class VssRegionFilesTest {
         assertFalse(cache(regions).supersedes("minecraft:overworld", position, 100));
     }
 
+    @Test void zeroLengthRegionDoesNotSupersedeGeneratedColumn() throws Exception {
+        Path regions = directory.resolve("region");
+        Path mca = regionFile(regions, 0, 0);
+        Files.createFile(mca);
+
+        assertFalse(cache(regions).supersedes("minecraft:overworld", packed(2, 3), 100));
+    }
+
     @Test void negativeCoordinatesUseFloorRegionAndZMajorLocalSlot() throws Exception {
         Path regions = directory.resolve("region");
         int x = -33, z = -2;

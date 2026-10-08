@@ -116,6 +116,40 @@ class VssColumnsTest {
         }
     }
 
+    @Test void onlyCommittedCurrentSnapshotsAreAnnounced() throws Exception {
+        long first = position(1, 1), edited = position(2, 1);
+        try (var columns = new VssColumns(source(directory.resolve("columns.sqlite")), "identity-v1")) {
+            columns.put(List.of(new VssColumns.Column("overworld", first, new byte[]{1}, 1, 100)));
+            long token = columns.acquire("overworld", edited);
+            columns.delete("overworld", new long[]{edited});
+            var committed = columns.put(List.of(
+                    new VssColumns.Column("overworld", first, new byte[]{2}, 1, 99),
+                    new VssColumns.Column("overworld", edited, new byte[]{3}, 1, 101, token),
+                    new VssColumns.Column("nether", first, new byte[]{4}, 1, 101)));
+            assertEquals(1, committed.size());
+            assertEquals("nether", committed.getFirst().dimension());
+            assertArrayEquals(new byte[]{1}, columns.get("overworld", first).frame());
+            assertNull(columns.get("overworld", edited));
+        }
+    }
+
+    @Test void generatedRegionsPersistWithSignedCoordinatesAndSeparateDimensions() throws Exception {
+        Path database = directory.resolve("regions.sqlite");
+        try (var columns = new VssColumns(source(database), "identity-v1")) {
+            columns.put(List.of(new VssColumns.Column("overworld", position(-33, -1), new byte[]{1}, 1, 100)));
+            assertTrue(columns.hasRegion("overworld", -2, -1));
+            assertFalse(columns.hasRegion("overworld", -1, -1));
+            assertFalse(columns.hasRegion("nether", -2, -1));
+        }
+        try (var columns = new VssColumns(source(database), "identity-v1")) {
+            assertTrue(columns.hasRegion("overworld", -2, -1));
+            assertFalse(columns.hasRegion("overworld", -2, 134217727));
+        }
+        try (var columns = new VssColumns(source(database), "identity-v2")) {
+            assertFalse(columns.hasRegion("overworld", -2, -1));
+        }
+    }
+
     @Test void clearInvalidatesAnInFlightAcquisition() throws Exception {
         long position = position(5, 5);
         try (var columns = new VssColumns(source(directory.resolve("columns.sqlite")), "identity-v1")) {

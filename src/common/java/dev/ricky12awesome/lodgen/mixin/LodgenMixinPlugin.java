@@ -39,6 +39,8 @@ public final class LodgenMixinPlugin implements IMixinConfigPlugin {
             dev.ricky12awesome.lodgen.voxy.VssGenerationFix.bindTargetMask(node);
         if (mixin.endsWith(".VssStoreMixin"))
             dev.ricky12awesome.lodgen.voxy.VssGenerationFix.disableReloadGeneration(node);
+        if (mixin.endsWith(".VssReadMixin"))
+            dev.ricky12awesome.lodgen.voxy.VssGenerationFix.guardMissingRawRegions(node);
         if (mixin.endsWith(".VoxySavingMixin") && dev.ricky12awesome.lodgen.voxy.VoxySavingFix.repair(node))
             dev.ricky12awesome.lodgen.LodgenConfig.LOGGER.info("Repaired Voxy save-queue flag ordering to preserve concurrent updates");
     }

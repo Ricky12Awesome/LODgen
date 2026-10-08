@@ -17,6 +17,10 @@ public final class VssColumns implements AutoCloseable {
         }
     }
     private record Key(String dimension, long position) {}
+    private record Region(String dimension, int x, int z) {}
+    // Conservative coverage: deletions may retain a region until restart. This avoids
+    // letting vanilla-only freshness checks validate LOD bytes they never observed.
+    private final Set<Region> regions = new HashSet<>();
     // Only in-flight snapshots retain tokens, so generation distance does not grow this map.
     private final Map<Key, Set<Long>> snapshots = new HashMap<>();
     private long revision;
@@ -39,6 +43,9 @@ public final class VssColumns implements AutoCloseable {
                         update.executeUpdate();
                     }
                 }
+            }
+            try (var rows = statement.executeQuery("SELECT DISTINCT dimension, position >> 37, (position << 32) >> 37 FROM columns")) {
+                while (rows.next()) regions.add(new Region(rows.getString(1), rows.getInt(2), rows.getInt(3)));
             }
         } catch (SQLException error) {
             connection.close();
@@ -63,6 +70,10 @@ public final class VssColumns implements AutoCloseable {
         return token;
     }
 
+    public synchronized boolean hasRegion(String dimension, int x, int z) {
+        return regions.contains(new Region(dimension, x, z));
+    }
+
     public synchronized void release(String dimension, long position, long token) {
         var key = new Key(dimension, position);
         var pending = snapshots.get(key);
@@ -70,7 +81,9 @@ public final class VssColumns implements AutoCloseable {
     }
 
     /** Complete the transaction before LODgen checkpoints the batch as finished. */
-    public synchronized void put(List<Column> columns) throws SQLException {
+    public synchronized List<Column> put(List<Column> columns) throws SQLException {
+        var candidates = new java.util.ArrayList<Column>();
+        var committed = new java.util.ArrayList<Column>();
         connection.setAutoCommit(false);
         try (var update = connection.prepareStatement("INSERT INTO columns VALUES (?,?,?,?,?) ON CONFLICT(dimension,position) DO UPDATE SET frame=excluded.frame,size=excluded.size,stamp=excluded.stamp WHERE excluded.stamp>=columns.stamp")) {
             for (var column : columns) {
@@ -82,9 +95,15 @@ public final class VssColumns implements AutoCloseable {
                 update.setInt(4, column.size);
                 update.setLong(5, column.stamp);
                 update.addBatch();
+                candidates.add(column);
             }
-            update.executeBatch();
+            int[] counts = update.executeBatch();
+            for (int i = 0; i < counts.length; i++)
+                if (counts[i] > 0 || counts[i] == java.sql.Statement.SUCCESS_NO_INFO) committed.add(candidates.get(i));
             connection.commit();
+            for (var column : committed) regions.add(new Region(column.dimension,
+                    (int) (column.position >> 32) >> 5, (int) column.position >> 5));
+            return committed;
         } catch (SQLException error) {
             connection.rollback();
             throw error;

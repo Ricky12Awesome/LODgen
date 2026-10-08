@@ -292,7 +292,7 @@ if args.vss_check:
     if vss_config.read_bytes() != vss_config_before:
         raise SystemExit("VSS config bytes changed during the LODgen integration check")
     first_log_text = log.read_text()
-    warning = "§cLODgen has disabled VSS generation, set §b'generation.enabled'§c to §dfalse§c in §bconfig/vss-server-config.yaml§con sever to get rid of this warning"
+    warning = json.loads((ROOT / "src/common/resources/assets/lodgen/lang/en_us.json").read_text())["lodgen.warning.vss_generation_disabled"]
     plain_warning = re.sub(r"§[0-9a-fk-or]", "", warning, flags=re.IGNORECASE)
     occurrences = first_log_text.count(plain_warning)
     if occurrences != (1 if args.vss_generation else 0):
