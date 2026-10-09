@@ -1,5 +1,6 @@
 package dev.ricky12awesome.lodgen.integration;
 
+import com.mojang.authlib.GameProfile;
 import dev.ricky12awesome.lodgen.LodgenConfig;
 import dev.ricky12awesome.lodgen.generation.GenerationArea;
 import dev.ricky12awesome.lodgen.minecraft.GenerationTasks;
@@ -7,7 +8,9 @@ import dev.ricky12awesome.lodgen.task.TaskProgress;
 import dev.ricky12awesome.lodgen.task.TaskRecord;
 import dev.ricky12awesome.lodgen.task.TaskStore;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.LevelResource;
 
 import java.nio.file.Files;
@@ -34,7 +37,8 @@ public final class VssCheck {
     private static final boolean CONFIGURED_GENERATION = Boolean.getBoolean("lodgen.test.vssGeneration");
     private static ScheduledExecutorService timer;
     private static MinecraftServer server;
-    private static Object service, store, generationService, syntheticPlayer;
+    private static Object service, store, generationService;
+    private static ServerPlayer syntheticPlayer;
     private static UUID syntheticPlayerId;
     private static boolean reconciled, reconcilingSettings, reloadWitnessChecked, nativeOutputsVerified, demandVerified,
             prefillStarted, prefillComplete, requested, done;
@@ -213,36 +217,26 @@ public final class VssCheck {
 
     private static void installSyntheticClient(ServerLevel level) throws Exception {
         syntheticPlayerId = UUID.randomUUID();
-        Class<?> profileType = classFor("com.mojang.authlib.GameProfile");
-        Object profile = profileType.getConstructor(UUID.class, String.class).newInstance(syntheticPlayerId, "LodgenVssProbe");
-        Class<?> factory = classFor("net.neoforged.neoforge.common.util.FakePlayerFactory");
-        syntheticPlayer = factory.getMethod("get", ServerLevel.class, profileType).invoke(null, level, profile);
+        syntheticPlayer = new ServerPlayer(server, level,
+                new GameProfile(syntheticPlayerId, "LodgenVssProbe"), ClientInformation.createDefault());
         addSyntheticPlayerToServerLookup();
-        invoke(service, "registerPlayer", new Class<?>[]{classFor("net.minecraft.server.level.ServerPlayer"), int.class},
+        invoke(service, "registerPlayer", new Class<?>[]{ServerPlayer.class, int.class},
                 syntheticPlayer, classFor("dev.vox.lss.common.LSSConstants").getField("CAPABILITY_VOXEL_COLUMNS").getInt(null));
-        invoke(syntheticPlayer, "setPos", new Class<?>[]{double.class, double.class, double.class},
-                (TARGET_X[0] + 64) * 16.0 + 8.0, 80.0, CHUNK_Z * 16.0 + 8.0);
+        syntheticPlayer.setPos((TARGET_X[0] + 64) * 16.0 + 8.0, 80.0, CHUNK_Z * 16.0 + 8.0);
     }
 
-    @SuppressWarnings("unchecked")
-    private static void addSyntheticPlayerToServerLookup() throws Exception {
-        Object playerList = invoke(server, "getPlayerList");
-        Class<?> playerListType = classFor("net.minecraft.server.players.PlayerList");
-        var uuidsField = playerListType.getDeclaredField("playersByUUID");
-        uuidsField.setAccessible(true);
-        ((Map<UUID, Object>) uuidsField.get(playerList)).put(syntheticPlayerId, syntheticPlayer);
-        require(invoke(playerList, "getPlayer", new Class<?>[]{UUID.class}, syntheticPlayerId) == syntheticPlayer,
+    private static void addSyntheticPlayerToServerLookup() {
+        var playerList = server.getPlayerList();
+        ((dev.ricky12awesome.lodgen.mixin.VssPlayerListAccessor) playerList)
+                .lodgen$playersByUUID().put(syntheticPlayerId, syntheticPlayer);
+        require(playerList.getPlayer(syntheticPlayerId) == syntheticPlayer,
                 "VSS probe player was not visible through the server player list");
     }
 
-    @SuppressWarnings("unchecked")
-    private static void removeSyntheticPlayerFromServerLookup() throws Exception {
+    private static void removeSyntheticPlayerFromServerLookup() {
         if (syntheticPlayer == null) return;
-        Object playerList = invoke(server, "getPlayerList");
-        Class<?> playerListType = classFor("net.minecraft.server.players.PlayerList");
-        var uuidsField = playerListType.getDeclaredField("playersByUUID");
-        uuidsField.setAccessible(true);
-        ((Map<UUID, Object>) uuidsField.get(playerList)).remove(syntheticPlayerId, syntheticPlayer);
+        ((dev.ricky12awesome.lodgen.mixin.VssPlayerListAccessor) server.getPlayerList())
+                .lodgen$playersByUUID().remove(syntheticPlayerId, syntheticPlayer);
     }
 
     private static void startTask() throws Exception {
@@ -280,7 +274,7 @@ public final class VssCheck {
         Object payload = payloadType.getConstructor(long[].class, long[].class, int.class)
                 .newInstance(positions, new long[positions.length], positions.length);
         submittedBefore = (long) invoke(generationService, "getTotalSubmitted");
-        invoke(service, "handleBatchRequest", new Class<?>[]{classFor("net.minecraft.server.level.ServerPlayer"), payloadType},
+        invoke(service, "handleBatchRequest", new Class<?>[]{ServerPlayer.class, payloadType},
                 syntheticPlayer, payload);
         lastNativeRequestAt = System.nanoTime();
         requested = true;
@@ -298,7 +292,7 @@ public final class VssCheck {
         Class<?> payloadType = classFor("dev.vox.lss.networking.payloads.BatchChunkRequestC2SPayload");
         Object payload = payloadType.getConstructor(long[].class, long[].class, int.class)
                 .newInstance(positions, new long[positions.length], positions.length);
-        invoke(service, "handleBatchRequest", new Class<?>[]{classFor("net.minecraft.server.level.ServerPlayer"), payloadType},
+        invoke(service, "handleBatchRequest", new Class<?>[]{ServerPlayer.class, payloadType},
                 syntheticPlayer, payload);
         lastNativeRequestAt = System.nanoTime();
     }
@@ -471,7 +465,7 @@ public final class VssCheck {
     /** Called by the integration mixin; swallow all outbound packets for the probe. */
     public static boolean captureNativePacket(Object player, Object payload) {
         try {
-            if (syntheticPlayerId == null || !syntheticPlayerId.equals(invoke(player, "getUUID"))) return false;
+            if (syntheticPlayerId == null || !syntheticPlayerId.equals(((ServerPlayer) player).getUUID())) return false;
             NATIVE_PACKETS.add(payload);
             return true;
         } catch (Throwable error) {

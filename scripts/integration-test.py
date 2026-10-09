@@ -12,6 +12,7 @@ import urllib.request
 from script_utils import ROOT, load_json, read_mod_version
 
 matrix = load_json("versions.json")
+vss_targets = load_json("vss-versions.json")
 mod_version = read_mod_version()
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--mc", choices=matrix, required=True)
@@ -56,15 +57,16 @@ parser.add_argument("--jfr", action="store_true", help="Record the disposable se
 parser.add_argument("--trace-ownership", action="store_true", help="Log the callers of transient chunk adoption")
 parser.add_argument("--vanilla", action="store_true", help="Test without C2ME")
 parser.add_argument("--baseline", action="store_true", help="Run the same check with DH's original FEATURES generator")
-parser.add_argument("--vss-check", action="store_true", help="Dedicated-server native VSS generation and LOD output check (1.21.1 NeoForge)")
+parser.add_argument("--vss-check", action="store_true", help="Dedicated-server native VSS generation and LOD output check")
 parser.add_argument("--vss-with-dh", action="store_true", help="Combine the native VSS request check with real DH output (requires --vss-check)")
 parser.add_argument("--vss-generation", action=argparse.BooleanOptionalAction, default=True,
                     help="VSS generation.enabled value in the fixture config (both values must still generate)")
 parser.add_argument("--vss-store", action=argparse.BooleanOptionalAction, default=True,
                     help="Enable VSS's native SQLite LOD store for --vss-check")
 args = parser.parse_args()
-if args.vss_check and (args.mc != "1.21.1" or args.loader != "neoforge"):
-    parser.error("--vss-check requires --mc 1.21.1 --loader neoforge")
+vss_version = vss_targets.get(args.mc, {}).get(args.loader)
+if args.vss_check and not vss_version:
+    parser.error(f"No published VSS build for {args.mc} {args.loader}")
 if args.vss_with_dh and not args.vss_check:
     parser.error("--vss-with-dh requires --vss-check")
 if args.vss_check and (args.startup_only or args.task_check or args.autostart_check or args.shutdown_check
@@ -164,7 +166,7 @@ shutil.rmtree(run / "mods", ignore_errors=True)
 (run / "mods").mkdir()
 shutil.copyfile(artifacts[0], run / "mods" / "lodgen-test.jar")
 if args.vss_check:
-    modrinth("ysVSK5wH", "lss")
+    modrinth(vss_version, "lss")
     if args.vss_with_dh:
         modrinth(target["dh"], "distanthorizons")
 elif not args.minimal:
@@ -310,18 +312,21 @@ if args.vss_check:
     first_log_text = log.read_text()
     if "LODgen has disabled VSS generation" in first_log_text:
         raise SystemExit("LODgen emitted the removed VSS-generation warning")
-    print(report.read_text().strip())
+    first_report = report.read_text()
+    print(first_report.strip())
     reload_report = run / "integration-reload-result.txt"
     reload_report.unlink(missing_ok=True)
     reload_command = command[:1] + ["-Dlodgen.test.vssReload=true"] + command[1:]
     reload_log = run / "integration-reload.log"
     with reload_log.open("w") as output:
         subprocess.run(reload_command, cwd=run, stdout=output, stderr=subprocess.STDOUT, timeout=180, check=True)
-    # VssCheck writes the normal report path on both launches; retain the first
-    # generation result above and use the reloaded process log/report below.
+    # VssCheck writes the normal report path on both launches; retain separate
+    # generation and reload reports for the validation artifacts.
     if not report.exists() or not report.read_text().startswith("PASS:"):
         print(reload_log.read_text()[-10000:])
         raise SystemExit(report.read_text() if report.exists() else "VSS reload stopped without an integration result")
+    reload_report.write_text(report.read_text())
+    report.write_text(first_report)
     if vss_config.read_bytes() != vss_config_before:
         raise SystemExit("VSS config bytes changed during the LODgen reload check")
     reload_text = reload_log.read_text()
@@ -341,7 +346,7 @@ if args.vss_check:
                 raise SystemExit(f"VSS LOD-only area saved a native FULL chunk: {region}")
     if not empty_region.exists() or len(empty_region.read_bytes()) != 8192 or any(empty_region.read_bytes()):
         raise SystemExit("VSS fixture's pre-existing empty target MCA region was not preserved")
-    print(report.read_text().strip())
+    print(reload_report.read_text().strip())
     raise SystemExit(0)
 if args.autostart_check:
     print(report.read_text().strip())
