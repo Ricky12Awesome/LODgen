@@ -34,7 +34,7 @@ for mc in matrix:
         shutil.copyfile(jars[0], artifact)
         manifest[artifact.name] = {"sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
                                    "minecraft": mc, "loader": loader,
-                                   "requiredMods": {"minecraft": mc},
+                                   "requiredMods": {"minecraft": mc, **({"fabric-api": "*"} if loader == "fabric" else {})},
                                    "optionalRenderers": {"distanthorizons": matrix[mc]["dhVersion"], "voxy": voxy_targets.get(mc, {}).get(loader)},
                                    "testedVersions": matrix[mc],
                                    "optionalTestMods": {project: versions.get(mc, {}).get(loader) for project, versions in optional_tests.items()}}

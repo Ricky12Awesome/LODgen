@@ -19,7 +19,7 @@
   "lodgen.config.option.cave_mode.value.generate": "Generate",
   "lodgen.config.option.cave_mode.value.fill": "Fill",
   "lodgen.config.option.cave_mode.value.empty": "Empty",
-  "lodgen.config.screen.hint.units": "Distances are in chunks; coordinates are in blocks.",
+  "lodgen.config.screen.hint.units": "LODgen configuration (singleplayer only)",
   "lodgen.config.option.auto_start.label": "Autostart",
   "lodgen.config.option.auto_start.tooltip": "Automatically starts a task when joining a new singleplayer world\n\nIf distant horizons generator plan is disabled, this setting is ignored",
   "lodgen.config.option.auto_resume.label": "Auto resume",

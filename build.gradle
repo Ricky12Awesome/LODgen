@@ -111,7 +111,7 @@ dependencies {
         // Only Mod Menu loads its config entrypoint. Keep its API out of implementation.
         modCompileOnly("maven.modrinth:modmenu:${target.modMenu}") { transitive = false }
         modRuntimeOnly("maven.modrinth:modmenu:${target.modMenu}") { transitive = false }
-        // The dev mods use Fabric API; production LODgen only uses Fabric Loader.
+        // Fabric API loads LODgen's language resources in production too.
         modRuntimeOnly "net.fabricmc.fabric-api:fabric-api:${target.fabricApi}"
         if (integration) modCompileOnly "net.fabricmc.fabric-api:fabric-api:${target.fabricApi}"
     }
@@ -339,13 +339,14 @@ modrinth {
     loaders = [platform]
     detectLoaders = false
     debugMode.set(providers.gradleProperty('modrinthDebug').map { it.toBoolean() }.orElse(false))
-    if (providers.gradleProperty('modrinthChangelogFile').isPresent()) {
-        changelog.set(providers.fileContents(layout.projectDirectory.file(providers.gradleProperty('modrinthChangelogFile').get())).asText)
-    }
+    changelog.set(providers.gradleProperty('modrinthChangelogUrl'))
     dependencies {
         optional.version target.dh
         optional.version target[platform == 'fabric' ? 'c2meFabric' : 'c2meNeoForge']
-        if (platform == 'fabric') optional.version target.modMenu
+        if (platform == 'fabric') {
+            required.project 'fabric-api'
+            optional.version target.modMenu
+        }
         if (voxyTarget) {
             optional.version voxyTarget.voxy
             if (voxyTarget.roxy) optional.version voxyTarget.roxy
@@ -359,7 +360,7 @@ tasks.register('publishModrinth', TaskModrinthUpload) {
     dependsOn(tasks.named('assemble'), tasks.named('check'))
     mustRunAfter(tasks.named('build'))
     wiredInputFiles.from(modrinth.file)
-    inputs.property('changelog', modrinth.changelog).optional(true)
+    inputs.property('changelog', modrinth.changelog)
     notCompatibleWithConfigurationCache('Minotaur accesses the project during upload')
     doFirst {
         if (integration || startup) throw new GradleException('Publish with selfTest=false and startupTest=false; test variants are not releases')

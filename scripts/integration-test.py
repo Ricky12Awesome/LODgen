@@ -20,7 +20,7 @@ parser.add_argument("--java", default="java", help="Java 21 for MC 1.21.1; Java 
 parser.add_argument("--run-name", help="Separate disposable benchmark directory name")
 parser.add_argument("--skip-build", action="store_true")
 parser.add_argument("--startup-only", action="store_true", help="Load the packaged startup fixture and stop before opening a world")
-parser.add_argument("--minimal", action="store_true", help="With --startup-only, install LODgen without DH, C2ME or Fabric API")
+parser.add_argument("--minimal", action="store_true", help="With --startup-only, install LODgen and required dependencies without DH or C2ME")
 parser.add_argument("--task-check", action="store_true", help="Commands, mixed saved/LOD radius, and auto resume using only a 5c radius")
 parser.add_argument("--autostart-check", action="store_true", help="Dedicated autostart blocking and auto-resume setting lifecycle using only a 5c radius")
 parser.add_argument("--shutdown-check", action="store_true", help="Quit with 64 native Empty LOD chunks still generating")
@@ -239,9 +239,8 @@ if args.vss_check:
 heap = "-Xmx2G" if args.startup_only else "-Xmx" + args.heap
 if args.loader == "fabric":
     version = target["fabricApi"]
-    if not args.minimal:
-        download(f"https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/{version}/fabric-api-{version}.jar",
-                 run / "mods" / "fabric-api.jar")
+    download(f"https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/{version}/fabric-api-{version}.jar",
+             run / "mods" / "fabric-api.jar")
     download(f"https://meta.fabricmc.net/v2/versions/loader/{args.mc}/{target['fabricLoader']}/1.1.1/server/jar",
              run / "fabric-server-launch.jar")
     command = [args.java, heap, "-Dlodgen.test.chunky=" + str(args.chunky).lower(), "-Dlodgen.test.benchmark=" + str(args.benchmark), "-jar", "fabric-server-launch.jar", "nogui"]
