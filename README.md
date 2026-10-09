@@ -71,12 +71,12 @@ on 9950X (these are tested with full generation, may be faster if you skip caves
 ## AI
 This mod uses ai to massively accelerate development
 
-AI is only used for 
-- Code
+AI is used for 
+- Code (including commit messages and PRs)
 - Tests (I mostly do manual testing in my own test instances)
 - Benchmarking
+- `CHANGELOG.md` (I still look over it to make sure its correct)
 
 AI is NOT used for
 - Text (language files, tooltips, descriptions, etc)
-  - since ai likes to over explain things
 - Art (logo is the only art in this project, and I made that myself)
