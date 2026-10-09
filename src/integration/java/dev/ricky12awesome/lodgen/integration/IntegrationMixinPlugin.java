@@ -24,7 +24,7 @@ public final class IntegrationMixinPlugin implements IMixinConfigPlugin {
     @Override public void acceptTargets(Set<String> own, Set<String> other) { delegate.acceptTargets(own, other); }
     @Override public List<String> getMixins() {
         if (!Boolean.getBoolean("lodgen.test.vss")) return delegate.getMixins();
-        return List.of("VssNoticeCaptureMixin");
+        return List.of("VssNoticeCaptureMixin", "VssPlayerListAccessor");
     }
     @Override public void preApply(String target, ClassNode node, String mixin, IMixinInfo info) { delegate.preApply(target, node, mixin, info); }
     @Override public void postApply(String target, ClassNode node, String mixin, IMixinInfo info) {

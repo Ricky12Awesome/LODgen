@@ -317,6 +317,7 @@ def modrinthEnv = providers.fileContents(layout.projectDirectory.file('.env')).a
     }
 }
 def voxyTarget = new JsonSlurper().parse(file('voxy-versions.json'))[mc]?.get(platform)
+def vssTarget = new JsonSlurper().parse(file('vss-versions.json'))[mc]?.get(platform)
 // Ignore build metadata and classify the first prerelease identifier.
 def versionParts = version.toString().split(/\+/, 2)[0].split('-', 2)
 def versionQualifier = versionParts.length > 1 ? versionParts[1].split(/[.-]/, 2)[0] : ''
@@ -351,7 +352,7 @@ modrinth {
             optional.version voxyTarget.voxy
             if (voxyTarget.roxy) optional.version voxyTarget.roxy
         }
-        if (mc == '1.21.1' && platform == 'neoforge') optional.version 'ysVSK5wH'
+        if (vssTarget) optional.version vssTarget
     }
 }
 tasks.register('publishModrinth', TaskModrinthUpload) {

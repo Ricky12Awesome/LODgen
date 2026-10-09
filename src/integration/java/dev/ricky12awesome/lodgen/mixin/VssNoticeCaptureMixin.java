@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /** Captures native VSS replies sent to the integration probe. */
 @Pseudo
-@Mixin(targets = "dev.vox.lss.platform.NeoForgeLoaderServices", remap = false)
+@Mixin(targets = {"dev.vox.lss.platform.NeoForgeLoaderServices", "dev.vox.lss.platform.FabricLoaderServices"}, remap = false)
 public abstract class VssNoticeCaptureMixin {
     @Inject(method = "sendToPlayer", at = @At("HEAD"), cancellable = true, remap = false)
     private void lodgen$captureNativePacket(ServerPlayer player, CustomPacketPayload payload, CallbackInfo callback) {

@@ -10,6 +10,7 @@ from script_utils import ROOT, load_json, read_mod_version
 matrix = load_json("versions.json")
 optional_tests = load_json("test-versions.json")
 voxy_targets = load_json("voxy-versions.json")
+vss_targets = load_json("vss-versions.json")
 mod_version = read_mod_version()
 logs = ROOT / "build" / "matrix-logs"
 logs.mkdir(parents=True, exist_ok=True)
@@ -35,7 +36,8 @@ for mc in matrix:
         manifest[artifact.name] = {"sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
                                    "minecraft": mc, "loader": loader,
                                    "requiredMods": {"minecraft": mc, **({"fabric-api": "*"} if loader == "fabric" else {})},
-                                   "optionalRenderers": {"distanthorizons": matrix[mc]["dhVersion"], "voxy": voxy_targets.get(mc, {}).get(loader)},
+                                   "optionalRenderers": {"distanthorizons": matrix[mc]["dhVersion"], "voxy": voxy_targets.get(mc, {}).get(loader),
+                                                         "lss": vss_targets.get(mc, {}).get(loader)},
                                    "testedVersions": matrix[mc],
                                    "optionalTestMods": {project: versions.get(mc, {}).get(loader) for project, versions in optional_tests.items()}}
 (dist / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")

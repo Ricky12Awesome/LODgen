@@ -28,6 +28,11 @@ jobs:
         env:
           TEST_JAVA: ${{ matrix.minecraft == '1.21.1' && env.JAVA_HOME_21_X64 || env.JAVA_HOME_25_X64 }}
         run: python3 scripts/integration-test.py --mc '${{ matrix.minecraft }}' --loader '${{ matrix.loader }}' --java "$TEST_JAVA/bin/java"
+      - name: Packaged VSS server integration check
+        if: matrix.minecraft != '26.3'
+        env:
+          TEST_JAVA: ${{ matrix.minecraft == '1.21.1' && env.JAVA_HOME_21_X64 || env.JAVA_HOME_25_X64 }}
+        run: python3 scripts/integration-test.py --mc '${{ matrix.minecraft }}' --loader '${{ matrix.loader }}' --java "$TEST_JAVA/bin/java" --vss-check --skip-build
       - uses: actions/upload-artifact@v6
         if: always()
         with:
@@ -38,3 +43,7 @@ jobs:
             build/${{ matrix.minecraft }}/${{ matrix.loader }}/selftest/packaged-server/integration-server.log
             build/${{ matrix.minecraft }}/${{ matrix.loader }}/selftest/packaged-server/integration-reload-result.txt
             build/${{ matrix.minecraft }}/${{ matrix.loader }}/selftest/packaged-server/integration-reload.log
+            build/${{ matrix.minecraft }}/${{ matrix.loader }}/selftest/packaged-server-vss/integration-result.txt
+            build/${{ matrix.minecraft }}/${{ matrix.loader }}/selftest/packaged-server-vss/integration-server.log
+            build/${{ matrix.minecraft }}/${{ matrix.loader }}/selftest/packaged-server-vss/integration-reload-result.txt
+            build/${{ matrix.minecraft }}/${{ matrix.loader }}/selftest/packaged-server-vss/integration-reload.log

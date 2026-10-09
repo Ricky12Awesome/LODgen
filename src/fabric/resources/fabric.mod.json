@@ -34,6 +34,7 @@
     "c2me": "*",
     "distanthorizons": "=${dhVersion}",
     "voxy": "*",
+    "lss": "*",
     "modmenu": "*"
   }
 }
