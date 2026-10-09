@@ -1,11 +1,17 @@
 {
   "schemaVersion": 1,
-  "id": "lodgen",
+  "id": "${modId}",
   "version": "${version}",
-  "name": "LODgen",
-  "icon": "logo.png",
-  "description": "Generates chunk-based LODs for Distant Horizons FEATURES and Voxy without saving LOD-only chunks.",
-  "license": "MIT",
+  "name": "${modName}",
+  "icon": "${modIcon}",
+  "description": "${modDescription}",
+  "authors": [],
+  "license": "${modLicense}",
+  "contact": {
+    "sources": "${modSourceUrl}",
+    "issues": "${modIssueTrackerUrl}",
+    "homepage": "${modHomepageUrl}"
+  },
   "environment": "*",
   "entrypoints": {
     "main": [

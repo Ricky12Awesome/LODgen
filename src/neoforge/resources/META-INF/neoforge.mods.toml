@@ -1,46 +1,49 @@
 modLoader="javafml"
 loaderVersion="*"
-license="MIT"
+license="${modLicense}"
+issueTrackerURL="${modIssueTrackerUrl}"
 
 [[mods]]
-modId="lodgen"
+modId="${modId}"
 version="${version}"
-displayName="LODgen"
-logoFile="logo.png"
-description="Generates chunk-based LODs for Distant Horizons FEATURES and Voxy without saving LOD-only chunks."
+displayName="${modName}"
+displayURL="${modHomepageUrl}"
+logoFile="${modIcon}"
+description="${modDescription}"
+authors="${modAuthors}"
 
 [[mixins]]
 config="lodgen.mixins.json"
 
-[[dependencies.lodgen]]
+[[dependencies."${modId}"]]
 modId="minecraft"
 type="required"
 versionRange="[${minecraft}]"
 ordering="NONE"
 side="BOTH"
 
-[[dependencies.lodgen]]
+[[dependencies."${modId}"]]
 modId="neoforge"
 type="required"
 versionRange="[21,)"
 ordering="NONE"
 side="BOTH"
 
-[[dependencies.lodgen]]
+[[dependencies."${modId}"]]
 modId="distanthorizons"
 type="optional"
 versionRange="[${dhVersion}]"
 ordering="AFTER"
 side="BOTH"
 
-[[dependencies.lodgen]]
+[[dependencies."${modId}"]]
 modId="lss"
 type="optional"
 versionRange="*"
 ordering="AFTER"
 side="SERVER"
 
-[[dependencies.lodgen]]
+[[dependencies."${modId}"]]
 modId="c2me"
 type="optional"
 versionRange="[0.4.0-alpha.0,)"

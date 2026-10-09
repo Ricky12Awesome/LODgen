@@ -1,3 +1,4 @@
+import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import com.modrinth.minotaur.ModrinthExtension
 import com.modrinth.minotaur.TaskModrinthUpload
@@ -19,13 +20,16 @@ if (!matrix.containsKey(mc) || !(platform in ['fabric', 'neoforge'])) {
     throw new GradleException('Use -PmcVersion=1.21.1|26.1.2|26.2|26.3 -Ploader=fabric|neoforge')
 }
 def target = matrix[mc]
+def modMetadata = ['modId', 'modName', 'modDescription', 'modAuthors', 'modLicense', 'modIcon', 'modSourceUrl', 'modHomepageUrl', 'modIssueTrackerUrl'].collectEntries { key ->
+    [(key): providers.gradleProperty(key).get()]
+}
 def integration = providers.gradleProperty('selfTest').map { it.toBoolean() }.getOrElse(false)
 def startup = providers.gradleProperty('startupTest').map { it.toBoolean() }.getOrElse(false)
 def hotReload = providers.gradleProperty('hotReload').map { it.toBoolean() }.getOrElse(true) && !integration && !startup
 if (integration && startup) throw new GradleException('Choose selfTest or startupTest, not both')
-group = 'dev.ricky12awesome.lodgen'
+group = providers.gradleProperty('modGroup').get()
 version = providers.gradleProperty('modVersion').get()
-base.archivesName = "lodgen-${mc}-${platform}"
+base.archivesName = "${modMetadata.modId}-${mc}-${platform}"
 layout.buildDirectory = file("build/${mc}/${platform}" + (integration ? '/selftest' : startup ? '/startup' : ''))
 
 sourceSets.main.java.srcDirs('src/common/java', "src/${platform}/java", layout.buildDirectory.dir('generated/sources/minecraft'))
@@ -241,11 +245,19 @@ if (hotReload) {
     }
 }
 tasks.named('processResources') {
-    def values = [version: version, minecraft: mc, loader: platform, java: target.java, dhVersion: target.dhVersion, fabricLoader: target.fabricLoader]
+    def authors = modMetadata.modAuthors.split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+    // JSON escaping also works inside TOML basic strings.
+    def metadataValues = (modMetadata + [modAuthors: authors.join(', ')]).collectEntries { key, value ->
+        def quoted = JsonOutput.toJson(value)
+        [(key): quoted.substring(1, quoted.length() - 1)]
+    }
+    def values = [version: version, minecraft: mc, loader: platform, java: target.java, dhVersion: target.dhVersion, fabricLoader: target.fabricLoader] + metadataValues
     inputs.properties(values)
     inputs.property('integration', integration)
     inputs.property('startup', startup)
-    filesMatching(['fabric.mod.json', 'META-INF/neoforge.mods.toml', 'lodgen.target.properties']) { expand(values) }
+    filesMatching(['fabric.mod.json', 'META-INF/neoforge.mods.toml', 'lodgen.target.properties']) {
+        expand(values) { escapeBackslash = true }
+    }
     if (integration) {
         doLast {
             def metadata = new File(destinationDir, 'lodgen.mixins.json')
@@ -254,12 +266,13 @@ tasks.named('processResources') {
             metadata.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json))
         }
     }
-    if (integration && platform == 'fabric') {
+    if (platform == 'fabric') {
         doLast {
             def metadata = new File(destinationDir, 'fabric.mod.json')
             def json = new JsonSlurper().parse(metadata)
-            json.entrypoints.main.add('dev.ricky12awesome.lodgen.integration.fabric.IntegrationEntrypoint')
-            metadata.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json))
+            json.authors = authors
+            if (integration) json.entrypoints.main.add('dev.ricky12awesome.lodgen.integration.fabric.IntegrationEntrypoint')
+            metadata.text = JsonOutput.prettyPrint(JsonOutput.toJson(json))
         }
     }
     if (startup) {
@@ -318,7 +331,7 @@ modrinth {
             .orElse(modrinthEnv.map { it.MODRINTH_PROJECT_ID ?: '' }))
     // Each target gets its own version so publishing the matrix cannot collide.
     versionNumber = "${version}+${mc}-${platform}"
-    versionName = "LODgen ${version} — Minecraft ${mc} (${platform == 'fabric' ? 'Fabric' : 'NeoForge'})"
+    versionName = "${modMetadata.modName} ${version} — Minecraft ${mc} (${platform == 'fabric' ? 'Fabric' : 'NeoForge'})"
     versionType = versionQualifier in ['alpha', 'beta'] ? versionQualifier : 'release'
     environment.set(providers.gradleProperty('modrinthEnvironment').orElse('client_or_server_prefers_both'))
     file.set(tasks.named('remapJar').flatMap { it.archiveFile })
@@ -363,7 +376,7 @@ matrix.keySet().each { gameVersion ->
         def priorPublication = previousPublication
         previousPublication = tasks.register("modrinthMatrix${gameVersion.replace('.', '_')}${loaderName.capitalize()}", GradleBuild) {
             dir = rootProject.projectDir
-            buildName = "lodgen-publish-${gameVersion}-${loaderName}"
+            buildName = "${modMetadata.modId}-publish-${gameVersion}-${loaderName}"
             tasks = ['publishModrinth']
             startParameter.projectProperties = new LinkedHashMap(gradle.startParameter.projectProperties) + [mcVersion: gameVersion, loader: loaderName]
             startParameter.offline = gradle.startParameter.offline
