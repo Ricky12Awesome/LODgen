@@ -6,6 +6,11 @@
 - Avoid any test that needs to launch a window
 - if you need to edit `README.md`, suggest the user what changes to make
   - unless explicitly ask to edit `README.md`
-- do not edit language files, suggest the user to make changes
+- do not make up your own text/descriptions
+  - does not apply to code and code comments 
+  - this applies to language files, config descriptions, etc
+  - user may tell you what text should be upfront
+  - ask the user to provide a text (or option to generate)
+  - always add location (file and line number) of the text to `.todo-text`
 - don't make unneeded docs or validations files
   - unless explicitly ask to

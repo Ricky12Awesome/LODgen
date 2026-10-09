@@ -25,7 +25,7 @@
   "lodgen.config.option.auto_resume.label": "Auto resume",
   "lodgen.config.option.auto_resume.tooltip": "Automatically resumes task when joining a singleplayer world or on server startup",
   "lodgen.config.option.center_mode.label": "Center",
-  "lodgen.config.option.center_mode.tooltip": "Origin - World origin.\nX/Z - Custom",
+  "lodgen.config.option.center_mode.tooltip": "Origin - World origin\nX/Z - Custom",
   "lodgen.config.option.center_x.tooltip": "X Coord",
   "lodgen.config.option.center_z.tooltip": "Z Coord",
   "lodgen.config.option.lod_radius.label": "LOD radius",

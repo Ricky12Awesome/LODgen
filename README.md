@@ -42,8 +42,11 @@ on 9950X (these are tested with full generation, may be faster if you skip caves
 
 ## Current Features
 - Supports Fabric and Neoforge on `1.21.1`, `26.1.2`, `26.2`, `26.3`
+- Works with Voxy / Voxy Server Side
 - Works with Distant Horizons, replaces its `FEATURES` generator with our own
   - I might change this where via DH API its locked
+- Server support (needs more testing)
+  - LOD gets sent to the clients with DH and VSS, LODgen does not send LODs to clients
 - Generate chunks without saving them (so they're only used for LODs)
   - can also work as a chunk pregenerator like chunky (to avoid duplicate work)
     - for example you can have a LOD radius `1024c`, but save chunks at `256c` 
@@ -62,16 +65,18 @@ on 9950X (these are tested with full generation, may be faster if you skip caves
   - `/lodgen status` status of current task
 
 ## TODO
-- much more testing different use cases
-  - like testing how it works on servers (if clients gets the LODs)
+- more testing different use cases
+- more testing on servers
 
 ## AI
-This mod is mostly made using ai (gpt-6.1-sol)
+This mod uses ai to massively accelerate development
 
 AI is only used for 
-- code
-- some testing (I mostly do manual testing in my own test instances)
-- run series of benchmarks
+- Code
+- Tests (I mostly do manual testing in my own test instances)
+- Benchmarking
 
 AI is NOT used for
+- Text (language files, tooltips, descriptions, etc)
+  - since ai likes to over explain things
 - Art (logo is the only art in this project, and I made that myself)

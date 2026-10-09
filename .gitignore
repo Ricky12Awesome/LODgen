@@ -10,3 +10,4 @@ run/
 __pycache__/
 *.pyc
 .env
+.todo-text
