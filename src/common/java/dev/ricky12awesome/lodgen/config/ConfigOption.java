@@ -12,6 +12,12 @@ public @interface ConfigOption {
     String defaultValue();
     String comment();
     int order() default Integer.MAX_VALUE;
+    /** TOML path; defaults to the record field name. */
+    String path() default "";
+    /** File order can differ from the order of controls in the config screen. */
+    int fileOrder() default Integer.MAX_VALUE;
+    /** Composite settings can keep fields in the UI without separate TOML keys. */
+    boolean persisted() default true;
     int min() default Integer.MIN_VALUE;
     int max() default Integer.MAX_VALUE;
     boolean cycle() default false;
