@@ -1,0 +1,54 @@
+# tracks different config versions
+# only goes up if a config has breaking changes
+_version = 1
+
+[client.showCps]
+# Show chunks per second in action bar (to OPs only)
+enabled = true
+# Update interval in milliseconds (1-60000)
+interval = 250
+
+[threading]
+# CPU Load
+#
+# 1 - Minimum
+# 2 - Low
+# 3 - Medium
+# 4 - High
+# 5 - Maximum
+#
+# More load = faster generation but more lag
+cpuLoad = 3
+
+[generation]
+# Automatically starts a task when joining a new singleplayer world
+#
+# If distant horizons generator plan is disabled, this setting is ignored
+autoStart = true
+# Automatically resumes task when joining a singleplayer world or on server startup
+autoResume = true
+# Skips cave generation entirely
+#
+# generate - full chunks
+# fill - stone/deepslate
+# empty - air
+#
+# Fill/Empty may cause incorrect surfaces
+#
+# Ignored for saved chunks
+caveGen = "empty"
+# These chunks are not saved and are only used for making LODs
+#
+# 0 = based on DH or Voxy
+radius = 0
+# Save chunks to avoid duplicate work
+#
+# (basically a chunk pregenerator)
+#
+# 0 = save no chunks
+saveRadius = 0
+# Center
+#
+# origin - world origin
+# <x> <z> - custom x/z location like "0 0" or "512 0"
+center = "origin"

@@ -18,11 +18,14 @@ public final class ConfigSchema<R extends Record> {
     private final Constructor<R> constructor;
     private final List<Option> fields;
     private final List<Option> options;
+    private final List<Option> fileOptions;
 
     public ConfigSchema(Class<R> type, String translationPrefix) {
         var components = type.getRecordComponents();
         fields = Arrays.stream(components).map(component -> new Option(component, translationPrefix)).toList();
         options = fields.stream().sorted(Comparator.comparingInt(option -> option.metadata.order())).toList();
+        fileOptions = options.stream().filter(option -> option.metadata.persisted())
+                .sorted(Comparator.comparingInt(option -> option.metadata.fileOrder())).toList();
         for (var option : options) {
             option.parse(option.metadata.defaultValue());
             if (!option.metadata.enabledWhen().isEmpty())
@@ -48,14 +51,15 @@ public final class ConfigSchema<R extends Record> {
     }
 
     public R read(UnmodifiableConfig values) {
-        return create(fields.stream().map(option -> option.decode(values.get(option.key()))).toArray());
+        return create(fields.stream().map(option -> option.decode(values.get(option.path()))).toArray());
     }
 
     /** Update known keys while preserving unrelated settings and tables. */
     public void write(CommentedConfig values, R settings) {
-        for (var option : options) {
-            values.set(option.key(), option.encode(option.value(settings)));
-            values.setComment(option.key(), " " + option.metadata.comment());
+        for (var option : fileOptions) {
+            values.set(option.path(), option.encode(option.value(settings)));
+            values.setComment(option.path(), option.metadata.comment().lines()
+                    .map(line -> line.isEmpty() ? "" : " " + line).collect(java.util.stream.Collectors.joining("\n")));
         }
     }
 
@@ -115,6 +119,7 @@ public final class ConfigSchema<R extends Record> {
         }
 
         public String key() { return component.getName(); }
+        public String path() { return metadata.path().isEmpty() ? key() : metadata.path(); }
         public String labelKey() { return translationKey + ".label"; }
         public String tooltipKey() { return translationKey + ".tooltip"; }
         public ConfigOption metadata() { return metadata; }
