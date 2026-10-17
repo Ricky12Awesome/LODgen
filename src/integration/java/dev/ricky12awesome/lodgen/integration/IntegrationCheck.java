@@ -34,7 +34,7 @@ public final class IntegrationCheck {
         ExecutorService executor = Executors.newFixedThreadPool(8);
         try {
             Files.deleteIfExists(REPORT);
-            cpuLoad();
+            threads();
             DiskPredicateCheck.run();
             int expectedWorkers = Integer.getInteger("lodgen.test.nativeWorkers", 0);
             if (expectedWorkers > 0) {
@@ -153,34 +153,43 @@ public final class IntegrationCheck {
         }
     }
 
-    private static void cpuLoad() throws Exception {
+    private static void threads() throws Exception {
         var original = LodgenConfig.INSTANCE;
         var threading = DhApi.Delayed.configs.multiThreading();
         int savedThreads = threading.threadCount().getTrueValue();
         double savedRatio = threading.threadRuntimeRatio().getTrueValue();
         require(threading.threadCount().getApiValue() != null && threading.threadRuntimeRatio().getApiValue() != null,
-                "LODgen did not override DH CPU load at startup");
-        requireCpuLoadOwner();
+                "LODgen did not override DH generation threads at startup");
+        var laggingServer = new Object();
         try {
-            for (int load : new int[]{1, 5}) {
-                LodgenConfig.apply(LodgenConfig.SCHEMA.with(original, "cpuLoad", load));
-                requireCpuLoadOwner();
+            int processors = Runtime.getRuntime().availableProcessors();
+            for (int threads : new int[]{1, Math.max(1, processors / 2), processors}) {
+                var settings = LodgenConfig.SCHEMA.with(original, "threads", threads);
+                settings = LodgenConfig.SCHEMA.with(settings, "preventLag", false);
+                LodgenConfig.apply(settings);
                 var budget = dev.ricky12awesome.lodgen.GenerationSettings.current();
-                require(threading.threadCount().getValue() == budget.threads(), "DH thread count did not follow live LODgen CPU load");
-                require(threading.threadRuntimeRatio().getValue() == budget.runRatio(), "DH runtime ratio did not follow live LODgen CPU load");
+                require(budget.threads() == threads && threading.threadCount().getValue() == threads,
+                        "DH thread count did not follow live LODgen generation threads");
+                require(budget.runRatio() == 1.0 && threading.threadRuntimeRatio().getValue() == 1.0,
+                        "Full generation thread ratio must remain 1.0");
                 require(threading.threadCount().getTrueValue() == savedThreads && threading.threadRuntimeRatio().getTrueValue() == savedRatio,
-                        "LODgen rewrote DH's saved CPU settings");
+                        "LODgen rewrote DH's saved threading settings");
             }
-        } finally { LodgenConfig.apply(original); }
-        LodgenConfig.LOGGER.info("PASS: DH's CPU Load row is API-locked and names LODgen as its owner; live thread overrides preserve DH's saved settings");
-    }
-
-    private static void requireCpuLoadOwner() {
-        var preset = com.seibel.distanthorizons.core.config.Config.Client.threadPresetSetting;
-        require(preset.apiIsOverriding() && "LODgen".equals(preset.getApiUser()),
-                "DH's CPU Load row must be API-locked with LODgen in its ownership tooltip");
-        require(preset.getApiValue() == com.seibel.distanthorizons.api.enums.config.quickOptions.EDhApiThreadPreset.CUSTOM,
-                "DH's own preset writer must remain inactive while LODgen controls CPU load");
+            LodgenConfig.apply(LodgenConfig.SCHEMA.with(LodgenConfig.INSTANCE, "preventLag", true));
+            for (int tick = 0; tick < 20; tick++)
+                dev.ricky12awesome.lodgen.GenerationSettings.serverTick(laggingServer, 100_000_000L);
+            require(dev.ricky12awesome.lodgen.GenerationSettings.current().runRatio() == 0.05
+                            && threading.threadRuntimeRatio().getValue() == 0.05,
+                    "Slow server ticks must throttle native generation and DH live");
+            LodgenConfig.apply(LodgenConfig.SCHEMA.with(LodgenConfig.INSTANCE, "preventLag", false));
+            require(dev.ricky12awesome.lodgen.GenerationSettings.current().runRatio() == 1.0
+                            && threading.threadRuntimeRatio().getValue() == 1.0,
+                    "Disabling lag prevention must restore full generation speed live");
+        } finally {
+            dev.ricky12awesome.lodgen.GenerationSettings.serverStopped(laggingServer);
+            LodgenConfig.apply(original);
+        }
+        LodgenConfig.LOGGER.info("PASS: live thread overrides and TPS protection preserve DH's saved settings");
     }
 
     private static CompletableFuture<Void> lighting(ServerLevel level, ExecutorService executor) {

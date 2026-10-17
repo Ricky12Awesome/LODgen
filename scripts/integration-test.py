@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 import re
 from pathlib import Path
 import shutil
@@ -36,7 +37,7 @@ parser.add_argument("--layout", choices=("row", "radial"), default="row", help="
 parser.add_argument("--workers", type=int, default=8, help="Concurrent DH benchmark requests")
 parser.add_argument("--native-workers", type=int, default=0, help="Override C2ME parallelism in the disposable server (0 keeps its default)")
 parser.add_argument("--chunky-working-count", type=int, default=0, help="Override Chunky's in-flight limit in the disposable server")
-parser.add_argument("--cpu-load", type=int, choices=range(1, 6), default=3, help="LODgen CPU load, also overriding DH in the disposable server")
+parser.add_argument("--threads", type=int, default=max(1, ((os.cpu_count() or 1) + 1) // 2), help="LODgen generation threads (1 to available processors)")
 parser.add_argument("--dh-executor", action="store_true", help="Use DH's real worldgen executor for the benchmark")
 parser.add_argument("--dh-queue", action="store_true", help="Use DH's actual request selection and admission queue")
 parser.add_argument("--frontier-radius", type=int, default=0, help="Start DH queue requests on a distant square frontier, in chunks")
@@ -64,6 +65,8 @@ parser.add_argument("--vss-generation", action=argparse.BooleanOptionalAction, d
 parser.add_argument("--vss-store", action=argparse.BooleanOptionalAction, default=True,
                     help="Enable VSS's native SQLite LOD store for --vss-check")
 args = parser.parse_args()
+if not 1 <= args.threads <= (os.cpu_count() or 1):
+    parser.error("--threads must be between 1 and the available processor count")
 vss_version = vss_targets.get(args.mc, {}).get(args.loader)
 if args.vss_check and not vss_version:
     parser.error(f"No published VSS build for {args.mc} {args.loader}")
@@ -216,7 +219,7 @@ if args.native_workers:
     c2me_config = run / "config" / "c2me.toml"
     current = c2me_config.read_text() if c2me_config.exists() else "version = 3\nglobalExecutorParallelism = \"default\"\n"
     c2me_config.write_text(re.sub(r"(?m)^globalExecutorParallelism\s*=.*$", f"globalExecutorParallelism = {args.native_workers}", current))
-(run / "config" / "lodgen.toml").write_text(f"enabled={'false' if args.baseline else 'true'}\ncpuLoad={args.cpu_load}\ncaveMode=\"{args.cave_mode}\"\n")
+(run / "config" / "lodgen.toml").write_text(f"_version=1\n[generation]\nautoStart={'false' if args.baseline else 'true'}\nthreads={args.threads}\npreventLag={'false' if args.benchmark else 'true'}\ncaveGen=\"{args.cave_mode}\"\n")
 vss_config = run / "config" / "vss-server-config.yaml"
 vss_config_before = None
 if args.vss_check:

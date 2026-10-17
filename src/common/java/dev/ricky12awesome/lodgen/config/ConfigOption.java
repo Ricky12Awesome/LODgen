@@ -20,6 +20,9 @@ public @interface ConfigOption {
     boolean persisted() default true;
     int min() default Integer.MIN_VALUE;
     int max() default Integer.MAX_VALUE;
+    /** Bound a thread count to the logical processors available to this JVM. */
+    boolean maxAvailableProcessors() default false;
+    boolean slider() default false;
     boolean cycle() default false;
     /** Language-key name; defaults to the record field name in snake_case. */
     String translationName() default "";

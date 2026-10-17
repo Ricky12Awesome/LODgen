@@ -5,7 +5,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 
-/** Conversion workers follow live CPU load, rather than a fixed eight-thread cap. */
+/** Conversion workers follow the live thread count and TPS protection. */
 public final class GenerationWorkers extends ThreadPoolExecutor {
     private final ThreadLocal<Long> started = new ThreadLocal<>();
     public GenerationWorkers(String name) {

@@ -4,6 +4,7 @@ import dev.ricky12awesome.lodgen.config.ConfigDraft;
 import dev.ricky12awesome.lodgen.config.ConfigSchema;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
@@ -32,7 +33,10 @@ final class ConfigControls {
         var label = Component.translatable(option.labelKey());
         var tooltip = Tooltip.create(Component.translatable(option.tooltipKey()));
         AbstractWidget widget;
-        if (option.control() == ConfigSchema.Control.NUMBER) {
+        if (option.control() == ConfigSchema.Control.SLIDER) {
+            widget = new IntegerSlider(option);
+            widget.setTooltip(tooltip);
+        } else if (option.control() == ConfigSchema.Control.NUMBER) {
             var input = new EditBox(font, 0, 0, width, 20, label);
             input.setMaxLength(11); // Enough for every signed 32-bit integer.
             input.setValue(draft.text(option));
@@ -51,6 +55,27 @@ final class ConfigControls {
         widgets.put(option, widget);
         refresh();
         return widget;
+    }
+
+    private final class IntegerSlider extends AbstractSliderButton {
+        private final ConfigSchema.Option option;
+
+        IntegerSlider(ConfigSchema.Option option) {
+            super(0, 0, ConfigControls.this.width, 20, Component.empty(), option.max() == option.min() ? 0
+                    : (Integer.parseInt(draft.text(option)) - option.min()) / (double) (option.max() - option.min()));
+            this.option = option;
+            updateMessage();
+        }
+
+        @Override protected void updateMessage() {
+            setMessage(Component.literal(draft.text(option)));
+        }
+
+        @Override protected void applyValue() {
+            int number = option.min() + (int) Math.round(value * (option.max() - option.min()));
+            draft.edit(option, Integer.toString(number));
+            updateMessage();
+        }
     }
 
     private Component value(ConfigSchema.Option option) {

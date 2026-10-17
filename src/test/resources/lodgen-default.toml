@@ -8,19 +8,12 @@ enabled = true
 # Update interval in milliseconds (1-60000)
 interval = 250
 
-[threading]
-# CPU Load
-#
-# 1 - Minimum
-# 2 - Low
-# 3 - Medium
-# 4 - High
-# 5 - Maximum
-#
-# More load = faster generation but more lag
-cpuLoad = 3
-
 [generation]
+# Generation threads (1 to the number of available system threads)
+# Defaults to half the available system threads
+threads = @THREADS@
+# Slow down generation when the server cannot maintain 20 TPS
+preventLag = true
 # Automatically starts a task when joining a new singleplayer world
 #
 # If distant horizons generator plan is disabled, this setting is ignored

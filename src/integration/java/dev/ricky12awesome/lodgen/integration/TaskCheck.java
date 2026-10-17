@@ -56,8 +56,8 @@ public final class TaskCheck {
                 require(checkpoint != null && checkpoint.progress().state() == TaskProgress.State.RUNNING, "Task intent must survive shutdown");
                 require(!checkpoint.automatic(), "Task origin was not checkpointed");
                 require(currentProgress(server).state() == TaskProgress.State.RUNNING, "Task did not resume automatically");
-                // The minimum load leaves time to pause the first run; the restart only checks completion.
-                LodgenConfig.apply(LodgenConfig.SCHEMA.with(LodgenConfig.INSTANCE, "cpuLoad", 3));
+                // One thread leaves time to pause the first run; the restart only checks completion.
+                LodgenConfig.apply(LodgenConfig.SCHEMA.with(LodgenConfig.INSTANCE, "threads", Math.max(1, (Runtime.getRuntime().availableProcessors() + 1) / 2)));
                 stage = 2;
             } else {
                 command(server, "lodgen start overworld origin 1c");

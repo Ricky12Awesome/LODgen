@@ -35,8 +35,10 @@ public final class BenchmarkCheck {
                 && Boolean.getBoolean("lodgen.test.dhQueue") && originalSettings.enabled();
         if (checkLiveConfig) {
             try {
-                LodgenConfig.apply(LodgenConfig.SCHEMA.with(originalSettings, "cpuLoad", 1));
-                LodgenConfig.LOGGER.info("QUICK CHECK: applied live LODgen CPU load 1, overriding DH");
+                var settings = LodgenConfig.SCHEMA.with(originalSettings, "threads", 1);
+                settings = LodgenConfig.SCHEMA.with(settings, "preventLag", false);
+                LodgenConfig.apply(settings);
+                LodgenConfig.LOGGER.info("QUICK CHECK: applied live LODgen generation threads 1 with lag prevention disabled");
             } catch (Exception failure) { return CompletableFuture.failedFuture(failure); }
         }
         ExecutorService benchmarkExecutor = Boolean.getBoolean("lodgen.test.dhExecutor") ? ThreadPoolUtil.getWorldGenExecutor() : executor;

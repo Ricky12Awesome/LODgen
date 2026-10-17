@@ -77,7 +77,8 @@ def test(mc, loader, world, java_override, reload, performance=None):
             shutil.copyfile(artifact, mods / artifact.name)
     config = directory / 'config'
     config.mkdir()
-    (config / 'lodgen.toml').write_text('enabled=false\ncpuLoad=1\ngenerationDistance=1\n')
+    threads = performance.threads if performance else 1
+    (config / 'lodgen.toml').write_text(f'_version=1\n[generation]\nautoStart=false\nthreads={threads}\npreventLag=false\nradius=1\n')
     # Exercise actual ingestion/storage while avoiding an expensive LOD render.
     (config / 'voxy-config.json').write_text(json.dumps({'enabled': True, 'enable_rendering': False,
         'ingest_enabled': True, 'section_render_distance': 1, 'service_threads': 2}))
@@ -97,7 +98,7 @@ def test(mc, loader, world, java_override, reload, performance=None):
         (config / 'c2me.toml').write_text(f'version=3\nglobalExecutorParallelism={performance.native_workers}\n')
         command = [arg for arg in command if not arg.startswith('-Xmx')]
         command[1:1] = ['-Xmx' + performance.heap, '-XX:+UseZGC', '-XX:+UseCompactObjectHeaders',
-            f'-Dlodgen.test.voxyBenchmark={benchmark}', f'-Dlodgen.test.cpuLoad={performance.cpu_load}',
+            f'-Dlodgen.test.voxyBenchmark={benchmark}', f'-Dlodgen.test.threads={performance.threads}',
             f'-Dlodgen.test.nativeWorkers={performance.native_workers}', '-Dchunky.maxWorkingCount=768']
         if performance.chunky_native_only:
             command.insert(1, '-Dlodgen.test.chunkyNativeOnly=true')
@@ -111,7 +112,7 @@ def test(mc, loader, world, java_override, reload, performance=None):
         command[1:1] = ['-Xmx' + performance.heap, '-XX:+UseZGC', '-XX:+UseCompactObjectHeaders',
             f'-Dlodgen.test.automaticSeconds={automatic}', f'-Dlodgen.test.automaticRadius={performance.automatic_radius}',
             f'-Dlodgen.test.automaticCenterX={performance.automatic_center_x}', f'-Dlodgen.test.automaticCenterZ={performance.automatic_center_z}',
-            f'-Dlodgen.test.cpuLoad={performance.cpu_load}']
+            f'-Dlodgen.test.threads={performance.threads}']
         if performance.jfr:
             command.insert(1, '-XX:StartFlightRecording=filename=automatic.jfr,settings=profile,dumponexit=true')
     report = directory / 'startup-result.txt'
@@ -213,7 +214,7 @@ if __name__ == '__main__':
     parser.add_argument('--java')
     parser.add_argument('--benchmark', type=int, default=0, help='26.2 vanilla benchmark radius in chunks (64 = 16384 targets)')
     parser.add_argument('--heap', default='32G')
-    parser.add_argument('--cpu-load', type=int, choices=range(1, 6), default=5)
+    parser.add_argument('--threads', type=int, default=max(1, ((os.cpu_count() or 1) + 1) // 2), help='Generation threads (1 to available processors)')
     parser.add_argument('--native-workers', type=int, default=32)
     parser.add_argument('--jfr', action='store_true')
     parser.add_argument('--chunky-native-only', action='store_true', help='Disable Voxy ingestion only during the Chunky baseline')
@@ -225,6 +226,8 @@ if __name__ == '__main__':
     parser.add_argument('--instance', type=Path, help='Copy mods and worldgen settings from a Prism Minecraft directory into the disposable test')
     parser.add_argument('--run-name', help='Separate automatic benchmark directory name')
     args = parser.parse_args()
+    if not 1 <= args.threads <= (os.cpu_count() or 1):
+        parser.error('--threads must be between 1 and the available processor count')
     if not os.environ.get('DISPLAY'):
         parser.error('An X display is required; run with xvfb-run -a')
     if args.benchmark and (args.mc != '26.2' or args.world or args.reload):

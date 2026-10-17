@@ -32,8 +32,8 @@ public final class VoxyBenchmark {
     private static long chunks;
 
     public static void start(Minecraft client) throws Exception {
-        int load = Integer.getInteger("lodgen.test.cpuLoad", 5);
-        LodgenConfig.apply(new LodgenConfig(false, load, 0, false, 1000, GenerationCenter.CURRENT, 0, 0, 0));
+        int threads = Integer.getInteger("lodgen.test.threads", Math.max(1, (Runtime.getRuntime().availableProcessors() + 1) / 2));
+        LodgenConfig.apply(LodgenConfig.SCHEMA.with(new LodgenConfig(false, threads, 0, false, 1000, GenerationCenter.CURRENT, 0, 0, 0), "preventLag", false));
         // #if MC_1211
         var settings = new LevelSettings("LODgen Voxy benchmark", GameType.CREATIVE, false, Difficulty.PEACEFUL,
                 true, new net.minecraft.world.level.GameRules(), WorldDataConfiguration.DEFAULT);
@@ -115,12 +115,12 @@ public final class VoxyBenchmark {
                 var result = chunky.join();
                 var budget = dev.ricky12awesome.lodgen.GenerationSettings.current();
                 String json = String.format(Locale.ROOT,
-                        "{\"voxyChunks\":%d,\"voxySeconds\":%.6f,\"voxyChunksPerSecond\":%.3f,\"chunkyChunks\":%d,\"chunkySeconds\":%.6f,\"chunkyChunksPerSecond\":%.3f,\"nativeWorkers\":%d,\"cpuLoad\":%d,\"conversionWorkers\":%d,\"nativeBatches\":%d,\"vanillaStructures\":true,\"heapBytes\":%d,\"chunkyVoxyIngest\":%s}\n",
+                        "{\"voxyChunks\":%d,\"voxySeconds\":%.6f,\"voxyChunksPerSecond\":%.3f,\"chunkyChunks\":%d,\"chunkySeconds\":%.6f,\"chunkyChunksPerSecond\":%.3f,\"nativeWorkers\":%d,\"threads\":%d,\"conversionWorkers\":%d,\"nativeBatches\":%d,\"vanillaStructures\":true,\"heapBytes\":%d,\"chunkyVoxyIngest\":%s}\n",
                         chunks, nanos / 1e9, chunks * 1e9 / nanos, result.chunks(), result.nanos() / 1e9, result.chunks() * 1e9 / result.nanos(),
-                        Integer.getInteger("lodgen.test.nativeWorkers", 0), LodgenConfig.INSTANCE.cpuLoad(), budget.threads(), budget.batches(), Runtime.getRuntime().maxMemory(), !Boolean.getBoolean("lodgen.test.chunkyNativeOnly"));
+                        Integer.getInteger("lodgen.test.nativeWorkers", 0), LodgenConfig.INSTANCE.threads(), budget.threads(), budget.batches(), Runtime.getRuntime().maxMemory(), !Boolean.getBoolean("lodgen.test.chunkyNativeOnly"));
                 Files.writeString(Path.of("benchmark-result.json"), json);
                 LodgenConfig.LOGGER.info("VOXY BENCHMARK RESULT: {}", json.trim());
-                StartupCheck.report("PASS: vanilla Overworld benchmark completed " + chunks + " LOD-only target chunks, with nonempty Voxy data and normal Chunky pregen; CPU load " + LodgenConfig.INSTANCE.cpuLoad());
+                StartupCheck.report("PASS: vanilla Overworld benchmark completed " + chunks + " LOD-only target chunks, with nonempty Voxy data and normal Chunky pregen; generation threads " + LodgenConfig.INSTANCE.threads());
                 stage = 5; client.stop();
             }
         } catch (Throwable failure) {
