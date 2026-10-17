@@ -94,7 +94,7 @@ public final class ConfigSchema<R extends Record> {
         }
     }
 
-    public enum Control { TOGGLE, NUMBER, CHOICE }
+    public enum Control { TOGGLE, NUMBER, CHOICE, SLIDER }
 
     public static final class Option {
         private final RecordComponent component;
@@ -123,8 +123,11 @@ public final class ConfigSchema<R extends Record> {
         public String labelKey() { return translationKey + ".label"; }
         public String tooltipKey() { return translationKey + ".tooltip"; }
         public ConfigOption metadata() { return metadata; }
+        public int min() { return metadata.min(); }
+        public int max() { return metadata.maxAvailableProcessors() ? Math.max(1, Runtime.getRuntime().availableProcessors()) : metadata.max(); }
         public Control control() {
             if (component.getType() == boolean.class) return Control.TOGGLE;
+            if (metadata.slider()) return Control.SLIDER;
             return component.getType().isEnum() || metadata.cycle() ? Control.CHOICE : Control.NUMBER;
         }
 
@@ -154,7 +157,8 @@ public final class ConfigSchema<R extends Record> {
                     throw new IllegalArgumentException(key() + " must be a boolean");
                 value = Boolean.parseBoolean(text);
             } else if (component.getType() == int.class) {
-                value = Integer.parseInt(text);
+                value = metadata.maxAvailableProcessors() && text.equals("halfProcessors")
+                        ? max() / 2 + max() % 2 : Integer.parseInt(text);
             } else {
                 value = choices.stream().filter(choice -> ((Enum<?>) choice).name().equalsIgnoreCase(text)).findFirst()
                         .orElseThrow(() -> new IllegalArgumentException("Unknown " + key() + ": " + text));
@@ -172,8 +176,8 @@ public final class ConfigSchema<R extends Record> {
             if (component.getType() == boolean.class && value instanceof Boolean) return;
             if (component.getType().isEnum() && component.getType().isInstance(value)) return;
             if (component.getType() == int.class && value instanceof Integer number) {
-                if (number < metadata.min() || number > metadata.max())
-                    throw new IllegalArgumentException(key() + " must be " + metadata.min() + "–" + metadata.max());
+                if (number < min() || number > max())
+                    throw new IllegalArgumentException(key() + " must be " + min() + "–" + max());
                 return;
             }
             throw new IllegalArgumentException("Invalid type for " + key());

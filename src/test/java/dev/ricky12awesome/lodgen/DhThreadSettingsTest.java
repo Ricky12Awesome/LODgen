@@ -13,8 +13,8 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class DhCpuSettingsTest {
-    private final DhCpuSettings override = new DhCpuSettings();
+class DhThreadSettingsTest {
+    private final DhThreadSettings override = new DhThreadSettings();
     private final LodgenConfig original = LodgenConfig.INSTANCE;
     private final com.seibel.distanthorizons.api.interfaces.config.IDhApiConfig originalApi = DhApi.Delayed.configs;
     private int savedThreads;
@@ -38,7 +38,7 @@ class DhCpuSettingsTest {
 
     @AfterEach void restore() throws Exception {
         LodgenConfig.stopListening(override);
-        ApiEventInjector.INSTANCE.unbind(DhApiAfterDhInitEvent.class, DhCpuSettings.class);
+        ApiEventInjector.INSTANCE.unbind(DhApiAfterDhInitEvent.class, DhThreadSettings.class);
         DhApiConfig.INSTANCE.multiThreading().threadCount().clearValue();
         DhApiConfig.INSTANCE.multiThreading().threadRuntimeRatio().clearValue();
         new DhApiConfigValue<>(Config.Client.threadPresetSetting).clearValue();
@@ -51,7 +51,7 @@ class DhCpuSettingsTest {
 
     @Test void defersUntilDhInitAndAppliesLatestSettingsLive() throws Exception {
         override.register();
-        LodgenConfig.apply(LodgenConfig.SCHEMA.with(original, "cpuLoad", 1));
+        LodgenConfig.apply(LodgenConfig.SCHEMA.with(original, "threads", 1));
         assertNull(Config.Common.MultiThreading.numberOfThreads.getApiValue());
         assertNull(Config.Client.threadPresetSetting.getApiValue());
 
@@ -59,11 +59,10 @@ class DhCpuSettingsTest {
         ApiEventInjector.INSTANCE.fireAllEvents(DhApiAfterDhInitEvent.class, null);
         assertOverride();
         assertEquals(1, Config.Common.MultiThreading.numberOfThreads.get());
-        assertEquals(Math.min(1, 0.01 * Runtime.getRuntime().availableProcessors()),
-                Config.Common.MultiThreading.threadRunTimeRatio.get());
+        assertEquals(1, Config.Common.MultiThreading.threadRunTimeRatio.get());
 
-        for (int load = 2; load <= 5; load++) {
-            LodgenConfig.apply(LodgenConfig.SCHEMA.with(original, "cpuLoad", load));
+        for (int threads : new int[]{1, LodgenConfig.DEFAULTS.threads(), Runtime.getRuntime().availableProcessors()}) {
+            LodgenConfig.apply(LodgenConfig.SCHEMA.with(original, "threads", threads));
             assertOverride();
         }
 
@@ -75,13 +74,35 @@ class DhCpuSettingsTest {
     }
 
     @Test void appliesImmediatelyWhenDhIsAlreadyReadyIncludingWithAutomaticGenerationOff() throws Exception {
-        LodgenConfig.apply(LodgenConfig.SCHEMA.with(LodgenConfig.SCHEMA.with(original, "enabled", false), "cpuLoad", 1));
+        LodgenConfig.apply(LodgenConfig.SCHEMA.with(LodgenConfig.SCHEMA.with(original, "enabled", false), "threads", 1));
         DhApi.Delayed.configs = DhApiConfig.INSTANCE;
         override.register();
         assertOverride();
         assertEquals(7, Config.Common.MultiThreading.numberOfThreads.getTrueValue());
         assertEquals(0.25, Config.Common.MultiThreading.threadRunTimeRatio.getTrueValue());
         assertEquals(savedPreset, Config.Client.threadPresetSetting.getTrueValue());
+    }
+
+    @Test void slowTicksReduceDutyCycleAndPreventLagCanBeDisabledLive() throws Exception {
+        var server = new Object();
+        try {
+            DhApi.Delayed.configs = DhApiConfig.INSTANCE;
+            override.register();
+            LodgenConfig.apply(LodgenConfig.SCHEMA.with(original, "preventLag", true));
+            for (int i = 0; i < 10; i++) GenerationSettings.serverTick(server, 100_000_000L);
+            override.accept(LodgenConfig.INSTANCE);
+            assertTrue(GenerationSettings.current().runRatio() < 1);
+            assertEquals(LodgenConfig.INSTANCE.threads(), GenerationSettings.current().threads());
+            assertOverride();
+
+            LodgenConfig.apply(LodgenConfig.SCHEMA.with(LodgenConfig.INSTANCE, "preventLag", false));
+            assertEquals(1, GenerationSettings.current().runRatio());
+            assertOverride();
+            for (int i = 0; i < 200; i++) GenerationSettings.serverTick(server, 5_000_000L);
+            LodgenConfig.apply(LodgenConfig.SCHEMA.with(LodgenConfig.INSTANCE, "preventLag", true));
+            assertEquals(1, GenerationSettings.current().runRatio());
+            assertOverride();
+        } finally { GenerationSettings.serverStopped(server); }
     }
 
     private static void assertOverride() {

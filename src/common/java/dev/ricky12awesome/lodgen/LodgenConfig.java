@@ -19,25 +19,29 @@ import java.util.function.Consumer;
 
 /** Immutable snapshots let generation workers observe complete live changes. */
 public record LodgenConfig(
-        @ConfigOption(defaultValue = "true", order = 0, path = "generation.autoStart", fileOrder = 3, translationName = "auto_start",
+        @ConfigOption(defaultValue = "true", order = 0, path = "generation.autoStart", fileOrder = 4, translationName = "auto_start",
                 comment = "Automatically starts a task when joining a new singleplayer world\n\nIf distant horizons generator plan is disabled, this setting is ignored")
         boolean enabled,
-        @ConfigOption(defaultValue = "true", order = 1, path = "generation.autoResume", fileOrder = 4, translationName = "auto_resume",
+        @ConfigOption(defaultValue = "true", order = 1, path = "generation.autoResume", fileOrder = 5, translationName = "auto_resume",
                 comment = "Automatically resumes task when joining a singleplayer world or on server startup")
         boolean autoResume,
-        @ConfigOption(defaultValue = "3", order = 8, path = "threading.cpuLoad", fileOrder = 2, min = 1, max = 5, cycle = true,
-                comment = "CPU Load\n\n1 - Minimum\n2 - Low\n3 - Medium\n4 - High\n5 - Maximum\n\nMore load = faster generation but more lag")
-        int cpuLoad,
-        @ConfigOption(defaultValue = "0", order = 5, path = "generation.radius", fileOrder = 6, min = 0, max = GenerationArea.MAX_RADIUS, translationName = "lod_radius",
+        @ConfigOption(defaultValue = "halfProcessors", order = 8, path = "generation.threads", fileOrder = 2, min = 1,
+                maxAvailableProcessors = true, slider = true,
+                comment = "Generation threads (1 to the number of available system threads)\nDefaults to half the available system threads")
+        int threads,
+        @ConfigOption(defaultValue = "true", order = 9, path = "generation.preventLag", fileOrder = 3,
+                comment = "Slow down generation when the server cannot maintain 20 TPS")
+        boolean preventLag,
+        @ConfigOption(defaultValue = "0", order = 5, path = "generation.radius", fileOrder = 7, min = 0, max = GenerationArea.MAX_RADIUS, translationName = "lod_radius",
                 comment = "These chunks are not saved and are only used for making LODs\n\n0 = based on DH or Voxy")
         int generationDistance,
-        @ConfigOption(defaultValue = "true", order = 9, path = "client.showCps.enabled", fileOrder = 0, translationName = "show_throughput",
+        @ConfigOption(defaultValue = "true", order = 10, path = "client.showCps.enabled", fileOrder = 0, translationName = "show_throughput",
                 comment = "Show chunks per second in action bar (to OPs only)")
         boolean showChunksPerSecond,
-        @ConfigOption(defaultValue = "250", order = 10, path = "client.showCps.interval", fileOrder = 1, min = 1, max = 60000, translationName = "overlay_update_interval",
+        @ConfigOption(defaultValue = "250", order = 11, path = "client.showCps.interval", fileOrder = 1, min = 1, max = 60000, translationName = "overlay_update_interval",
                 comment = "Update interval in milliseconds (1-60000)")
         int chunksPerSecondUpdateIntervalMs,
-        @ConfigOption(defaultValue = "origin", order = 2, path = "generation.center", fileOrder = 8, translationName = "center_mode",
+        @ConfigOption(defaultValue = "origin", order = 2, path = "generation.center", fileOrder = 9, translationName = "center_mode",
                 comment = "Center\n\norigin - world origin\n<x> <z> - custom x/z location like \"0 0\" or \"512 0\"")
         GenerationCenter generationCenter,
         @ConfigOption(defaultValue = "0", order = 3, persisted = false, min = -GenerationArea.WORLD_EDGE_BLOCKS, max = GenerationArea.WORLD_EDGE_BLOCKS,
@@ -46,10 +50,10 @@ public record LodgenConfig(
         @ConfigOption(defaultValue = "0", order = 4, persisted = false, min = -GenerationArea.WORLD_EDGE_BLOCKS, max = GenerationArea.WORLD_EDGE_BLOCKS,
                 enabledWhen = "generationCenter", enabledValue = "custom", comment = "")
         int centerZ,
-        @ConfigOption(defaultValue = "0", order = 6, path = "generation.saveRadius", fileOrder = 7, min = 0, max = GenerationArea.MAX_RADIUS, translationName = "saved_radius",
+        @ConfigOption(defaultValue = "0", order = 6, path = "generation.saveRadius", fileOrder = 8, min = 0, max = GenerationArea.MAX_RADIUS, translationName = "saved_radius",
                 comment = "Save chunks to avoid duplicate work\n\n(basically a chunk pregenerator)\n\n0 = save no chunks")
         int savedChunkRadius,
-        @ConfigOption(defaultValue = "empty", order = 7, path = "generation.caveGen", fileOrder = 5,
+        @ConfigOption(defaultValue = "empty", order = 7, path = "generation.caveGen", fileOrder = 6,
                 comment = "Skips cave generation entirely\n\ngenerate - full chunks\nfill - stone/deepslate\nempty - air\n\nFill/Empty may cause incorrect surfaces\n\nIgnored for saved chunks")
         CaveMode caveMode) {
     public static final Logger LOGGER = LoggerFactory.getLogger("LODgen");
@@ -60,22 +64,22 @@ public record LodgenConfig(
     private static final CopyOnWriteArrayList<Consumer<LodgenConfig>> LISTENERS = new CopyOnWriteArrayList<>();
     public static volatile LodgenConfig INSTANCE = load(FILE);
 
-    public LodgenConfig(boolean enabled, int cpuLoad, int generationDistance, boolean showChunksPerSecond,
+    public LodgenConfig(boolean enabled, int threads, int generationDistance, boolean showChunksPerSecond,
                         int chunksPerSecondUpdateIntervalMs, GenerationCenter generationCenter,
                         int centerX, int centerZ, int savedChunkRadius) {
-        this(enabled, cpuLoad, generationDistance, showChunksPerSecond, chunksPerSecondUpdateIntervalMs,
+        this(enabled, threads, generationDistance, showChunksPerSecond, chunksPerSecondUpdateIntervalMs,
                 generationCenter, centerX, centerZ, savedChunkRadius, DEFAULTS.caveMode());
     }
 
-    public LodgenConfig(boolean enabled, int cpuLoad, int generationDistance, boolean showChunksPerSecond,
+    public LodgenConfig(boolean enabled, int threads, int generationDistance, boolean showChunksPerSecond,
                         int chunksPerSecondUpdateIntervalMs, GenerationCenter generationCenter,
                         int centerX, int centerZ, int savedChunkRadius, CaveMode caveMode) {
-        this(enabled, DEFAULTS.autoResume(), cpuLoad, generationDistance, showChunksPerSecond, chunksPerSecondUpdateIntervalMs,
+        this(enabled, DEFAULTS.autoResume(), threads, DEFAULTS.preventLag(), generationDistance, showChunksPerSecond, chunksPerSecondUpdateIntervalMs,
                 generationCenter, centerX, centerZ, savedChunkRadius, caveMode);
     }
 
     public LodgenConfig {
-        SCHEMA.validateValues(enabled, autoResume, cpuLoad, generationDistance, showChunksPerSecond, chunksPerSecondUpdateIntervalMs,
+        SCHEMA.validateValues(enabled, autoResume, threads, preventLag, generationDistance, showChunksPerSecond, chunksPerSecondUpdateIntervalMs,
                 generationCenter, centerX, centerZ, savedChunkRadius, caveMode);
     }
 
@@ -88,8 +92,10 @@ public record LodgenConfig(
         try {
             if (Files.exists(file)) {
                 var values = TomlFiles.read(file);
+                boolean missingThreadSettings = !values.contains("generation.threads") || !values.contains("generation.preventLag");
                 var settings = read(values);
-                if (!values.contains("_version") || values.<Number>get("_version").intValue() < FILE_VERSION)
+                if (!values.contains("_version") || values.<Number>get("_version").intValue() < FILE_VERSION
+                        || missingThreadSettings)
                     write(file, settings);
                 return settings;
             }
@@ -120,6 +126,22 @@ public record LodgenConfig(
             if (!option.key().equals("generationCenter") && !values.contains(option.path()) && values.contains(option.key()))
                 values.set(option.path(), values.get(option.key()));
         }
+        if (!values.contains("generation.threads")) {
+            Object legacy = values.contains("threading.cpuLoad") ? values.get("threading.cpuLoad") : values.get("cpuLoad");
+            // Invalid obsolete presets are ignored; they no longer disable generation.
+            if (legacy instanceof Number load && (legacy instanceof Integer || legacy instanceof Long)
+                    && load.longValue() >= 1 && load.longValue() <= 5) {
+                int processors = SCHEMA.option("threads").max();
+                values.set("generation.threads", load.intValue() == 1 ? 1
+                        : Math.max(1, (int) Math.ceil(processors * (load.intValue() - 1) / 4.0)));
+            }
+        }
+        // Keep configs portable when moved to a system with fewer processors.
+        Object threads = values.get("generation.threads");
+        if ((threads instanceof Integer || threads instanceof Long)
+                && ((Number) threads).longValue() > SCHEMA.option("threads").max()
+                && ((Number) threads).longValue() <= Integer.MAX_VALUE)
+            values.set("generation.threads", SCHEMA.option("threads").max());
         if (values.contains("generation.center")) {
             Object center = values.get("generation.center");
             if (!(center instanceof String text)) throw new IllegalArgumentException("generation.center must be a TOML string");
@@ -168,6 +190,8 @@ public record LodgenConfig(
         values.set("generation.center", settings.generationCenter() == GenerationCenter.CUSTOM
                 ? settings.centerX() + " " + settings.centerZ() : "origin");
         for (var option : SCHEMA.options()) previous.remove(option.key());
+        previous.remove("cpuLoad"); previous.remove("threading.cpuLoad");
+        if (previous.get("threading") instanceof CommentedConfig table && table.isEmpty()) previous.remove("threading");
         previous.remove("pipelineBatches"); previous.remove("queuedBatches"); previous.remove("spatialBatching");
         preserveUnknown(values, previous);
         TomlFiles.write(file, values);

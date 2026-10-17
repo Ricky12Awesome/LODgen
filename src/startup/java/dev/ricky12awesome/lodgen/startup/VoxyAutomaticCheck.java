@@ -27,9 +27,11 @@ public final class VoxyAutomaticCheck {
             var throughput = PersistenceRegistry.throughput(level);
             if (started == 0) {
                 nativeWorkers = Class.forName("com.ishland.c2me.base.common.GlobalExecutors").getField("GLOBAL_EXECUTOR_PARALLELISM").getInt(null);
-                LodgenConfig.apply(new LodgenConfig(true, Integer.getInteger("lodgen.test.cpuLoad", 5),
+                int threads = Integer.getInteger("lodgen.test.threads", Runtime.getRuntime().availableProcessors());
+                var settings = new LodgenConfig(true, threads,
                         Integer.getInteger("lodgen.test.automaticRadius", 256), true, 250, GenerationCenter.CUSTOM,
-                        Integer.getInteger("lodgen.test.automaticCenterX", 163840), Integer.getInteger("lodgen.test.automaticCenterZ", -163840), 0));
+                        Integer.getInteger("lodgen.test.automaticCenterX", 163840), Integer.getInteger("lodgen.test.automaticCenterZ", -163840), 0);
+                LodgenConfig.apply(LodgenConfig.SCHEMA.with(settings, "preventLag", false));
                 baseline = throughput.totalCompleted(); started = sampleTime = System.nanoTime(); return;
             }
             long now = System.nanoTime(), completed = throughput.totalCompleted() - baseline;
@@ -65,7 +67,7 @@ public final class VoxyAutomaticCheck {
             var result = new LinkedHashMap<String, Object>();
             result.put("automatic", true); result.put("seconds", elapsed); result.put("completed", completed);
             result.put("chunksPerSecond", completed / elapsed); result.put("nativeWorkers", nativeWorkers);
-            result.put("cpuLoad", LodgenConfig.INSTANCE.cpuLoad()); result.put("radiusChunks", LodgenConfig.INSTANCE.generationDistance());
+            result.put("threads", LodgenConfig.INSTANCE.threads()); result.put("radiusChunks", LodgenConfig.INSTANCE.generationDistance());
             result.put("heapBytes", Runtime.getRuntime().maxMemory()); result.put("samples", samples);
             result.put("centerX", x); result.put("centerZ", z);
             result.put("quitWithActiveTiles", last.get("activeTiles"));

@@ -102,25 +102,36 @@ class ConfigSchemaTest {
     }
 
     @Test
-    void lodgenCpuLoadRemainsEditableWithDhInstalled() {
+    void lodgenThreadsUseSystemBoundedSliderWithDhInstalled() {
         var schema = dev.ricky12awesome.lodgen.LodgenConfig.SCHEMA;
         var draft = schema.draft(dev.ricky12awesome.lodgen.LodgenConfig.DEFAULTS);
-        var cpu = schema.option("cpuLoad");
-        assertTrue(draft.active(cpu, mod -> mod.equals("distanthorizons")));
-        assertEquals("lodgen.config.option.cpu_load.value.3", draft.valueKey(cpu, mod -> mod.equals("distanthorizons")));
+        var threads = schema.option("threads");
+        assertTrue(draft.active(threads, mod -> mod.equals("distanthorizons")));
+        assertEquals(ConfigSchema.Control.SLIDER, threads.control());
+        assertEquals(1, threads.min());
+        assertEquals(Runtime.getRuntime().availableProcessors(), threads.max());
+        assertEquals((threads.max() + 1) / 2, draft.snapshot().threads());
+        draft.edit(threads, "1");
+        assertEquals(1, draft.snapshot().threads());
+        draft.edit(threads, Integer.toString(threads.max()));
+        assertEquals(threads.max(), draft.snapshot().threads());
+        draft.edit(threads, Integer.toString(threads.max() + 1));
+        assertThrows(IllegalArgumentException.class, draft::snapshot);
+        assertThrows(IllegalArgumentException.class, () -> schema.option("cpuLoad"));
     }
 
     @Test
     void schemaWithChangesOneLodgenSettingAndPreservesCaveMode() {
-        var original = new dev.ricky12awesome.lodgen.LodgenConfig(true, 3, 0, false, 1000,
+        var original = new dev.ricky12awesome.lodgen.LodgenConfig(true, 1, 0, false, 1000,
                 dev.ricky12awesome.lodgen.generation.GenerationCenter.CURRENT, 0, 0, 0,
                 dev.ricky12awesome.lodgen.generation.CaveMode.EMPTY);
 
-        var changed = dev.ricky12awesome.lodgen.LodgenConfig.SCHEMA.with(original, "cpuLoad", 5);
+        int max = dev.ricky12awesome.lodgen.LodgenConfig.SCHEMA.option("threads").max();
+        var changed = dev.ricky12awesome.lodgen.LodgenConfig.SCHEMA.with(original, "threads", max);
 
-        assertEquals(5, changed.cpuLoad());
-        assertEquals(original, dev.ricky12awesome.lodgen.LodgenConfig.SCHEMA.with(changed, "cpuLoad", original.cpuLoad()));
+        assertEquals(max, changed.threads());
+        assertEquals(original, dev.ricky12awesome.lodgen.LodgenConfig.SCHEMA.with(changed, "threads", original.threads()));
         assertEquals(dev.ricky12awesome.lodgen.generation.CaveMode.EMPTY, changed.caveMode());
-        assertThrows(IllegalArgumentException.class, () -> dev.ricky12awesome.lodgen.LodgenConfig.SCHEMA.with(original, "cpuLoad", 6));
+        assertThrows(IllegalArgumentException.class, () -> dev.ricky12awesome.lodgen.LodgenConfig.SCHEMA.with(original, "threads", max + 1));
     }
 }

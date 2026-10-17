@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import dev.ricky12awesome.lodgen.LodgenConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.ContainerObjectSelectionList;
 import net.minecraft.client.gui.components.EditBox;
@@ -93,11 +94,15 @@ public final class ConfigScreenCheck {
         var caveLabel = caves.getMessage();
         for (int i = 0; i < 3; i++) press(caves);
         if (!caveLabel.equals(caves.getMessage())) throw new AssertionError("Cave mode did not cycle through all three choices");
-        var cpu = (Button) control(list, "cpuLoad");
-        if (!cpu.active) throw new AssertionError("LODgen CPU load is disabled");
-        var initial = cpu.getMessage();
-        for (int i = 0; i < 5; i++) press(cpu);
-        if (!initial.equals(cpu.getMessage())) throw new AssertionError("CPU load did not cycle through all five levels");
+        var threads = control(list, "threads");
+        if (!(threads instanceof AbstractSliderButton) || !threads.active)
+            throw new AssertionError("Generation threads must use an enabled slider");
+        if (!threads.getMessage().getString().equals(Integer.toString(original.threads())))
+            throw new AssertionError("Generation slider must show the current thread count");
+        var preventLag = (Button) control(list, "preventLag");
+        var initial = preventLag.getMessage();
+        press(preventLag); press(preventLag);
+        if (!initial.equals(preventLag.getMessage())) throw new AssertionError("Prevent lag must toggle on and off");
         var centerLabel = center.getMessage();
         for (int i = 0; i < 2; i++) {
             press(center);
